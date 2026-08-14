@@ -58,6 +58,7 @@ from analysis.spread_census import (
     is_two_sided,
     iter_category,
     load_markets,
+    ticker_climate_date,
 )
 from ingestion.config_loader import load_config
 
@@ -345,6 +346,22 @@ def run(config: dict[str, Any]) -> int:
             f"reconcile exactly; {unreconciled:.2f} of {total_volume:.2f} contracts "
             f"unaccounted ({unreconciled / total_volume:.8%})"
         )
+        if not mismatched.empty:
+            short = int((mismatched["sum_difference"] < 0).sum())
+            excess = int((mismatched["sum_difference"] > 0).sum())
+            dates = mismatched["ticker"].map(ticker_climate_date).nunique()
+            print(
+                f"direction: {short} markets short of the lifetime volume, "
+                f"{excess} above it, across {dates} climate days"
+            )
+            if excess:
+                # Omitted candles can only lose volume. Gaining it means the two
+                # venue-side fields disagree, which no fetch strategy can fix.
+                print(
+                    "A candle sum above the lifetime volume cannot come from omitted "
+                    "candles, so at least some of this is venue bookkeeping rather "
+                    "than missing capture."
+                )
         if not mismatched.empty:
             print("worst 10 mismatches by absolute difference:")
             worst = mismatched.reindex(

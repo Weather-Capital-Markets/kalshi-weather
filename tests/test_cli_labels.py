@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from ingestion.cli_labels import CliLabelBackfill, parse_modern_product, split_products
+from ingestion.cli_labels import (
+    IEM_MAX_LIMIT,
+    CliLabelBackfill,
+    parse_modern_product,
+    split_products,
+)
 from ingestion.client import RequestResult
 from ingestion.state import month_complete, set_month_complete
 from ingestion.writer import utc_now_iso
@@ -85,6 +90,35 @@ def test_month_resume_skips_completed(tmp_path: Path) -> None:
         assert month_complete(app.conn, "2026-07")
     finally:
         app.close()
+
+
+def test_request_limit_stays_within_what_iem_accepts(tmp_path: Path) -> None:
+    # IEM answers a larger limit with HTTP 422, which silently produced an empty
+    # label CSV for every month.
+    app = CliLabelBackfill(_backfill_config(tmp_path))
+    captured: dict = {}
+
+    class RecordingClient:
+        def close(self) -> None:
+            return None
+
+        def get(self, path: str, *, params=None) -> RequestResult:
+            captured.update(params or {})
+            return RequestResult(
+                status_code=200,
+                latency_ms=1,
+                json_body=None,
+                error_text=None,
+                endpoint=path,
+                text_body="",
+            )
+
+    try:
+        app.client = RecordingClient()  # type: ignore[assignment]
+        app._fetch_month("2026-07")
+    finally:
+        app.close()
+    assert captured["limit"] <= IEM_MAX_LIMIT
 
 
 def test_current_month_is_not_marked_complete(tmp_path: Path) -> None:

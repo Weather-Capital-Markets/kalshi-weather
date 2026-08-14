@@ -46,6 +46,9 @@ MAXIMUM_LINE = re.compile(
     r"^\s*MAXIMUM\s+(-?\d+|MM)\s+(\d{1,2}:?\d{0,2}\s*[AP]M)?",
     re.IGNORECASE | re.MULTILINE,
 )
+# IEM rejects anything larger with HTTP 422. A CLINYC month is ~100 issuances,
+# so this is not a binding constraint, but _fetch_month checks anyway.
+IEM_MAX_LIMIT = 9999
 CSV_FIELDS = [
     "issuance_ts_utc",
     "climate_date",
@@ -211,7 +214,7 @@ class CliLabelBackfill:
             "fmt": "text",
             "sdate": sdate,
             "edate": edate,
-            "limit": 10000,
+            "limit": IEM_MAX_LIMIT,
             "order": "asc",
         }
         result = self.client.get(self.iem_path, params=params)
@@ -229,6 +232,14 @@ class CliLabelBackfill:
             logger.warning("IEM month %s failed status=%s", month, result.status_code)
             return
         text = result.text_body or ""
+        n_products = len(split_products(text))
+        if n_products >= IEM_MAX_LIMIT:
+            logger.warning(
+                "IEM month %s returned %s products, at the %s cap; the month may be truncated",
+                month,
+                n_products,
+                IEM_MAX_LIMIT,
+            )
         payload = {"text": text, "month": month, "http_status": result.status_code}
         self.writer.write(
             ts_utc=utc_now_iso(),
