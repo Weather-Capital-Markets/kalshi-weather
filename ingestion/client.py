@@ -22,6 +22,7 @@ class RequestResult:
     error_text: str | None
     endpoint: str
     attempts: tuple[RequestAttempt, ...] = ()
+    text_body: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -134,6 +135,7 @@ class KalshiClient:
                         error_text=str(exc),
                         endpoint=path,
                         attempts=tuple(attempts),
+                        text_body=None,
                     )
                 self._backoff(attempt)
                 attempt += 1
@@ -160,6 +162,7 @@ class KalshiClient:
                         error_text=response_result.error_text,
                         endpoint=path,
                         attempts=tuple(attempts),
+                        text_body=response_result.text_body,
                     )
                 self._backoff(attempt, response.status_code)
                 attempt += 1
@@ -172,6 +175,7 @@ class KalshiClient:
                 error_text=response_result.error_text,
                 endpoint=path,
                 attempts=tuple(attempts),
+                text_body=response_result.text_body,
             )
 
     def _result_from_response(
@@ -182,18 +186,20 @@ class KalshiClient:
     ) -> RequestResult:
         error_text = None
         json_body = None
+        text_body = response.text
         try:
             json_body = response.json()
         except ValueError:
-            error_text = response.text[:500] if response.text else "non-json response"
+            error_text = text_body[:500] if text_body else "non-json response"
         if not response.is_success and error_text is None:
-            error_text = response.text[:500] if response.text else f"HTTP {response.status_code}"
+            error_text = text_body[:500] if text_body else f"HTTP {response.status_code}"
         return RequestResult(
             status_code=response.status_code,
             latency_ms=latency_ms,
             json_body=json_body if isinstance(json_body, (dict, list)) else None,
             error_text=error_text,
             endpoint=path,
+            text_body=text_body,
         )
 
     @staticmethod
