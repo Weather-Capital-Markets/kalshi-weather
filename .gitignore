@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project data (raw captures, sqlite heartbeat/state)
+data/
+*.sqlite
+*.sqlite-journal
