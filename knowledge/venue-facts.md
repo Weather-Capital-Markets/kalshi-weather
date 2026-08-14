@@ -1,6 +1,7 @@
 # venue-facts.md — Kalshi venue mechanics (settlement, fees, API)
 
-**Status:** PARTIAL — §1 populated from live API payloads; the rest is placeholder.
+**Status:** PARTIAL — §1 populated from live and historical API payloads; the rest is
+placeholder.
 **Owner:** the **venue research lane**. Entries below are contributed observations, not
 lane-ratified facts; the venue lane ratifies, amends, or rejects each one and owns this file.
 **Scope:** venue matters — settlement rules, fees, API endpoint specs, collateral netting.
@@ -21,17 +22,22 @@ Every entry carries its provenance tag, the command that produced it, and the ca
 
 ---
 
-## 1. Observed from live API payloads
+## 1. Observed from API payloads
 
-All of §1 comes from one command, captured incidentally while verifying schema:
+§1.1–§1.5 come from one command, captured while verifying the live-tier schema:
 
 ```bash
 python -m ingestion.kalshi_history --probe    # 2026-08-14T14:54Z
 ```
 
-Source market: `KXHIGHNY-26AUG12-T90` (event `KXHIGHNY-26AUG12`), status `finalized`,
-from `GET /markets?series_ticker=KXHIGHNY&status=settled`. Raw JSON was pasted in full to
-the session-2 chat. These are verbatim payload fields, not recall or documentation.
+Source market: `KXHIGHNY-26AUG12-T90` (event `KXHIGHNY-26AUG12`), status `finalized`, from
+`GET /markets?series_ticker=KXHIGHNY&status=settled`.
+
+§1.6 comes from `--dry-run` (2026-08-14); §1.7–§1.9 from
+`--probe --ticker HIGHNY-24AUG15-T83` (2026-08-14), which exercised the historical tier.
+
+Raw JSON for each was pasted in full to the session-2 chat. These are verbatim payload
+fields, not recall or documentation.
 
 ### 1.1 Last trading minute aligns to the LST climate-day end
 
@@ -141,8 +147,82 @@ One-cent tick across the full 0–1 range.
   returns zero — the legacy name is not a separately queryable live series.
 - Market history spans 2021-08-05 → 2026-08-13; mean open duration ≈ 38 h.
 
-# TODO(verify): `/historical/markets/{ticker}/candlesticks` has not yet returned a payload,
-# so historical-tier field naming is unconfirmed and may differ from §1.5.
+### 1.7 Historical tier uses flat field names, and emits candles only on change
+
+`[V-LOCAL]` — `python -m ingestion.kalshi_history --probe --ticker HIGHNY-24AUG15-T83`,
+2026-08-14. Endpoint `/historical/markets/HIGHNY-24AUG15-T83/candlesticks` returned 200.
+
+**Field naming differs from the live tier (§1.5).** The historical tier uses flat
+`close`/`high`/`low`/`open`, `volume`, `open_interest` — no `_dollars`, no `_fp`. Values are
+still strings; `end_period_ts` is unchanged. `price.*` is `null` for periods without trades.
+
+```json
+{
+  "end_period_ts": 1723644060,
+  "open_interest": "0.00",
+  "price": { "close": null, "high": null, "low": null, "mean": null, "open": null,
+             "previous": null },
+  "volume": "0.00",
+  "yes_ask": { "close": "0.9800", "high": "0.9900", "low": "0.9800", "open": "0.9900" },
+  "yes_bid": { "close": "0.0100", "high": "0.0100", "low": "0.0000", "open": "0.0000" }
+}
+```
+
+**Candles are sparse, not a dense 1-minute series.** With `period_interval=1` over a
+24-hour window from market open, the endpoint returned **5 candles spanning 11.7 h**, with
+inter-candle gaps of 600 s, 1,680 s, 1,800 s, and 38,040 s — 3 of 4 gaps exceed 15 minutes.
+Two of five candles had non-zero volume; the others recorded quote changes only. The endpoint
+appears to emit a candle when the book or price changed, and to omit unchanged periods.
+
+Two consequences, both measurement-critical:
+
+- A 15-minute staleness rule designed for dense live candles will discard most historical
+  snapshots even though the quote it discards was the live book. `spread_census.py` therefore
+  reports both the 15-minute-fresh statistics and carry-forward statistics with a quote-age
+  distribution; which one is load-bearing is a ratification decision.
+- Volume estimates built on "one candle per open minute" are large overestimates for this
+  tier. The 2026-08-14 dry-run projected ~21.3 M candles / 9.94 GB assuming density; the
+  realized historical-tier footprint should be far smaller.
+
+`(verify)` — one market, and a nearly dead one (`volume_fp` 63.00 lifetime). Candle density
+plausibly scales with activity; confirm against a liquid market once bulk data exists.
+
+### 1.8 Last trading time changed convention between 2024 and 2026
+
+`[V-LOCAL]` payloads (2026-08-14) + `[V-PRIMARY]` contract text.
+
+| Market | `close_time` | Local equivalent | vs LST day end (05:00Z) |
+|---|---|---|---|
+| `HIGHNY-24AUG15-T83` | `2024-08-16T03:59:00Z` | 11:59 PM **EDT** (civil ET) | 61 min **before** |
+| `KXHIGHNY-26AUG12-T90` | `2026-08-13T04:59:00Z` | 11:59 PM **EST** | 1 min before |
+
+Both contracts *say* "11:59 PM ET", but the 2024 timestamp is civil-ET midnight while the
+2026 timestamp is LST midnight. The effective last trading minute moved one hour later, in
+UTC terms, between the two eras.
+
+Census consequence: for pre-change markets the **T−1h snapshot (04:00Z) falls after close**,
+so that column is structurally empty for the older era — the same class of artifact as T−48h
+predating market open. `spread_census.py` records `in_trading_window` per snapshot and reports
+`outside_trading_window_share` so "shut" is never read as "unquoted".
+
+Settlement timing also differs: the 2024 contract expires on "the first 10:00 AM following
+the release of the data", the 2026 contract on "the first 7:00 or 8:00 AM ET" (§1.2).
+
+`(verify)` — two markets, two dates. The changeover date is unknown and is computable from
+`close_time` across the persisted market index once bulk enumeration lands; do that before
+any era-spanning liquidity comparison.
+
+### 1.9 Legacy tickers are not resolvable via the live single-market endpoint
+
+`[V-LOCAL]` — same probe run, 2026-08-14.
+
+`GET /markets/HIGHNY-24AUG15-T83` returns **404** `{"error":{"code":"not_found"}}` even though
+the market exists and is returned by `/historical/markets`. Single-market lookups must go
+through the historical enumeration for pre-cutoff tickers.
+
+Note the historical market object also lacks the live tier's `floor_strike`-style framing for
+this contract (it carries `cap_strike: 83`, `strike_type: "less"`), and `expiration_value` is
+an empty string rather than a number.
 
 ---
 
