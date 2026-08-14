@@ -302,3 +302,9 @@ brackets (venue lane, rulebook-PDF method); Kalshi candlestick/order-book endpoi
    a human or Claude has resolved them (`O7`).
 5. **Two AIs agreeing is corroboration, not ground truth** — especially when both were handed
    the same flawed instrument. Local reproduction with pinned artifacts (hashes) is the standard.
+6. **A 200-shaped pipeline with an empty output is a failure mode.** The CLINYC backfill
+   initially used `limit=10000` on IEM `retrieve.py`, which returns HTTP 422 (pydantic
+   validation: max 9999) for every month. The script treated any HTTP response as success,
+   wrote an empty `clinyc.csv`, and marked each month complete — a silent total miss. Fixed
+   2026-08-14 by pinning `IEM_MAX_LIMIT = 9999`, checking status codes, and asserting
+   non-empty outputs when a month is marked complete. `[V-LOCAL]`

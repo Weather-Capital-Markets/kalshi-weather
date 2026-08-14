@@ -339,3 +339,58 @@ def test_census_writes_csv_and_pngs(tmp_path: Path) -> None:
         # An unsuffixed survivor would leave the reader guessing which rule it used.
         assert stem not in summary.columns
     assert set(summary["horizon_h"]) == set(HORIZONS_H)
+
+
+def test_summarize_exclnoreconcile_drops_excluded_tickers() -> None:
+    snapshots = pd.DataFrame(
+        [
+            {
+                "ticker": "KEEP",
+                "climate_date": "2026-07-04",
+                "horizon_h": 24,
+                "era": "2022+",
+                "season": "summer",
+                "regime": None,
+                "regime_uncertain": True,
+                "in_trading_window": True,
+                "two_sided_carryforward": True,
+                "mid_carryforward": 0.5,
+                "spread_carryforward": 0.05,
+                "quote_present": True,
+                "two_sided": True,
+                "mid": 0.5,
+                "spread": 0.05,
+                "quote_valid": True,
+                "extreme_empty_book": False,
+                "volume": 1.0,
+                "quote_age_sec": 60.0,
+            },
+            {
+                "ticker": "DROP",
+                "climate_date": "2026-07-04",
+                "horizon_h": 24,
+                "era": "2022+",
+                "season": "summer",
+                "regime": None,
+                "regime_uncertain": True,
+                "in_trading_window": True,
+                "two_sided_carryforward": True,
+                "mid_carryforward": 0.9,
+                "spread_carryforward": 0.5,
+                "quote_present": True,
+                "two_sided": True,
+                "mid": 0.9,
+                "spread": 0.5,
+                "quote_valid": True,
+                "extreme_empty_book": False,
+                "volume": 1.0,
+                "quote_age_sec": 60.0,
+            },
+        ]
+    )
+    summary = summarize(snapshots, excl_noreconcile_tickers=frozenset({"DROP"}))
+    row = summary[(summary["horizon_h"] == 24) & (summary["band"] == "10_90")].iloc[0]
+    assert row["median_spread_carryforward"] == 0.275
+    assert row["median_spread_exclnoreconcile"] == 0.05
+    assert row["n_spread_obs_carryforward"] == 2
+    assert row["n_spread_obs_exclnoreconcile"] == 1

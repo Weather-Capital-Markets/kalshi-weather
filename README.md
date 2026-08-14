@@ -216,7 +216,8 @@ python -m analysis.validate_candles
 # 7. Locate the venue convention changeover dates
 python -m analysis.venue_eras
 
-# 8. Census — gated on BOTH: step 6 PASS, and kill thresholds ratified in the root chat
+# 8. Census — gated on K1 v3 ratified in the root chat (date filled in); not on the
+#    pre-registered exact-equality VOLUME_RECONCILE FAIL (v3 accepts capture at 99.995%)
 python -m analysis.spread_census
 ```
 
@@ -225,13 +226,16 @@ Steps 4 and 5 share `data/backfill.sqlite`, which is opened with plain
 `database is locked`, and serialising costs about two minutes since CLINYC is
 roughly 80 monthly requests at 1 rps.
 
-Step 8 is gated on step 6 because the census makes **carry-forward the primary
-statistic**: every metric that depends on the staleness rule appears twice, as
-`*_carryforward` (primary) and `*_strict15` (robustness). That is only sound if
-a tier omits a period because nothing happened rather than because data is
-missing. `validate_candles.py` tests exactly that with two gates and prints
-PASS/FAIL for each. If the two variants disagree on the direction of a kill
-threshold, the verdict is deferred rather than taken from the primary.
+Step 8 is gated on **K1 v3 ratified in the root chat** (see [`knowledge/plan.md`](knowledge/plan.md)
+§3), not on the pre-registered exact-equality `VOLUME_RECONCILE` FAIL. v3 accepts capture at
+9,317/9,364 markets and names two robustness columns: `_strict15` (15-minute staleness) and
+`_exclnoreconcile` (47 volume-mismatch markets excluded). The census makes **carry-forward the
+primary statistic**: every metric that depends on the staleness rule appears as
+`*_carryforward` (primary), `*_strict15` (robustness a), and `*_exclnoreconcile` (robustness b).
+That is only sound if a tier omits a period because nothing happened rather than because data is
+missing. `validate_candles.py` tests that with two gates and prints PASS/FAIL for each; v3
+records the VOLUME_RECONCILE residual as venue bookkeeping, not a census blocker. If either
+robustness column disagrees with the primary on kill-direction, the verdict is deferred.
 
 Run step 6 only after step 4 finishes. A market whose candles are still being
 fetched is indistinguishable there from one whose candles are missing.

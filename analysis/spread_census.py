@@ -14,10 +14,12 @@ Two-sided means bid >= $0.01 and ask <= $0.99 (A6). Kalshi renders an empty
 book as bid 0.00 / ask 1.00; those snapshots are counted as no-market, not as
 a 99-cent spread, and never reach the spread statistics.
 
-Every metric that depends on the staleness rule is reported twice, suffixed
-`_carryforward` (primary) and `_strict15` (robustness). Both API tiers emit
-candles only on change, so the 15-minute rule discards live books; the suffixes
-are explicit on both so no reader has to infer which one they hold.
+Every metric that depends on the staleness rule is reported three ways: `_carryforward`
+(primary), `_strict15` (robustness (a): 15-minute staleness rule), and
+`_exclnoreconcile` (robustness (b): primary rule with the 47 volume-mismatch
+markets excluded). Both API tiers emit candles only on change, so the 15-minute
+rule discards live books; the suffixes are explicit so no reader has to infer
+which rule they hold.
 
 Horizons run T-48h to T-1h (A7). T-48h is kept even though markets open ~38h
 before T, because its empty column documents that fact; T-36h is the earliest
@@ -71,19 +73,22 @@ NOTE_SPARSE_CANDLES = (
     "gaps exceed one minute on each), so an old quote is usually the live book. Only "
     "1-3% of gaps exceed 15 minutes, but long gaps cover disproportionate time: on "
     "the live tier at T-6h, 24.6% of in-window snapshots carry a quote older than 15 "
-    "minutes. Per ratification the `_carryforward` columns are the primary statistic; "
-    "the `_strict15` columns apply the 15-minute rule (A2) as robustness. Both are "
-    "restricted to in_trading_window snapshots so they differ only in the staleness "
-    "rule. `coverage` and `coverage_carryforward` stay unconditional so markets that "
-    "were never open remain visible. If the two variants disagree on the direction of "
-    "a kill threshold, the verdict is deferred rather than taken from the primary."
+    "minutes. Per K1 v3 the `_carryforward` columns are the primary statistic; "
+    "`_strict15` is robustness (a), the 15-minute rule; `_exclnoreconcile` is "
+    "robustness (b), the same primary rule with the 47 volume-mismatch markets "
+    "excluded. Primary and both robustness columns are restricted to in_trading_window "
+    "snapshots. `coverage` and `coverage_carryforward` stay unconditional so markets "
+    "that were never open remain visible. Kill-direction disagreement in either "
+    "robustness column defers the verdict rather than overriding the primary."
 )
 NOTE_TRADING_WINDOW = (
     "NOTE: `outside_trading_window_share` separates 'market was shut' from 'market "
-    "open but unquoted'. Last trading time moved between eras (2024 markets closed "
-    "03:59Z = 11:59 PM EDT; 2026 markets close 04:59Z), so the T-1h column is "
-    "structurally empty for older markets. `coverage_given_open_*` conditions on the "
-    "window; `coverage` keeps its A2 definition."
+    "open but unquoted'. Last trading time changed once, between climate days "
+    "2026-03-17 and 2026-03-18 (11:59 PM civil ET → fixed 04:59Z). Before that "
+    "change, T-1h = 04:00Z falls after close on every EDT day — 58% of climate "
+    "days — so that column is structurally empty there, not illiquid. "
+    "`coverage_given_open_*` conditions on the window; `coverage` keeps its A2 "
+    "definition."
 )
 NOTE_ERA_SPLIT = (
     "NOTE: rows are split by era. 2021 traded ~1.3 brackets/day vs ~6/day from 2022 "
@@ -434,9 +439,14 @@ def _variant_metrics(
     }
 
 
-def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
+def summarize(
+    snapshots: pd.DataFrame,
+    *,
+    excl_noreconcile_tickers: frozenset[str] | None = None,
+) -> pd.DataFrame:
     if snapshots.empty:
         return snapshots
+    excluded = excl_noreconcile_tickers or frozenset()
     rows: list[dict[str, Any]] = []
     for band_name, lo, hi in BANDS:
         tagged = snapshots.copy()
@@ -506,6 +516,23 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
                     suffix="strict15",
                 )
             )
+            if excluded:
+                excl = group[~group["ticker"].isin(excluded)]
+                excl_band = (
+                    excl["in_trading_window"]
+                    & excl["two_sided_carryforward"]
+                    & excl["mid_carryforward"].between(lo, hi)
+                )
+                row.update(
+                    _variant_metrics(
+                        excl,
+                        band_mask=excl_band,
+                        two_sided_col="two_sided_carryforward",
+                        spread_col="spread_carryforward",
+                        quote_col="quote_present",
+                        suffix="exclnoreconcile",
+                    )
+                )
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -577,18 +604,24 @@ def write_figures(snapshots: pd.DataFrame, out_dir: Path) -> list[Path]:
 
 
 def run(config: dict[str, Any], out_dir: Path) -> int:
+    from analysis.validate_candles import load_candles_by_tier, volume_mismatch_tickers
+
     storage = config["storage"]
     raw_dir = Path(storage["raw_dir"])
     labels_csv = Path(storage.get("labels_csv") or "data/labels/clinyc.csv")
     labels = select_full_day_labels(labels_csv) if labels_csv.exists() else pd.DataFrame()
     markets = load_markets(raw_dir)
     candles = load_candles(raw_dir)
+    excl_noreconcile = volume_mismatch_tickers(
+        markets=markets,
+        candles_by_tier=load_candles_by_tier(raw_dir),
+    )
     snapshots, stale_stats = build_snapshot_table(
         markets=markets,
         candles_by_ticker=candles,
         labels=labels,
     )
-    summary = summarize(snapshots)
+    summary = summarize(snapshots, excl_noreconcile_tickers=excl_noreconcile)
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "spread_census.csv"
     summary.to_csv(csv_path, index=False)

@@ -288,6 +288,11 @@ Changeovers: between climate days **2021-12-25 and 2021-12-28** (no market days 
 and between **2024-09-03 and 2024-09-04**. §1.2's 7/8 AM finding is therefore the current era
 only, not a property of the series.
 
+**Unspecified era (2021-08-06 → 2021-12-25):** contract text defers to Rulebook Rule 100.19
+with no snapshot hour named. Until Rule 100.19 is read from the archived 2021 PDF (open item
+V1), label selection for those 141 climate days **defaults to the first 10:00 AM rule**, tagged
+as an assumption — not a ratified fact.
+
 Note the legacy wording omits "ET"; a regex requiring it silently reclassifies the entire
 10 AM era as unspecified.
 
@@ -315,11 +320,13 @@ The residual is **not** simply missing capture:
 - Mismatches cluster on a few dates (2025-03-10 accounts for 6 markets and 2,788 contracts),
   which points at venue incidents rather than a systematic tier property.
 
-Consequence: the emission-validation gate as pre-registered ("any mismatch fails") **fails**.
-The magnitude is small and two-directional, but the threshold was named in advance and is not
-being moved after seeing the number. Whether 0.0052% two-directional disagreement blocks the
-census, or whether the 34 affected climate days are simply excluded, is a ratification
-decision and is recorded here rather than decided in code.
+Consequence: the emission-validation gate as pre-registered ("any mismatch fails") **fails**
+on exact equality. K1 v3 (see `knowledge/plan.md` §3) accepts capture at 9,317/9,364 exact
+(0.0052% residual volume, 7 over-reconciliations inconsistent with capture loss) and treats
+the residual as venue bookkeeping. Primary census includes all markets; robustness column
+`_exclnoreconcile` excludes the 47 markets. Quote-only emission completeness is unverifiable
+for history; a forward VPS cross-check is a standing obligation that caveats prospective use
+but does not retroactively void a K1 verdict.
 
 ---
 
@@ -329,7 +336,7 @@ decision and is recorded here rather than decided in code.
 |---|---|---|---|
 | V1 | Settlement-time regime history: the 2021-08-06 → 2021-12-25 era (141 climate days) names no snapshot time, deferring to Rulebook Rule 100.19. Those days cannot have `data-sources.md` §1.3 applied from contract text alone. | Before labelling 2021 market days | Read Rule 100.19 as it stood in 2021 from the archived rulebook PDF |
 | V2 | The contract prose ("11:59 PM ET") contradicts `close_time` (04:59Z) after 2026-03-18 (§1.8). Whether the venue changed policy or has a stale template is unknown. | No — the timestamp is authoritative for measurement | Venue support, or watch whether the prose catches up |
-| V3 | 47 markets across 34 climate days whose candle volume does not reconcile to `volume_fp`, in both directions (§1.11). Fails the pre-registered emission gate at 0.0052% of total volume. | Yes for the census — the gate was named in advance | Ratify whether to accept the residual or exclude the 34 climate days |
+| V3 | 47 markets across 34 climate days whose candle volume does not reconcile to `volume_fp`, in both directions (§1.11). 0.0052% of total volume. K1 v3: primary includes all days; robustness column `_exclnoreconcile` drops these 47 markets; kill-direction disagreement → written discussion. Venue-lane bookkeeping explanation, not a census blocker. | No | Explain via venue support if needed; forward VPS quote check is the standing obligation for quote-only emission |
 
 ---
 

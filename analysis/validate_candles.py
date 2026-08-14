@@ -206,6 +206,19 @@ def _market_volume(market: dict[str, Any]) -> float | None:
     return None
 
 
+def volume_mismatch_tickers(
+    *,
+    markets: list[dict[str, Any]],
+    candles_by_tier: dict[str, dict[str, list[dict[str, Any]]]],
+) -> frozenset[str]:
+    """Tickers whose summed candle volume does not match lifetime volume_fp."""
+    reconciliation = volume_reconciliation(markets=markets, candles_by_tier=candles_by_tier)
+    if reconciliation.empty:
+        return frozenset()
+    mismatched = reconciliation.loc[~reconciliation["sum_matches"], "ticker"]
+    return frozenset(str(ticker) for ticker in mismatched)
+
+
 def volume_reconciliation(
     *,
     markets: list[dict[str, Any]],

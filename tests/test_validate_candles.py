@@ -9,6 +9,7 @@ from analysis.validate_candles import (
     emptying_events,
     gap_distribution,
     tier_of,
+    volume_mismatch_tickers,
     volume_reconciliation,
 )
 
@@ -76,6 +77,18 @@ def test_emptying_events_counts_two_sided_to_empty_transitions() -> None:
     assert int(row["n_empty_book_candles"]) == 1
     assert int(row["n_two_sided_to_empty"]) == 1
     assert samples["T"][0]["end_period_ts"] == 60
+
+
+def test_volume_mismatch_tickers_returns_only_non_matching_markets() -> None:
+    matching = _candle(0, "0.40", "0.45", volume="7.00")
+    frame = volume_mismatch_tickers(
+        markets=[{"ticker": "OK", "volume_fp": "7.00"}, {"ticker": "SHORT", "volume_fp": "9.00"}],
+        candles_by_tier={
+            LIVE_TIER: {},
+            HISTORICAL_TIER: {"OK": [matching], "SHORT": [matching]},
+        },
+    )
+    assert frame == frozenset({"SHORT"})
 
 
 def test_emptying_events_reports_none_when_the_book_never_empties() -> None:
