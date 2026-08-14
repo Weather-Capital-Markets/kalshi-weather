@@ -192,6 +192,11 @@ CREATE TABLE IF NOT EXISTS cli_month_progress (
   complete INTEGER NOT NULL DEFAULT 0,
   updated_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS asos_month_progress (
+  month TEXT PRIMARY KEY,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
 """
 
 
@@ -298,6 +303,26 @@ def set_month_complete(conn: sqlite3.Connection, month: str, updated_utc: str) -
     conn.execute(
         """
         INSERT INTO cli_month_progress (month, complete, updated_utc)
+        VALUES (?, 1, ?)
+        ON CONFLICT(month) DO UPDATE SET complete = 1, updated_utc = excluded.updated_utc
+        """,
+        (month, updated_utc),
+    )
+    conn.commit()
+
+
+def asos_month_complete(conn: sqlite3.Connection, month: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM asos_month_progress WHERE month = ?",
+        (month,),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_asos_month_complete(conn: sqlite3.Connection, month: str, updated_utc: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO asos_month_progress (month, complete, updated_utc)
         VALUES (?, 1, ?)
         ON CONFLICT(month) DO UPDATE SET complete = 1, updated_utc = excluded.updated_utc
         """,
