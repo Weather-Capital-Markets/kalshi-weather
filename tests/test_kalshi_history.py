@@ -64,6 +64,7 @@ class ScriptedClient:
                         "ticker": "KXHIGHNY-26JUL04-T90",
                         "open_time": "2026-07-02T10:00:00Z",
                         "close_time": "2026-07-05T05:00:00Z",
+                        "settlement_ts": "2026-07-05T05:03:00Z",
                         "status": "settled",
                     }
                 ],
@@ -139,6 +140,34 @@ def test_completed_market_is_not_refetched(tmp_path: Path) -> None:
     finally:
         app.close()
     assert not any("candlesticks" in call for call in app.client.calls)
+
+
+def test_settlement_ts_routes_a_market_that_closed_before_the_cutoff(tmp_path: Path) -> None:
+    # Closed 2026-04-30, settled 2026-05-01, cutoff 2026-05-01: close_time alone
+    # would send this to the historical tier, where it does not exist yet.
+    config = _config(tmp_path)
+    app = HistoryBackfill(config)
+    client = ScriptedClient(config)
+    app.client = client
+    try:
+        from ingestion.state import upsert_history_market
+
+        upsert_history_market(
+            app.conn,
+            ticker="KXHIGHNY-26APR30-T90",
+            series_ticker="KXHIGHNY",
+            open_time="2026-04-30T00:00:00Z",
+            close_time="2026-04-30T23:00:00Z",
+            status="settled",
+            enumerated_utc=utc_now_iso(),
+            settlement_ts="2026-05-01T02:00:00Z",
+        )
+        app.backfill_candles()
+    finally:
+        app.close()
+    candle_calls = [call for call in client.calls if "candlesticks" in call]
+    assert candle_calls
+    assert all(call.startswith("/series/") for call in candle_calls)
 
 
 def test_progress_advances_only_after_raw_write(tmp_path: Path) -> None:
