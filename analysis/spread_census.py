@@ -14,6 +14,11 @@ Two-sided means bid >= $0.01 and ask <= $0.99 (A6). Kalshi renders an empty
 book as bid 0.00 / ask 1.00; those snapshots are counted as no-market, not as
 a 99-cent spread, and never reach the spread statistics.
 
+Every metric that depends on the staleness rule is reported twice, suffixed
+`_carryforward` (primary) and `_strict15` (robustness). The historical tier
+emits candles only on change, so the 15-minute rule discards live books; the
+suffixes are explicit on both so no reader has to infer which one they hold.
+
 Horizons run T-48h to T-1h (A7). T-48h is kept even though markets open ~38h
 before T, because its empty column documents that fact; T-36h is the earliest
 horizon with real books. Rows carry an `era` column so the structurally
@@ -63,16 +68,20 @@ NOTE_T48_STRUCTURAL = (
 )
 NOTE_SPARSE_CANDLES = (
     "NOTE: the historical tier emits candles only when the book or price changed, so "
-    "gaps far exceed the 15-minute staleness window. `coverage`/`median_spread` apply "
-    "the 15-minute rule (A2); `coverage_carryforward`/`median_spread_carryforward` "
-    "carry the last quote forward at any age, with quote_age_*_min reported. Which "
-    "definition feeds Kill Test 1 is a ratification decision, not a code default."
+    "gaps far exceed the 15-minute staleness window and a 40-minute-old quote is "
+    "usually the live book. Per ratification the `_carryforward` columns are the "
+    "primary statistic; the `_strict15` columns apply the 15-minute rule (A2) as "
+    "robustness. Both are restricted to in_trading_window snapshots so they differ "
+    "only in the staleness rule. `coverage` and `coverage_carryforward` stay "
+    "unconditional so markets that were never open remain visible. If the two "
+    "variants disagree on the direction of a kill threshold, the verdict is deferred "
+    "rather than taken from the primary."
 )
 NOTE_TRADING_WINDOW = (
     "NOTE: `outside_trading_window_share` separates 'market was shut' from 'market "
     "open but unquoted'. Last trading time moved between eras (2024 markets closed "
     "03:59Z = 11:59 PM EDT; 2026 markets close 04:59Z), so the T-1h column is "
-    "structurally empty for older markets. `coverage_given_open` conditions on the "
+    "structurally empty for older markets. `coverage_given_open_*` conditions on the "
     "window; `coverage` keeps its A2 definition."
 )
 NOTE_ERA_SPLIT = (
@@ -377,16 +386,70 @@ def build_snapshot_table(
     return pd.DataFrame(rows), stats
 
 
+def _quantiles(values: pd.Series) -> dict[str, float | None]:
+    if not len(values):
+        return {"median": None, "p25": None, "p75": None, "p90": None}
+    return {
+        "median": float(values.median()),
+        "p25": float(values.quantile(0.25)),
+        "p75": float(values.quantile(0.75)),
+        "p90": float(values.quantile(0.90)),
+    }
+
+
+def _variant_metrics(
+    group: pd.DataFrame,
+    *,
+    band_mask: pd.Series,
+    two_sided_col: str,
+    spread_col: str,
+    quote_col: str,
+    suffix: str,
+) -> dict[str, Any]:
+    """Metrics that exist once per staleness rule, tagged with its suffix."""
+    in_window = group[group["in_trading_window"]]
+    quoted = group[group[quote_col]]
+    spread_rows = group[band_mask & group[spread_col].notna()]
+    per_day = (
+        band_mask.groupby(group["climate_date"]).sum() if len(group) else pd.Series(dtype=float)
+    )
+    quantiles = _quantiles(spread_rows[spread_col])
+    return {
+        f"two_sided_share_{suffix}": (float(group[two_sided_col].mean()) if len(group) else 0.0),
+        f"two_sided_share_given_quote_{suffix}": (
+            float(quoted[two_sided_col].mean()) if len(quoted) else 0.0
+        ),
+        f"coverage_given_open_{suffix}": (
+            float(in_window[quote_col].mean()) if len(in_window) else 0.0
+        ),
+        f"tradeable_brackets_per_day_median_{suffix}": (
+            float(per_day.median()) if len(per_day) else 0.0
+        ),
+        f"median_spread_{suffix}": quantiles["median"],
+        f"p25_{suffix}": quantiles["p25"],
+        f"p75_{suffix}": quantiles["p75"],
+        f"p90_{suffix}": quantiles["p90"],
+        f"n_spread_obs_{suffix}": int(len(spread_rows)),
+    }
+
+
 def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
     if snapshots.empty:
         return snapshots
     rows: list[dict[str, Any]] = []
     for band_name, lo, hi in BANDS:
         tagged = snapshots.copy()
-        tagged["in_band"] = tagged["two_sided"] & tagged["mid"].between(lo, hi)
-        tagged["in_band_cf"] = tagged["two_sided_carryforward"] & tagged[
-            "mid_carryforward"
-        ].between(lo, hi)
+        # Both masks require in_trading_window so the primary and the robustness
+        # variant are measured over the same snapshots and differ only in the
+        # staleness rule.
+        tagged["in_band_carryforward"] = (
+            tagged["in_trading_window"]
+            & tagged["two_sided_carryforward"]
+            & tagged["mid_carryforward"].between(lo, hi)
+        )
+        tagged["in_band_strict15"] = (
+            tagged["in_trading_window"] & tagged["two_sided"] & tagged["mid"].between(lo, hi)
+        )
         grouped = tagged.groupby(
             ["horizon_h", "era", "season", "regime", "regime_uncertain"],
             dropna=False,
@@ -395,91 +458,77 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
             horizon_h, era, season, regime, uncertain = keys
             n_market_days = group[["ticker", "climate_date"]].drop_duplicates().shape[0]
             n_days = group["climate_date"].nunique()
-            coverage = float(group["quote_valid"].mean()) if len(group) else 0.0
-            two_sided_share = float(group["two_sided"].mean()) if len(group) else 0.0
-            quoted = group[group["quote_valid"]]
-            two_sided_given_quote = float(quoted["two_sided"].mean()) if len(quoted) else 0.0
             empty_book_share = float(group["extreme_empty_book"].mean()) if len(group) else 0.0
-            in_window = group[group["in_trading_window"]]
             outside_window_share = (
                 float((~group["in_trading_window"]).mean()) if len(group) else 0.0
             )
-            coverage_given_open = float(in_window["quote_valid"].mean()) if len(in_window) else 0.0
-            coverage_cf = float(group["quote_present"].mean()) if len(group) else 0.0
-            two_sided_share_cf = (
-                float(group["two_sided_carryforward"].mean()) if len(group) else 0.0
-            )
             ages_min = group.loc[group["quote_present"], "quote_age_sec"] / 60.0
-            spread_rows = group[group["in_band"] & group["spread"].notna()]
-            spread_rows_cf = group[group["in_band_cf"] & group["spread_carryforward"].notna()]
-            per_day = (
-                group.groupby("climate_date")["in_band"].sum()
-                if len(group)
-                else pd.Series(dtype=float)
+            row: dict[str, Any] = {
+                "horizon_h": horizon_h,
+                "era": era,
+                "season": season,
+                "regime": regime,
+                "regime_uncertain": uncertain,
+                "band": band_name,
+                "n_snapshots": int(len(group)),
+                "n_market_days": int(n_market_days),
+                "n_days": int(n_days),
+                # A2 keeps `coverage` unconditional: a market that was never open
+                # has to show up somewhere, and that is here.
+                "coverage": float(group["quote_valid"].mean()) if len(group) else 0.0,
+                "coverage_carryforward": (
+                    float(group["quote_present"].mean()) if len(group) else 0.0
+                ),
+                "outside_trading_window_share": outside_window_share,
+                "extreme_empty_book_share": empty_book_share,
+                "quote_age_median_min": (float(ages_min.median()) if len(ages_min) else None),
+                "quote_age_p90_min": (float(ages_min.quantile(0.90)) if len(ages_min) else None),
+                "volume_sum": float(group["volume"].fillna(0).sum()),
+            }
+            row.update(
+                _variant_metrics(
+                    group,
+                    band_mask=group["in_band_carryforward"],
+                    two_sided_col="two_sided_carryforward",
+                    spread_col="spread_carryforward",
+                    quote_col="quote_present",
+                    suffix="carryforward",
+                )
             )
-            rows.append(
-                {
-                    "horizon_h": horizon_h,
-                    "era": era,
-                    "season": season,
-                    "regime": regime,
-                    "regime_uncertain": uncertain,
-                    "band": band_name,
-                    "n_snapshots": int(len(group)),
-                    "n_market_days": int(n_market_days),
-                    "n_days": int(n_days),
-                    "coverage": coverage,
-                    "two_sided_share": two_sided_share,
-                    "two_sided_share_given_quote": two_sided_given_quote,
-                    "extreme_empty_book_share": empty_book_share,
-                    "outside_trading_window_share": outside_window_share,
-                    "coverage_given_open": coverage_given_open,
-                    "coverage_carryforward": coverage_cf,
-                    "two_sided_share_carryforward": two_sided_share_cf,
-                    "quote_age_median_min": (float(ages_min.median()) if len(ages_min) else None),
-                    "quote_age_p90_min": (
-                        float(ages_min.quantile(0.90)) if len(ages_min) else None
-                    ),
-                    "tradeable_brackets_per_day_median": (
-                        float(per_day.median()) if len(per_day) else 0.0
-                    ),
-                    "median_spread": (
-                        float(spread_rows["spread"].median()) if len(spread_rows) else None
-                    ),
-                    "p25": (
-                        float(spread_rows["spread"].quantile(0.25)) if len(spread_rows) else None
-                    ),
-                    "p75": (
-                        float(spread_rows["spread"].quantile(0.75)) if len(spread_rows) else None
-                    ),
-                    "p90": (
-                        float(spread_rows["spread"].quantile(0.90)) if len(spread_rows) else None
-                    ),
-                    "n_spread_obs": int(len(spread_rows)),
-                    "median_spread_carryforward": (
-                        float(spread_rows_cf["spread_carryforward"].median())
-                        if len(spread_rows_cf)
-                        else None
-                    ),
-                    "n_spread_obs_carryforward": int(len(spread_rows_cf)),
-                    "volume_sum": float(group["volume"].fillna(0).sum()),
-                }
+            row.update(
+                _variant_metrics(
+                    group,
+                    band_mask=group["in_band_strict15"],
+                    two_sided_col="two_sided",
+                    spread_col="spread",
+                    quote_col="quote_valid",
+                    suffix="strict15",
+                )
             )
+            rows.append(row)
     return pd.DataFrame(rows)
 
 
 def write_figures(snapshots: pd.DataFrame, out_dir: Path) -> list[Path]:
+    """Plot the primary (carry-forward, in-window) variant only.
+
+    The strict-15 robustness variant lives in the CSV; putting both on one axis
+    would invite reading the gap as a trend rather than as a staleness artifact.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     paths: list[Path] = []
-    two_sided = snapshots[snapshots["two_sided"] & snapshots["spread"].notna()]
+    open_and_quoted = snapshots[snapshots["in_trading_window"]]
+    two_sided = open_and_quoted[
+        open_and_quoted["two_sided_carryforward"] & open_and_quoted["spread_carryforward"].notna()
+    ]
 
     fig, ax = plt.subplots()
     if not two_sided.empty:
-        stats = two_sided.groupby("horizon_h")["spread"].median()
+        stats = two_sided.groupby("horizon_h")["spread_carryforward"].median()
         ax.plot(stats.index, stats.values, marker="o")
     ax.set_xlabel("horizon hours before climate-day end")
     ax.set_ylabel("median spread (dollars)")
-    ax.set_title("spread vs horizon")
+    ax.set_title("spread vs horizon (carry-forward, in window)")
     path = out_dir / "spread_vs_horizon.png"
     fig.savefig(path)
     plt.close(fig)
@@ -487,9 +536,9 @@ def write_figures(snapshots: pd.DataFrame, out_dir: Path) -> list[Path]:
 
     fig, ax = plt.subplots()
     if not two_sided.empty:
-        two_sided.boxplot(column="spread", by="season", ax=ax)
+        two_sided.boxplot(column="spread_carryforward", by="season", ax=ax)
         fig.suptitle("")
-    ax.set_title("spread by season")
+    ax.set_title("spread by season (carry-forward, in window)")
     ax.set_ylabel("spread (dollars)")
     path = out_dir / "spread_by_season.png"
     fig.savefig(path)
@@ -497,11 +546,15 @@ def write_figures(snapshots: pd.DataFrame, out_dir: Path) -> list[Path]:
     paths.append(path)
 
     fig, ax = plt.subplots()
-    if not snapshots.empty:
-        daily = snapshots[snapshots["horizon_h"] == 1].groupby("climate_date")["two_sided"].sum()
+    if not open_and_quoted.empty:
+        daily = (
+            open_and_quoted[open_and_quoted["horizon_h"] == 1]
+            .groupby("climate_date")["two_sided_carryforward"]
+            .sum()
+        )
         if not daily.empty:
             ax.plot(pd.to_datetime(daily.index), daily.values, marker=".", linestyle="none")
-    ax.set_title("two-sided brackets per day (T-1h)")
+    ax.set_title("two-sided brackets per day (T-1h, carry-forward)")
     ax.set_ylabel("count")
     path = out_dir / "brackets_per_day.png"
     fig.savefig(path)
@@ -510,11 +563,11 @@ def write_figures(snapshots: pd.DataFrame, out_dir: Path) -> list[Path]:
 
     fig, ax = plt.subplots()
     if not snapshots.empty:
-        share = snapshots.groupby("horizon_h")["two_sided"].mean()
+        share = snapshots.groupby("horizon_h")["two_sided_carryforward"].mean()
         ax.plot(share.index, share.values, marker="o")
     ax.set_xlabel("horizon hours before climate-day end")
     ax.set_ylabel("two-sided share")
-    ax.set_title("two-sidedness vs horizon")
+    ax.set_title("two-sidedness vs horizon (carry-forward)")
     path = out_dir / "twosided_vs_horizon.png"
     fig.savefig(path)
     plt.close(fig)
