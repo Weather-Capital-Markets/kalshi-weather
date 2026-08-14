@@ -1,0 +1,28 @@
+api:
+  base_url: "https://external-api.kalshi.com/trade-api/v2"
+  paths:
+    markets: "/markets"
+    market: "/markets/{ticker}"
+    orderbook: "/markets/{ticker}/orderbook"
+    trades: "/markets/trades"
+  timeout_sec: 15
+  max_requests_per_sec: 5
+  orderbook_depth: 0
+  max_retries: 5
+  trades_page_limit: 1000
+
+series:
+  - KXHIGHNY
+
+cadence_sec:
+  markets: 300
+  orderbook: 5
+  trades: 60
+  settlement: 86400
+
+storage:
+  raw_dir: "data/raw"
+  heartbeat_db: "data/heartbeat.sqlite"
+
+logging:
+  level: INFO
