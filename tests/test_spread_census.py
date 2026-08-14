@@ -17,6 +17,7 @@ from analysis.spread_census import (
     is_two_sided,
     last_candle_at_or_before,
     run,
+    summarize,
     ticker_climate_date,
 )
 from ingestion.climate_day import climate_day_end
@@ -130,6 +131,48 @@ def test_snapshot_outside_trading_window_is_flagged() -> None:
     assert bool(by_horizon.loc[24, "in_trading_window"])
     assert bool(by_horizon.loc[36, "in_trading_window"])
     assert climate_date == "2024-08-15"
+
+
+def test_post_close_carried_quote_is_excluded_from_primary_spread_stats() -> None:
+    # A 2024-era market shut at 03:59Z, an hour before the climate-day end. Its
+    # last quote carries forward to T-1h, but the market was not tradeable then,
+    # so the primary statistic must not count it.
+    ticker = "HIGHNY-24AUG15-T83"
+    t_end = climate_day_end(datetime.fromisoformat("2024-08-15").date())
+    last_quote_ts = int((t_end - timedelta(hours=4)).timestamp())
+    candles = [
+        candle_fields(
+            {
+                "end_period_ts": last_quote_ts,
+                "yes_bid": {"close": "0.4000"},
+                "yes_ask": {"close": "0.4500"},
+                "volume": "5.00",
+            }
+        )
+    ]
+    snapshots, _stats = build_snapshot_table(
+        markets=[
+            {
+                "ticker": ticker,
+                "open_time": "2024-08-14T14:00:00Z",
+                "close_time": "2024-08-16T03:59:00Z",
+            }
+        ],
+        candles_by_ticker={ticker: candles},
+        labels=pd.DataFrame(),
+    )
+    row = snapshots[snapshots["horizon_h"] == 1].iloc[0]
+    assert bool(row["two_sided_carryforward"])
+    assert not bool(row["in_trading_window"])
+
+    summary = summarize(snapshots)
+    at_t1 = summary[(summary["horizon_h"] == 1) & (summary["band"] == "20_80")]
+    assert int(at_t1["n_spread_obs_carryforward"].sum()) == 0
+    assert int(at_t1["n_spread_obs_strict15"].sum()) == 0
+    assert float(at_t1["outside_trading_window_share"].max()) == 1.0
+    # T-3h is inside the window, so the same carried quote does count there.
+    at_t3 = summary[(summary["horizon_h"] == 3) & (summary["band"] == "20_80")]
+    assert int(at_t3["n_spread_obs_carryforward"].sum()) == 1
 
 
 def test_extreme_quotes_are_not_two_sided() -> None:
@@ -269,9 +312,85 @@ def test_census_writes_csv_and_pngs(tmp_path: Path) -> None:
     ):
         assert (out_dir / name).exists()
     summary = pd.read_csv(out_dir / "spread_census.csv")
-    assert "coverage" in summary.columns
-    assert "two_sided_share" in summary.columns
-    assert "tradeable_brackets_per_day_median" in summary.columns
-    assert "extreme_empty_book_share" in summary.columns
-    assert "era" in summary.columns
+    # The pre-registration names these columns, so a rename is a protocol change.
+    for column in (
+        "coverage",
+        "coverage_carryforward",
+        "outside_trading_window_share",
+        "extreme_empty_book_share",
+        "quote_age_median_min",
+        "quote_age_p90_min",
+        "era",
+    ):
+        assert column in summary.columns
+    for stem in (
+        "two_sided_share",
+        "two_sided_share_given_quote",
+        "coverage_given_open",
+        "tradeable_brackets_per_day_median",
+        "median_spread",
+        "p25",
+        "p75",
+        "p90",
+        "n_spread_obs",
+    ):
+        assert f"{stem}_carryforward" in summary.columns
+        assert f"{stem}_strict15" in summary.columns
+        # An unsuffixed survivor would leave the reader guessing which rule it used.
+        assert stem not in summary.columns
     assert set(summary["horizon_h"]) == set(HORIZONS_H)
+
+
+def test_summarize_exclnoreconcile_drops_excluded_tickers() -> None:
+    snapshots = pd.DataFrame(
+        [
+            {
+                "ticker": "KEEP",
+                "climate_date": "2026-07-04",
+                "horizon_h": 24,
+                "era": "2022+",
+                "season": "summer",
+                "regime": None,
+                "regime_uncertain": True,
+                "in_trading_window": True,
+                "two_sided_carryforward": True,
+                "mid_carryforward": 0.5,
+                "spread_carryforward": 0.05,
+                "quote_present": True,
+                "two_sided": True,
+                "mid": 0.5,
+                "spread": 0.05,
+                "quote_valid": True,
+                "extreme_empty_book": False,
+                "volume": 1.0,
+                "quote_age_sec": 60.0,
+            },
+            {
+                "ticker": "DROP",
+                "climate_date": "2026-07-04",
+                "horizon_h": 24,
+                "era": "2022+",
+                "season": "summer",
+                "regime": None,
+                "regime_uncertain": True,
+                "in_trading_window": True,
+                "two_sided_carryforward": True,
+                "mid_carryforward": 0.9,
+                "spread_carryforward": 0.5,
+                "quote_present": True,
+                "two_sided": True,
+                "mid": 0.9,
+                "spread": 0.5,
+                "quote_valid": True,
+                "extreme_empty_book": False,
+                "volume": 1.0,
+                "quote_age_sec": 60.0,
+            },
+        ]
+    )
+    summary = summarize(snapshots, excl_noreconcile_tickers=frozenset({"DROP"}))
+    row = summary[(summary["horizon_h"] == 24) & (summary["band"] == "10_90")].iloc[0]
+    assert row["median_spread_carryforward"] == 0.275
+    assert row["median_spread_exclnoreconcile"] == 0.05
+    assert row["n_spread_obs_carryforward"] == 2
+    assert row["n_spread_obs_exclnoreconcile"] == 1

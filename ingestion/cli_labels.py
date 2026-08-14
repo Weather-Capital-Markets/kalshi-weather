@@ -46,6 +46,9 @@ MAXIMUM_LINE = re.compile(
     r"^\s*MAXIMUM\s+(-?\d+|MM)\s+(\d{1,2}:?\d{0,2}\s*[AP]M)?",
     re.IGNORECASE | re.MULTILINE,
 )
+# IEM rejects anything larger with HTTP 422. A CLINYC month is ~100 issuances,
+# so this is not a binding constraint, but _fetch_month checks anyway.
+IEM_MAX_LIMIT = 9999
 CSV_FIELDS = [
     "issuance_ts_utc",
     "climate_date",
@@ -187,16 +190,20 @@ class CliLabelBackfill:
 
     def run(self) -> int:
         today = datetime.now(timezone.utc).date()
+        current_month = f"{today.year:04d}-{today.month:02d}"
         for month in month_range(self.start, today):
             if self._shutdown:
                 break
             if month_complete(self.conn, month):
                 continue
-            self._fetch_month(month)
+            # The current month is still accumulating issuances, so a successful
+            # fetch is not a complete one; marking it done would make every later
+            # run skip the rest of the month.
+            self._fetch_month(month, can_complete=month != current_month)
         self.rebuild_csv()
         return 0
 
-    def _fetch_month(self, month: str) -> None:
+    def _fetch_month(self, month: str, *, can_complete: bool = True) -> None:
         year, mon = (int(part) for part in month.split("-"))
         last = monthrange(year, mon)[1]
         # IEM retrieve accepts `YYYY-MM-DD HH:MM` (space, no Z). ISO-Z was rejected.
@@ -207,7 +214,7 @@ class CliLabelBackfill:
             "fmt": "text",
             "sdate": sdate,
             "edate": edate,
-            "limit": 10000,
+            "limit": IEM_MAX_LIMIT,
             "order": "asc",
         }
         result = self.client.get(self.iem_path, params=params)
@@ -225,6 +232,14 @@ class CliLabelBackfill:
             logger.warning("IEM month %s failed status=%s", month, result.status_code)
             return
         text = result.text_body or ""
+        n_products = len(split_products(text))
+        if n_products >= IEM_MAX_LIMIT:
+            logger.warning(
+                "IEM month %s returned %s products, at the %s cap; the month may be truncated",
+                month,
+                n_products,
+                IEM_MAX_LIMIT,
+            )
         payload = {"text": text, "month": month, "http_status": result.status_code}
         self.writer.write(
             ts_utc=utc_now_iso(),
@@ -235,7 +250,8 @@ class CliLabelBackfill:
             latency_ms=result.latency_ms,
             payload=payload,
         )
-        set_month_complete(self.conn, month, utc_now_iso())
+        if can_complete:
+            set_month_complete(self.conn, month, utc_now_iso())
 
     def rebuild_csv(self) -> None:
         rows: list[dict[str, Any]] = []

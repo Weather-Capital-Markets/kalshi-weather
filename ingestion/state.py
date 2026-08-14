@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS history_markets (
   series_ticker TEXT,
   open_time TEXT,
   close_time TEXT,
+  settlement_ts TEXT,
   status TEXT,
   enumerated_utc TEXT NOT NULL
 );
@@ -194,8 +195,19 @@ CREATE TABLE IF NOT EXISTS cli_month_progress (
 """
 
 
+BACKFILL_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("history_markets", "settlement_ts", "TEXT"),
+)
+
+
 def init_backfill_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(BACKFILL_SCHEMA_SQL)
+    # CREATE TABLE IF NOT EXISTS is a no-op on a database written by an earlier
+    # schema, so columns added later need an explicit ALTER.
+    for table, column, decl in BACKFILL_MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     conn.commit()
 
 
@@ -208,27 +220,39 @@ def upsert_history_market(
     close_time: str | None,
     status: str | None,
     enumerated_utc: str,
+    settlement_ts: str | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO history_markets (
-            ticker, series_ticker, open_time, close_time, status, enumerated_utc
-        ) VALUES (?, ?, ?, ?, ?, ?)
+            ticker, series_ticker, open_time, close_time, settlement_ts,
+            status, enumerated_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ticker) DO UPDATE SET
             series_ticker = excluded.series_ticker,
             open_time = excluded.open_time,
             close_time = excluded.close_time,
+            settlement_ts = excluded.settlement_ts,
             status = excluded.status,
             enumerated_utc = excluded.enumerated_utc
         """,
-        (ticker, series_ticker, open_time, close_time, status, enumerated_utc),
+        (
+            ticker,
+            series_ticker,
+            open_time,
+            close_time,
+            settlement_ts,
+            status,
+            enumerated_utc,
+        ),
     )
     conn.commit()
 
 
 def list_history_markets(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT ticker, series_ticker, open_time, close_time, status FROM history_markets"
+        "SELECT ticker, series_ticker, open_time, close_time, settlement_ts, status "
+        "FROM history_markets"
     ).fetchall()
 
 

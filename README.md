@@ -207,13 +207,41 @@ python -m ingestion.kalshi_history --probe --ticker KXHIGHNY-24JUL04-T90
 # 4. Bulk history — only after both probe readouts are confirmed
 python -m ingestion.kalshi_history
 
-# CLINYC labels (independent of Kalshi candles; can overlap with step 4)
+# 5. CLINYC labels — run after step 4, not alongside it
 python -m ingestion.cli_labels
 
-# Census on whatever data exists (partial is valid)
-# Do not run this until kill thresholds are ratified in the root chat.
+# 6. Validate that change-emitted candles omit only uneventful periods
+python -m analysis.validate_candles
+
+# 7. Locate the venue convention changeover dates
+python -m analysis.venue_eras
+
+# 8. Census — gated on K1 v3 ratified in the root chat (date filled in); not on the
+#    pre-registered exact-equality VOLUME_RECONCILE FAIL (v3 accepts capture at 99.995%)
 python -m analysis.spread_census
 ```
+
+Steps 4 and 5 share `data/backfill.sqlite`, which is opened with plain
+`sqlite3.connect` — no WAL, no `busy_timeout`. Two writers risk
+`database is locked`, and serialising costs about two minutes since CLINYC is
+roughly 80 monthly requests at 1 rps.
+
+Step 8 is gated on **K1 v3 ratified in the root chat** (see [`knowledge/plan.md`](knowledge/plan.md)
+§3), not on the pre-registered exact-equality `VOLUME_RECONCILE` FAIL. v3 accepts capture at
+9,317/9,364 markets and names two robustness columns: `_strict15` (15-minute staleness) and
+`_exclnoreconcile` (47 volume-mismatch markets excluded). The census makes **carry-forward the
+primary statistic**: every metric that depends on the staleness rule appears as
+`*_carryforward` (primary), `*_strict15` (robustness a), and `*_exclnoreconcile` (robustness b).
+That is only sound if a tier omits a period because nothing happened rather than because data is
+missing. `validate_candles.py` tests that with two gates and prints PASS/FAIL for each; v3
+records the VOLUME_RECONCILE residual as venue bookkeeping, not a census blocker. If either
+robustness column disagrees with the primary on kill-direction, the verdict is deferred.
+
+Run step 6 only after step 4 finishes. A market whose candles are still being
+fetched is indistinguishable there from one whose candles are missing.
+
+Steps 6 and 7 read raw JSONL only and open no database, so they are safe to
+re-run at any time.
 
 `--probe` prints raw `/historical/cutoff`, one market object, and one candlestick
 page, then stops after a single markets page.
@@ -241,4 +269,12 @@ against IEM ASOS hourly KNYC (~3 summer days).
 The census counts a snapshot two-sided only when bid ≥ $0.01 and ask ≤ $0.99.
 Kalshi renders an empty book as bid 0.00 / ask 1.00; see
 [`knowledge/venue-facts.md`](knowledge/venue-facts.md) §1.4.
+
+`venue_eras.py` reports the two convention changeovers that bound era-spanning
+comparisons: the last trading time moved from 11:59 PM civil ET to a fixed
+04:59Z between climate days 2026-03-17 and 2026-03-18
+([`venue-facts.md`](knowledge/venue-facts.md) §1.8), and the settlement snapshot
+moved from 10:00 AM to 7/8 AM ET between 2024-09-03 and 2024-09-04 (§1.10).
+Before the first change the T−1h census column falls after close on every EDT
+day, which is 58% of climate days — structurally empty, not illiquid.
 
