@@ -113,7 +113,12 @@ def discover_tickers(data_dir: Path, days: list[str]) -> list[str]:
     return sorted(tickers)
 
 
-def fetch_candles(client: KalshiClient, ticker: str, start_ts: int, end_ts: int) -> list[dict[str, Any]]:
+def fetch_candles(
+    client: KalshiClient,
+    ticker: str,
+    start_ts: int,
+    end_ts: int,
+) -> list[dict[str, Any]]:
     series = ticker.split("-", 1)[0]
     path = client.path("candlesticks", series_ticker=series, ticker=ticker)
     params = {
@@ -287,7 +292,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     config = load_config(args.config)
-    markets = [part.strip() for part in args.markets.split(",") if part.strip()] if args.markets else None
+    if args.markets:
+        markets = [part.strip() for part in args.markets.split(",") if part.strip()]
+    else:
+        markets = None
     return run(
         config=config,
         data_dir=args.data_dir,

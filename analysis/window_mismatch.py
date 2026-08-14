@@ -17,6 +17,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from analysis.spread_census import season_of, select_full_day_labels
 from ingestion.climate_time import (
     cli_max_instant,
     load_cli_time_convention,
@@ -24,7 +25,6 @@ from ingestion.climate_time import (
     time_in_window,
 )
 from ingestion.config_loader import load_config
-from analysis.spread_census import season_of, select_full_day_labels
 
 plt.switch_backend("Agg")
 logger = logging.getLogger(__name__)
@@ -122,7 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
     config = load_config(args.config)
-    out_dir = args.out_dir or Path((config.get("window_mismatch") or {}).get("out_dir") or "analysis/out")
+    default_out = (config.get("window_mismatch") or {}).get("out_dir") or "analysis/out"
+    out_dir = args.out_dir or Path(default_out)
     return run(config, out_dir)
 
 

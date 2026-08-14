@@ -45,6 +45,13 @@ def test_window_mismatch_refuses_headline_when_unknown(monkeypatch) -> None:
 
     monkeypatch.setattr(module, "select_full_day_labels", fake_select)
     captured: list[str] = []
-    monkeypatch.setattr("builtins.print", lambda *args, **kwargs: captured.append(" ".join(str(a) for a in args)))
-    module.run({"storage": {}, "climate": {"cli_time_convention": "unknown"}}, module.Path("/tmp/out"))
+
+    def capture_print(*args, **kwargs):
+        captured.append(" ".join(str(a) for a in args))
+
+    monkeypatch.setattr("builtins.print", capture_print)
+    module.run(
+        {"storage": {}, "climate": {"cli_time_convention": "unknown"}},
+        module.Path("/tmp/out"),
+    )
     assert any("REFUSED" in line for line in captured)

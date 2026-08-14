@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from analysis.validate_emission_forward import compare_ticker, load_logger_books
 from analysis.spread_census import candle_fields
+from analysis.validate_emission_forward import compare_ticker, load_logger_books
 from ingestion.client import RequestResult
-from ingestion.writer import RawJsonlWriter, utc_now_iso
+from ingestion.writer import RawJsonlWriter
 
 
 def test_compare_ticker_flags_silent_book_change_without_candle(tmp_path: Path) -> None:
@@ -75,7 +75,6 @@ def test_forward_validator_run_uses_mock_client(tmp_path: Path, monkeypatch) -> 
         "KXHIGHNY-26AUG11-T90",
         "KXHIGHNY-26AUG12-T90",
     ]
-    day = "2026-08-10"
     for ticker in tickers:
         writer.write(
             ts_utc="2026-08-10T14:00:00.000Z",

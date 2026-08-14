@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from analysis.orderbook import top_of_book_from_payload
 import pytest
+
+from analysis.orderbook import top_of_book_from_payload
 
 
 def test_top_of_book_from_fixture() -> None:
