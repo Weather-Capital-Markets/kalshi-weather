@@ -81,3 +81,5 @@ asos_obs → clockb_check → [write Clock B conclusion to data-sources.md]
 window_mismatch (K2 prep)
 validate_emission_forward (run when VPS alive; rsync or on-box)
 ```
+
+**Code landed 2026-08-14** — 71 tests passing; census still not executed.
