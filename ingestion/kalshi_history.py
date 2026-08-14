@@ -141,9 +141,11 @@ class HistoryBackfill:
         series_ticker: str,
         category_key: str,
         persist: bool,
+        max_pages: int | None = None,
     ) -> list[dict[str, Any]]:
         cursor: str | None = None
         collected: list[dict[str, Any]] = []
+        pages = 0
         while not self._shutdown:
             page_params = dict(params)
             if cursor:
@@ -171,8 +173,11 @@ class HistoryBackfill:
             markets = payload.get("markets")
             if isinstance(markets, list):
                 collected.extend(m for m in markets if isinstance(m, dict))
+            pages += 1
             cursor = payload.get("cursor") or ""
             if not cursor:
+                break
+            if max_pages is not None and pages >= max_pages:
                 break
         return collected
 
@@ -324,6 +329,7 @@ class HistoryBackfill:
             series_ticker=self.series[0],
             category_key="probe",
             persist=False,
+            max_pages=1,
         )
         if not page:
             hist_path = self.client.path("historical_markets")
@@ -333,6 +339,7 @@ class HistoryBackfill:
                 series_ticker=self.series[0],
                 category_key="probe",
                 persist=False,
+                max_pages=1,
             )
         market = None
         if ticker:
