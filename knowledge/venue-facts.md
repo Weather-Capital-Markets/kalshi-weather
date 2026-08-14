@@ -337,9 +337,27 @@ but does not retroactively void a K1 verdict.
 | V1 | Settlement-time regime history: the 2021-08-06 → 2021-12-25 era (141 climate days) names no snapshot time, deferring to Rulebook Rule 100.19. Those days cannot have `data-sources.md` §1.3 applied from contract text alone. | Before labelling 2021 market days | Read Rule 100.19 as it stood in 2021 from the archived rulebook PDF |
 | V2 | The contract prose ("11:59 PM ET") contradicts `close_time` (04:59Z) after 2026-03-18 (§1.8). Whether the venue changed policy or has a stale template is unknown. | No — the timestamp is authoritative for measurement | Venue support, or watch whether the prose catches up |
 | V3 | 47 markets across 34 climate days whose candle volume does not reconcile to `volume_fp`, in both directions (§1.11). 0.0052% of total volume. K1 v3: primary includes all days; robustness column `_exclnoreconcile` drops these 47 markets; kill-direction disagreement → written discussion. Venue-lane bookkeeping explanation, not a census blocker. | No | Explain via venue support if needed; forward VPS quote check is the standing obligation for quote-only emission |
+| V4 | Weather-series maker fee for KXHIGHNY / KXHIGH* | No — **closed 2026-08-15** | §2.1; re-check before any capital commitment |
 
 ---
 
 ## 2. Fees, collateral, order types
 
-**PLACEHOLDER** — venue lane. Nothing observed yet; do not fill from recall.
+### 2.1 Weather-series trading fees (KXHIGHNY)
+
+`[V-LOCAL]` — Kalshi live fee schedule page, 2026-08-15 (screenshot retained).
+
+- **KXHIGHNY** and no **KXHIGH\*** series appear in the venue's 161-series non-standard fee
+  table. The page states **"No upcoming fee changes scheduled."**
+- **Weather maker fee: $0.00** — upgraded from inference to verified against the live fee
+  list. Both API-tier PDFs and the live page now agree.
+- **Census readout:** a 2–4¢ spread result can be read as **maker-only live** without an
+  asterisk on fees, subject to the re-check obligation below.
+
+**Re-check before any capital commitment** — fee schedules are time-sensitive (see project file
+02's time-sensitivity note). The live list must be re-verified before deploying capital, even
+though no change is scheduled today.
+
+### 2.2 Collateral, order types
+
+**PLACEHOLDER** — venue lane. Not yet observed from primary sources.
