@@ -97,6 +97,7 @@ class HistoryBackfill:
         self.period = int(hist.get("candle_period_minutes", 1))
         self.chunk_sec = int(hist.get("candle_chunk_minutes", 1440)) * 60
         self._shutdown = False
+        self._cutoff_cache: tuple[RequestResult, int | None] | None = None
 
     def close(self) -> None:
         self.writer.close()
@@ -127,11 +128,15 @@ class HistoryBackfill:
             )
 
     def fetch_cutoff(self) -> tuple[RequestResult, int | None]:
+        """Fetch /historical/cutoff once per process; cache for repeat callers."""
+        if self._cutoff_cache is not None:
+            return self._cutoff_cache
         path = self.client.path("historical_cutoff")
         result = self.client.get(path)
         self._record(result, ticker="cutoff")
         body = result.json_body if isinstance(result.json_body, dict) else None
-        return result, cutoff_ts(body)
+        self._cutoff_cache = (result, cutoff_ts(body))
+        return self._cutoff_cache
 
     def _paginate_markets(
         self,
@@ -142,6 +147,7 @@ class HistoryBackfill:
         category_key: str,
         persist: bool,
         max_pages: int | None = None,
+        stop_when_ticker: str | None = None,
     ) -> list[dict[str, Any]]:
         cursor: str | None = None
         collected: list[dict[str, Any]] = []
@@ -174,6 +180,10 @@ class HistoryBackfill:
             if isinstance(markets, list):
                 collected.extend(m for m in markets if isinstance(m, dict))
             pages += 1
+            if stop_when_ticker is not None and any(
+                m.get("ticker") == stop_when_ticker for m in collected
+            ):
+                break
             cursor = payload.get("cursor") or ""
             if not cursor:
                 break
@@ -241,9 +251,26 @@ class HistoryBackfill:
         opens: list[datetime] = []
         closes: list[datetime] = []
         by_series: dict[str, int] = {}
+        by_prefix: dict[str, int] = {}
+        by_year: dict[str, int] = {}
+        pre_cutoff = 0
+        post_cutoff = 0
+        _cutoff_result, settled_cutoff = self.fetch_cutoff()
+        example_pre_cutoff: list[str] = []
         for market in markets:
             series = str(market.get("_series_ticker") or "?")
             by_series[series] = by_series.get(series, 0) + 1
+            ticker = str(market.get("ticker") or "")
+            # The queried series is not the ticker's own prefix: /historical/markets
+            # for KXHIGHNY also returns legacy HIGHNY-* tickers.
+            prefix = ticker.split("-")[0] if "-" in ticker else "?"
+            by_prefix[prefix] = by_prefix.get(prefix, 0) + 1
+            if self._use_historical(market, settled_cutoff):
+                pre_cutoff += 1
+                if len(example_pre_cutoff) < 5:
+                    example_pre_cutoff.append(ticker)
+            else:
+                post_cutoff += 1
             open_dt = _market_dt(market, "open_time")
             close_dt = _market_dt(market, "close_time")
             if open_dt:
@@ -252,6 +279,9 @@ class HistoryBackfill:
                 closes.append(close_dt)
             if open_dt and close_dt and close_dt > open_dt:
                 hours.append((close_dt - open_dt).total_seconds() / 3600.0)
+            if close_dt:
+                year = str(close_dt.year)
+                by_year[year] = by_year.get(year, 0) + 1
         n = len(markets)
         mean_h = sum(hours) / len(hours) if hours else 0.0
         candles = n * mean_h * 60.0
@@ -266,10 +296,15 @@ class HistoryBackfill:
         fetch_hours = (reqs / rps) / 3600.0 if rps else float("inf")
         span = "n/a"
         if opens and closes:
-            span = f"{min(opens).date().isoformat()} → {max(closes).date().isoformat()}"
+            span = f"{min(opens).date().isoformat()} to {max(closes).date().isoformat()}"
         print("dry-run: market enumeration only (no candlesticks fetched)")
         print(f"markets: {n}")
-        print(f"by_series: {by_series}")
+        print(f"by_queried_series: {by_series}")
+        print(f"by_ticker_prefix: {by_prefix}")
+        print(f"by_close_year: {dict(sorted(by_year.items()))}")
+        print(f"routing_pre_cutoff_historical: {pre_cutoff}")
+        print(f"routing_post_cutoff_live: {post_cutoff}")
+        print(f"example_pre_cutoff_tickers: {example_pre_cutoff}")
         print(f"date_span_open_close: {span}")
         print(f"mean_open_hours: {mean_h:.2f}")
         print(
@@ -282,7 +317,7 @@ class HistoryBackfill:
             "contingency: if estimate exceeds "
             f"~{RATE_NOTE_GB} GB or ~{RATE_NOTE_HOURS} h, restrict candles to "
             "[T-72h, close] per market (census horizons only reach T-48h). "
-            "That decision is yours at this readout — this process will not apply it."
+            "That decision is yours at this readout - this process will not apply it."
         )
         if gb_est > RATE_NOTE_GB or fetch_hours > RATE_NOTE_HOURS:
             print("NOTE: estimate exceeds the contingency threshold.")
@@ -318,6 +353,53 @@ class HistoryBackfill:
         self._record(result, ticker=ticker)
         return result
 
+    def _find_probe_market(
+        self,
+        ticker: str,
+        live_page: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Locate one market object for --probe --ticker.
+
+        A pre-cutoff (historical-tier) ticker is not in the live settled page and
+        may not resolve via /markets/{ticker}, so fall back to walking
+        /historical/markets. Series is taken from the ticker's own prefix because
+        /historical/markets for KXHIGHNY also returns legacy HIGHNY-* tickers.
+        """
+        for item in live_page:
+            if item.get("ticker") == ticker:
+                return item
+
+        path = self.client.path("market", ticker=ticker)
+        result = self.client.get(path)
+        self._record(result, ticker=ticker)
+        body = result.json_body if isinstance(result.json_body, dict) else None
+        print("=== PROBE raw GET /markets/{ticker} ===")
+        print(f"status={result.status_code}")
+        print(json.dumps(body, indent=2, default=str))
+        if body and isinstance(body.get("market"), dict):
+            market = dict(body["market"])
+            market["_series_ticker"] = market.get("series_ticker") or self.series[0]
+            return market
+
+        hist_path = self.client.path("historical_markets")
+        for series_ticker in self.series:
+            print(f"=== PROBE searching /historical/markets series_ticker={series_ticker} ===")
+            found = self._paginate_markets(
+                path=hist_path,
+                params={"series_ticker": series_ticker, "limit": 1000},
+                series_ticker=series_ticker,
+                category_key="probe",
+                persist=False,
+                stop_when_ticker=ticker,
+            )
+            for item in found:
+                if item.get("ticker") == ticker:
+                    market = dict(item)
+                    market["_series_ticker"] = series_ticker
+                    return market
+        print(f"probe: ticker {ticker} not found in live or historical enumeration")
+        return None
+
     def probe(self, ticker: str | None) -> int:
         cutoff_result, settled_cutoff = self.fetch_cutoff()
         print("=== PROBE raw /historical/cutoff ===")
@@ -343,20 +425,7 @@ class HistoryBackfill:
             )
         market = None
         if ticker:
-            for item in page:
-                if item.get("ticker") == ticker:
-                    market = item
-                    break
-            if market is None:
-                path = self.client.path("market", ticker=ticker)
-                result = self.client.get(path)
-                self._record(result, ticker=ticker)
-                body = result.json_body if isinstance(result.json_body, dict) else None
-                print("=== PROBE raw GET /markets/{ticker} ===")
-                print(json.dumps(body, indent=2, default=str))
-                if body and isinstance(body.get("market"), dict):
-                    market = body["market"]
-                    market["_series_ticker"] = self.series[0]
+            market = self._find_probe_market(ticker, page)
         if market is None and page:
             market = page[0]
             market["_series_ticker"] = market.get("_series_ticker") or self.series[0]
