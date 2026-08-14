@@ -278,3 +278,25 @@ moved from 10:00 AM to 7/8 AM ET between 2024-09-03 and 2024-09-04 (§1.10).
 Before the first change the T−1h census column falls after close on every EDT
 day, which is 58% of climate days — structurally empty, not illiquid.
 
+## Session 2.5 — instrument calibration + forward validation (laptop only)
+
+```bash
+# A1. ASOS observations for Clock B calibration (sample from 2025-05-01)
+python -m ingestion.asos_obs
+
+# A2. Clock B measurement table (LST vs LDT hypotheses; no verdict in code)
+python -m analysis.clockb_check
+
+# B. Window-vs-climate-day mismatch rate (K2 prep)
+python -m analysis.window_mismatch
+
+# C. Forward quote-emission cross-check — run when VPS logger is alive
+python -m analysis.validate_emission_forward \
+  --data-dir /path/to/data/raw --start 2026-08-01 --end 2026-08-03
+```
+
+Item C reads `data/raw` orderbook JSONL only and never opens `heartbeat.sqlite`.
+Set `climate.cli_time_convention` in `ingestion/config.yaml` (`lst`, `ldt`, or
+`unknown`, default) before relying on Clock B or window-mismatch headline numbers.
+Census execution remains gated on K1 v3 ratification in the root chat.
+
