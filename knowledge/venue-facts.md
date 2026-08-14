@@ -39,30 +39,37 @@ Source market: `KXHIGHNY-26AUG12-T90` (event `KXHIGHNY-26AUG12`), status `finali
 Raw JSON for each was pasted in full to the session-2 chat. These are verbatim payload
 fields, not recall or documentation.
 
-### 1.1 Last trading minute aligns to the LST climate-day end
+### 1.1 Last trading minute aligns to the LST climate-day end — from 2026-03-18 only
 
-`[V-LOCAL]` — `--probe` payload, 2026-08-14.
+`[V-LOCAL]` — `--probe` payload, 2026-08-14; era bounds from
+`python -m analysis.venue_eras` over the full 9,364-market index, 2026-08-14.
 
 ```
 "close_time": "2026-08-13T04:59:00Z"
 ```
 
 04:59:00Z is 11:59 PM **EST** — one minute before the 05:00Z LST climate-day boundary, on a
-date when New York civil time was EDT (00:59 AM EDT). Kalshi's last trading minute therefore
-tracks local *standard* time year-round, not civil midnight.
+date when New York civil time was EDT (00:59 AM EDT).
+
+The earlier `(verify)` is **resolved, and the original claim was too broad**. LST alignment is
+not year-round behaviour; it is the current era only. Across all 1,829 climate days the close
+sits 61 minutes before the LST day end on 1,054 of them and 1 minute before on 774, and that
+swing is daylight saving rather than a venue decision: a close pinned to 11:59 PM *civil* ET
+lands 61 minutes early under EDT and 1 minute early under EST. Testing on EDT days only —
+where the two candidate rules name different instants — gives one changeover across five
+years, **between climate days 2026-03-17 and 2026-03-18** (1,049 identifying days before,
+148 after). See §1.8.
 
 Two consequences:
 
 - Independent corroboration of the fixed-offset UTC−5 climate day in `data-sources.md` §1.1,
-  from the venue side rather than the NWS side.
-- The spread-census anchor **T = next LST midnight (05:00Z)** sits inside the venue's own
-  trading window at every horizon measured. The tightest horizon, T−1h = 04:00Z, is an hour
-  before close — a real tradeable moment, not a post-close artifact.
+  from the venue side rather than the NWS side — but only for the post-2026-03-18 era.
+- The spread-census anchor **T = next LST midnight (05:00Z)** sits inside the venue's trading
+  window at every horizon **only in the current era**. Before 2026-03-18, T−1h = 04:00Z falls
+  after the 03:59Z close on every EDT day, which is 1,054 of 1,829 climate days (58%). The
+  census reports `outside_trading_window_share` so that column is never misread as illiquidity.
 
-`(verify)` — single market, single date. Confirm the 04:59Z close holds across a winter (EST)
-market-day before treating the EST alignment as year-round.
-
-### 1.2 Settlement lands on the first 7/8 AM ET report
+### 1.2 Settlement lands on the first 7/8 AM ET report — current era only
 
 `[V-LOCAL]` payload fields + `[V-PRIMARY]` contract text, both 2026-08-14.
 
@@ -79,6 +86,9 @@ market-day before treating the EST alignment as year-round.
 12:04:54Z is 8:04 AM ET, consistent with the stated settle-on-first-7-or-8-AM rule. Note
 `expiration_time` is the one-week backstop (2026-08-19) while `expected_expiration_time` is
 the same-day 14:00Z expectation; actual settlement preceded both.
+
+This wording holds from 2024-09-04 onward only; earlier eras name 10:00 AM or nothing at all.
+See §1.10 before applying it to a historical market day.
 
 ### 1.3 Settlement source is the NWS Climatological Report (Daily), named verbatim
 
@@ -187,30 +197,48 @@ Two consequences, both measurement-critical:
 `(verify)` — one market, and a nearly dead one (`volume_fp` 63.00 lifetime). Candle density
 plausibly scales with activity; confirm against a liquid market once bulk data exists.
 
-### 1.8 Last trading time changed convention between 2024 and 2026
+### 1.8 Last trading time changed once, between climate days 2026-03-17 and 2026-03-18
 
-`[V-LOCAL]` payloads (2026-08-14) + `[V-PRIMARY]` contract text.
+`[V-LOCAL]` — `python -m analysis.venue_eras` over all 9,364 enumerated markets
+(1,829 climate days, 2021-08-06 → 2026-08-12), 2026-08-14. Supersedes the earlier
+two-market reading of this entry, which put the change "between 2024 and 2026".
 
-| Market | `close_time` | Local equivalent | vs LST day end (05:00Z) |
+Measured naively, the offset from the LST climate-day end flips twice a year and would
+suggest thirteen changeovers:
+
+| `close_time` offset | climate days | first | last |
 |---|---|---|---|
-| `HIGHNY-24AUG15-T83` | `2024-08-16T03:59:00Z` | 11:59 PM **EDT** (civil ET) | 61 min **before** |
-| `KXHIGHNY-26AUG12-T90` | `2026-08-13T04:59:00Z` | 11:59 PM **EST** | 1 min before |
+| 61 min before day end | 1,054 | 2021-08-06 | 2026-03-17 |
+| 1 min before day end | 774 | 2021-11-07 | 2026-08-12 |
+| 721 min before day end | 1 | 2021-11-27 | 2021-11-27 |
 
-Both contracts *say* "11:59 PM ET", but the 2024 timestamp is civil-ET midnight while the
-2026 timestamp is LST midnight. The effective last trading minute moved one hour later, in
-UTC terms, between the two eras.
+Every one of those flips lands on a daylight-saving boundary. A close pinned to 11:59 PM
+civil ET *is* 61 minutes before the LST day end under EDT and 1 minute before it under EST,
+so the seasonal swing is the null hypothesis, not a finding. **Under EST the two candidate
+rules name the same instant and identify nothing**; only EDT days carry information. Excluding
+the 10 daylight-saving transition climate days — where the venue's own close sits an hour from
+both rules (2021-11-07, 2022-03-13, 2022-11-06, 2023-03-12, 2023-11-05, 2024-03-10,
+2024-11-03, 2025-03-09, 2025-11-02, 2026-03-08) — leaves one change across 1,197 identifying
+days:
 
-Census consequence: for pre-change markets the **T−1h snapshot (04:00Z) falls after close**,
-so that column is structurally empty for the older era — the same class of artifact as T−48h
-predating market open. `spread_census.py` records `in_trading_window` per snapshot and reports
-`outside_trading_window_share` so "shut" is never read as "unquoted".
+| last-trading-time rule | climate days | first | last |
+|---|---|---|---|
+| 11:59 PM civil ET | 1,049 | 2021-08-06 | 2026-03-17 |
+| 11:59 PM LST (fixed 04:59Z) | 148 | 2026-03-18 | 2026-08-12 |
+| both (EST, non-identifying) | 621 | 2021-11-08 | 2026-03-07 |
+| other (11:59 LST) | 1 | 2021-11-27 | 2021-11-27 |
 
-Settlement timing also differs: the 2024 contract expires on "the first 10:00 AM following
-the release of the data", the 2026 contract on "the first 7:00 or 8:00 AM ET" (§1.2).
+**The contract text did not follow the timestamp.** `early_close_condition` still reads
+"The Last Trading Time will be 11:59 PM ET" on post-change markets whose `close_time` is
+04:59Z — 12:59 AM EDT, an hour after the stated time. `[V-PRIMARY]` (`KXHIGHNY-26AUG12-T90`
+text) against `[V-LOCAL]` (its own `close_time`). Trust the timestamp, not the prose, and do
+not re-derive the last trading minute from contract wording.
 
-`(verify)` — two markets, two dates. The changeover date is unknown and is computable from
-`close_time` across the persisted market index once bulk enumeration lands; do that before
-any era-spanning liquidity comparison.
+Census consequence: for pre-2026-03-18 EDT markets the **T−1h snapshot (04:00Z) falls after
+close** — 1,054 of 1,829 climate days — so that column is structurally empty there, the same
+class of artifact as T−48h predating market open. `spread_census.py` records
+`in_trading_window` per snapshot and reports `outside_trading_window_share` so "shut" is never
+read as "unquoted".
 
 ### 1.9 Legacy tickers are not resolvable via the live single-market endpoint
 
@@ -223,6 +251,41 @@ through the historical enumeration for pre-cutoff tickers.
 Note the historical market object also lacks the live tier's `floor_strike`-style framing for
 this contract (it carries `cap_strike: 83`, `strike_type: "less"`), and `expiration_value` is
 an empty string rather than a number.
+
+### 1.10 Settlement-time regime history
+
+`[V-LOCAL]` + `[V-PRIMARY]` — `python -m analysis.venue_eras`, contract text of all 9,364
+markets, 2026-08-14.
+
+The snapshot after which expiration occurs is stated in `early_close_condition` /
+`rules_secondary` and moved twice:
+
+| contract phrase | climate days | first | last |
+|---|---|---|---|
+| unspecified (Rule 100.19 reference only) | 141 | 2021-08-06 | 2021-12-25 |
+| "the first 10:00 AM following the release of the data" | 980 | 2021-12-28 | 2024-09-03 |
+| "the first 7:00 or 8:00 AM ET following the release of the data" | 708 | 2024-09-04 | 2026-08-12 |
+
+Changeovers: between climate days **2021-12-25 and 2021-12-28** (no market days in the gap),
+and between **2024-09-03 and 2024-09-04**. §1.2's 7/8 AM finding is therefore the current era
+only, not a property of the series.
+
+Note the legacy wording omits "ET"; a regex requiring it silently reclassifies the entire
+10 AM era as unspecified.
+
+This is measurement-critical for labels, not just trivia: a 10 AM snapshot can see a CLINYC
+revision that a 7/8 AM snapshot cannot. `data-sources.md` §1.3 defines the label as the latest
+issuance visible at the settlement snapshot, so the snapshot time is era-dependent and the
+label rule cannot be applied with a single fixed hour across the archive.
+
+---
+
+## 1.99 Open items (venue lane)
+
+| # | Item | Blocking? | Resolution path |
+|---|---|---|---|
+| V1 | Settlement-time regime history: the 2021-08-06 → 2021-12-25 era (141 climate days) names no snapshot time, deferring to Rulebook Rule 100.19. Those days cannot have `data-sources.md` §1.3 applied from contract text alone. | Before labelling 2021 market days | Read Rule 100.19 as it stood in 2021 from the archived rulebook PDF |
+| V2 | The contract prose ("11:59 PM ET") contradicts `close_time` (04:59Z) after 2026-03-18 (§1.8). Whether the venue changed policy or has a stale template is unknown. | No — the timestamp is authoritative for measurement | Venue support, or watch whether the prose catches up |
 
 ---
 

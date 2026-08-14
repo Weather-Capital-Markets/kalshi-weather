@@ -65,6 +65,14 @@ tool's *interpretation* — only on quoted raw output cross-checked against prim
 Do **not** label from METAR-derived maxima, GHCN-D, or "final" climate data — those can disagree
 with what Kalshi settled on. Rationale and settlement mechanics: `venue-facts.md`.
 
+**Snapshot time is era-dependent; see `venue-facts.md` §1.10 for the settlement-time history.**
+The rule above is stated with the current 7/8 AM snapshot, but that wording only holds from
+2024-09-04. Earlier markets settle on "the first 10:00 AM", and the first 141 climate days
+(2021-08-06 → 2021-12-25) name no time in the contract at all. Applying one fixed hour across
+the archive would mis-select the issuance for most market days — a 10 AM snapshot can see a
+CLINYC revision an 8 AM snapshot cannot. `[V-LOCAL]` — `python -m analysis.venue_eras` over
+all 9,364 markets, 2026-08-14. Tracked as O9.
+
 ---
 
 ## 2. NBM gridded archive (AWS)
@@ -257,6 +265,7 @@ NNN:BYTEOFF:d=YYYYMMDDCC:TMP:2 m above ground:A-B hour min fcst:prob <233:prob f
 | O6 | Hourly `core` grid extent by era (36 h vs 48 h; 3-hourly beyond) | No | idx enumeration during backfill |
 | O7 | One-click confirmation of `[REPORTED]` URLs (NWSI 10-1004, 10-201, lot-FAQ, ndfd_metadata, NBM Versions) | Before citing externally | 10 minutes of clicks; fix links in place |
 | O8 | Exact KNYC station coords + gridpoint-selection policy | Before first grid extraction | MDL station table / bulletin metadata |
+| O9 | §1.3 label selection needs a per-era settlement snapshot hour (10 AM before 2024-09-04, 7/8 AM after, unspecified before 2021-12-28). One fixed hour silently mis-selects the issuance, which is the exact silent-label-error class §1.3 exists to prevent | Before building labels for pre-2024-09-04 market days | Take era bounds from `venue-facts.md` §1.10; resolve the 2021 era from Rulebook Rule 100.19 (venue lane, V1) |
 
 **Decisions pending in other lanes (not this file's to make):** Polymarket logger inclusion
 (root chat, recorded decision); knowledge-file naming set (root chat); Chicago settlement
