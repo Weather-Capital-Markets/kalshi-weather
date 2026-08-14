@@ -1,0 +1,19 @@
+{
+  "trades": [
+    {
+      "trade_id": "trade-001",
+      "ticker": "KXHIGHNY-26AUG14-T90",
+      "price": 42,
+      "count": 10,
+      "created_time": "2026-08-14T12:00:00Z"
+    },
+    {
+      "trade_id": "trade-002",
+      "ticker": "KXHIGHNY-26AUG14-T92",
+      "price": 38,
+      "count": 5,
+      "created_time": "2026-08-14T12:01:00Z"
+    }
+  ],
+  "cursor": "next-page-cursor"
+}

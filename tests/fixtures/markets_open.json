@@ -1,0 +1,17 @@
+{
+  "markets": [
+    {
+      "ticker": "KXHIGHNY-26AUG14-T90",
+      "event_ticker": "KXHIGHNY-26AUG14",
+      "status": "active",
+      "close_time": "2026-08-15T03:59:00Z"
+    },
+    {
+      "ticker": "KXHIGHNY-26AUG14-T92",
+      "event_ticker": "KXHIGHNY-26AUG14",
+      "status": "active",
+      "close_time": "2026-08-15T03:59:00Z"
+    }
+  ],
+  "cursor": ""
+}
