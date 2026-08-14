@@ -221,3 +221,6 @@ __marimo__/
 data/
 *.sqlite
 *.sqlite-journal
+
+# Cursor editor state
+.cursor/
