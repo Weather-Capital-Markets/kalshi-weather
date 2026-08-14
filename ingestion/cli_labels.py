@@ -187,16 +187,20 @@ class CliLabelBackfill:
 
     def run(self) -> int:
         today = datetime.now(timezone.utc).date()
+        current_month = f"{today.year:04d}-{today.month:02d}"
         for month in month_range(self.start, today):
             if self._shutdown:
                 break
             if month_complete(self.conn, month):
                 continue
-            self._fetch_month(month)
+            # The current month is still accumulating issuances, so a successful
+            # fetch is not a complete one; marking it done would make every later
+            # run skip the rest of the month.
+            self._fetch_month(month, can_complete=month != current_month)
         self.rebuild_csv()
         return 0
 
-    def _fetch_month(self, month: str) -> None:
+    def _fetch_month(self, month: str, *, can_complete: bool = True) -> None:
         year, mon = (int(part) for part in month.split("-"))
         last = monthrange(year, mon)[1]
         # IEM retrieve accepts `YYYY-MM-DD HH:MM` (space, no Z). ISO-Z was rejected.
@@ -235,7 +239,8 @@ class CliLabelBackfill:
             latency_ms=result.latency_ms,
             payload=payload,
         )
-        set_month_complete(self.conn, month, utc_now_iso())
+        if can_complete:
+            set_month_complete(self.conn, month, utc_now_iso())
 
     def rebuild_csv(self) -> None:
         rows: list[dict[str, Any]] = []

@@ -47,8 +47,8 @@ def test_parser_final_and_intermediate_issuances() -> None:
     assert intermediates[0]["time_of_high_raw"] == "105 PM"
 
 
-def test_month_resume_skips_completed(tmp_path: Path) -> None:
-    config = {
+def _backfill_config(tmp_path: Path) -> dict:
+    return {
         "api": {
             "base_url": "https://example.test/",
             "paths": {"markets": "/markets"},
@@ -64,7 +64,10 @@ def test_month_resume_skips_completed(tmp_path: Path) -> None:
         "cli_labels": {"start_date": "2026-07-01"},
         "logging": {"level": "WARNING"},
     }
-    app = CliLabelBackfill(config)
+
+
+def test_month_resume_skips_completed(tmp_path: Path) -> None:
+    app = CliLabelBackfill(_backfill_config(tmp_path))
 
     class BoomClient:
         def close(self) -> None:
@@ -80,5 +83,37 @@ def test_month_resume_skips_completed(tmp_path: Path) -> None:
             mock_datetime.now.return_value = datetime(2026, 7, 15, tzinfo=timezone.utc)
             assert app.run() == 0
         assert month_complete(app.conn, "2026-07")
+    finally:
+        app.close()
+
+
+def test_current_month_is_not_marked_complete(tmp_path: Path) -> None:
+    # August is still accumulating issuances; one successful fetch on the 14th
+    # must not stop a later run from picking up the rest of the month.
+    config = _backfill_config(tmp_path)
+    config["cli_labels"]["start_date"] = "2026-07-01"
+    app = CliLabelBackfill(config)
+
+    class OkClient:
+        def close(self) -> None:
+            return None
+
+        def get(self, path: str, *, params=None) -> RequestResult:
+            return RequestResult(
+                status_code=200,
+                latency_ms=1,
+                json_body=None,
+                error_text=None,
+                endpoint=path,
+                text_body="",
+            )
+
+    try:
+        app.client = OkClient()  # type: ignore[assignment]
+        with patch("ingestion.cli_labels.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2026, 8, 14, tzinfo=timezone.utc)
+            assert app.run() == 0
+        assert month_complete(app.conn, "2026-07")
+        assert not month_complete(app.conn, "2026-08")
     finally:
         app.close()
