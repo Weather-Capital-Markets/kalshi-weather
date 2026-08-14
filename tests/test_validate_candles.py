@@ -37,6 +37,7 @@ def test_gap_distribution_dedupes_overlapping_chunk_edges() -> None:
     assert stats["n_gaps"] == 1
     assert stats["modal_gap_sec"] == 60
     assert stats["share_gap_over_15min"] == 0.0
+    assert stats["share_gap_over_one_period"] == 0.0
 
 
 def test_gap_distribution_flags_sparse_emission() -> None:

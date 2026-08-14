@@ -3,31 +3,40 @@
 Allowed DB: none. Reads raw JSONL only; never opens heartbeat.sqlite or
 backfill.sqlite.
 
-The census makes carry-forward its primary statistic, which is only safe if the
-sparse historical tier omits periods because nothing happened rather than
-because data is missing. Four checks, each with a failure condition named up
-front so a FAIL means something specific:
+The census makes carry-forward its primary statistic, which is safe only if a
+tier omits a period because nothing happened, not because data is missing.
 
-  1. LIVE_TIER_DENSITY   - the live tier is documented as one candle per minute.
-                           FAILS if its modal inter-candle gap is not 60 s,
-                           because every other check leans on the live tier as
-                           the dense control.
-  2. LIVE_VARIANT_AGREE  - on a dense tier, carrying a quote forward and
-                           requiring it to be under 15 minutes old must select
-                           the same snapshots. FAILS if in-window coverage
-                           differs at any horizon, which would mean the live
-                           tier is itself sparse and the control is invalid.
-  3. VOLUME_RECONCILE    - summing per-candle volume must reproduce the market
-                           object's lifetime volume. FAILS on any mismatch: a
-                           shortfall is a trade-bearing period the tier dropped,
-                           which is exactly what carry-forward cannot survive.
-  4. EMPTYING_EMITTED    - the historical tier must emit a candle when a book
-                           goes empty. FAILS if no two-sided-to-empty transition
-                           is observed, because carry-forward would then hold a
-                           dead book alive indefinitely.
+Two gates decide that, and failing either blocks the census:
 
-No thresholds are invented. Every condition above is an exact equality or an
-existence claim.
+  VOLUME_RECONCILE  - summing per-candle volume must reproduce the market
+                      object's lifetime volume. A shortfall is a trade-bearing
+                      period the tier dropped, which is exactly what carrying a
+                      quote forward across it cannot survive. Compared at the
+                      hundredths the API reports, so the test is exact.
+  EMPTYING_EMITTED  - a tier must emit a candle when a book goes empty. With no
+                      two-sided-to-empty transition, carry-forward would hold a
+                      dead book alive indefinitely.
+
+Two measurements are reported alongside them but gate nothing:
+
+  TIER_GAPS         - inter-candle gap distribution per tier.
+  STALENESS_DELTA   - in-window coverage under both staleness rules, per
+                      horizon, on the live tier.
+
+STALENESS_DELTA was designed as a control: if the live tier were the dense
+one-candle-per-minute series that venue-facts 1.7 assumed, the two rules would
+select the same snapshots and any divergence would be attributable to the
+historical tier alone. That premise is testable and the script prints whether it
+holds. Where it does not, the control is unavailable and VOLUME_RECONCILE
+carries the argument by itself; the script says so rather than reporting a
+verdict the evidence does not support.
+
+No thresholds are invented. Both gates are an exact equality or an existence
+claim, and the two measurements are reported without a pass mark.
+
+Run this only after a completed bulk fetch. A market whose candles are still
+being fetched is indistinguishable here from one whose candles are missing, and
+would register as a volume shortfall.
 """
 
 from __future__ import annotations
@@ -120,6 +129,7 @@ def gap_distribution(candles_by_ticker: dict[str, list[dict[str, Any]]]) -> dict
             "modal_gap_sec": None,
             "median_gap_sec": None,
             "p90_gap_sec": None,
+            "share_gap_over_one_period": None,
             "share_gap_over_15min": None,
         }
     series = pd.Series(gaps, dtype="int64")
@@ -130,6 +140,9 @@ def gap_distribution(candles_by_ticker: dict[str, list[dict[str, Any]]]) -> dict
         "modal_gap_sec": int(statistics.mode(gaps)),
         "median_gap_sec": float(series.median()),
         "p90_gap_sec": float(series.quantile(0.90)),
+        # Zero here, and only zero, means the tier emits every period regardless
+        # of activity. A modal gap of one period does not establish that.
+        "share_gap_over_one_period": float((series > LIVE_PERIOD_SEC).mean()),
         "share_gap_over_15min": float((series > STALE_SEC).mean()),
     }
 
@@ -168,6 +181,16 @@ def live_variant_agreement(
             }
         )
     return pd.DataFrame(rows)
+
+
+def _same_quantity(left: float, right: float) -> bool:
+    """Compare volumes at their own resolution.
+
+    The API reports quantities as fixed-point strings with two decimals, so
+    hundredths are the exact grain of the data. Summing thousands of floats
+    otherwise leaves 1e-11 residue that would read as a dropped trade.
+    """
+    return round(left * 100) == round(right * 100)
 
 
 def _market_volume(market: dict[str, Any]) -> float | None:
@@ -211,8 +234,8 @@ def volume_reconciliation(
                 "candle_volume_sum": candle_sum,
                 "candle_volume_max": candle_max,
                 "sum_difference": candle_sum - market_volume,
-                "sum_matches": candle_sum == market_volume,
-                "max_matches": candle_max == market_volume,
+                "sum_matches": _same_quantity(candle_sum, market_volume),
+                "max_matches": _same_quantity(candle_max, market_volume),
             }
         )
     return pd.DataFrame(rows)
@@ -264,40 +287,43 @@ def run(config: dict[str, Any]) -> int:
     historical = candles_by_tier[HISTORICAL_TIER]
     failures: list[str] = []
 
-    print("=== tier gap distributions ===")
+    print("=== MEASUREMENT TIER_GAPS: inter-candle gaps by tier ===")
+    tier_gaps: dict[str, dict[str, Any]] = {}
     for tier in (LIVE_TIER, HISTORICAL_TIER):
-        stats = gap_distribution(candles_by_tier[tier])
-        print(f"{tier}: {stats}")
-        if tier == LIVE_TIER:
-            live_gaps = stats
-    live_dense = live_gaps["modal_gap_sec"] == LIVE_PERIOD_SEC
-    if not live_dense:
-        failures.append("LIVE_TIER_DENSITY")
+        tier_gaps[tier] = gap_distribution(candles_by_tier[tier])
+        print(f"{tier}: {tier_gaps[tier]}")
+    live_unconditional = tier_gaps[LIVE_TIER]["share_gap_over_one_period"] == 0.0
     print(
-        f"CHECK LIVE_TIER_DENSITY: {_verdict(live_dense)} "
-        f"(modal live gap {live_gaps['modal_gap_sec']}s, expected {LIVE_PERIOD_SEC}s)"
+        "live tier emits one candle per minute unconditionally: "
+        f"{live_unconditional} "
+        f"(share of live gaps longer than {LIVE_PERIOD_SEC}s = "
+        f"{tier_gaps[LIVE_TIER]['share_gap_over_one_period']})"
     )
+    if not live_unconditional:
+        print(
+            "Both tiers therefore emit on change, and no dense control exists. "
+            "This revises venue-facts 1.7, which read sparseness as a property "
+            "of the historical tier; it is a property of quiet markets."
+        )
 
     print()
-    print("=== live-tier staleness-variant agreement (in-window snapshots) ===")
+    print("=== MEASUREMENT STALENESS_DELTA: in-window coverage by rule (live tier) ===")
     agreement = live_variant_agreement(markets=markets, live_candles=live)
     if agreement.empty:
-        variants_agree = False
         max_difference: float | None = None
-        print("no in-window live-tier snapshots; cannot evaluate")
+        print("no in-window live-tier snapshots; nothing to compare")
     else:
         print(agreement.to_string(index=False))
         max_difference = float(agreement["abs_difference"].max())
-        variants_agree = max_difference == 0.0
-    if not variants_agree:
-        failures.append("LIVE_VARIANT_AGREE")
-    print(
-        f"CHECK LIVE_VARIANT_AGREE: {_verdict(variants_agree)} "
-        f"(max |coverage_carryforward - coverage_strict15| = {max_difference})"
-    )
+    print(f"max |coverage_carryforward - coverage_strict15| = {max_difference}")
+    if not live_unconditional:
+        print(
+            "Not usable as a control: the divergence above is the live tier's "
+            "own change-emission, not evidence about the historical tier."
+        )
 
     print()
-    print("=== volume reconciliation ===")
+    print("=== GATE VOLUME_RECONCILE: summed candle volume vs lifetime volume ===")
     reconciliation = volume_reconciliation(markets=markets, candles_by_tier=candles_by_tier)
     if reconciliation.empty:
         volumes_match = False
@@ -312,6 +338,13 @@ def run(config: dict[str, Any]) -> int:
                 f"total_abs_shortfall={float(bad['sum_difference'].abs().sum()):.2f} "
                 f"cumulative_field_matches={int(group['max_matches'].sum())}"
             )
+        total_volume = float(reconciliation["market_volume"].sum())
+        unreconciled = float(mismatched["sum_difference"].abs().sum())
+        print(
+            f"overall: {len(reconciliation) - len(mismatched)}/{len(reconciliation)} markets "
+            f"reconcile exactly; {unreconciled:.2f} of {total_volume:.2f} contracts "
+            f"unaccounted ({unreconciled / total_volume:.8%})"
+        )
         if not mismatched.empty:
             print("worst 10 mismatches by absolute difference:")
             worst = mismatched.reindex(
@@ -320,10 +353,10 @@ def run(config: dict[str, Any]) -> int:
             print(worst.head(10).to_string(index=False))
     if not volumes_match:
         failures.append("VOLUME_RECONCILE")
-    print(f"CHECK VOLUME_RECONCILE: {_verdict(volumes_match)}")
+    print(f"GATE VOLUME_RECONCILE: {_verdict(volumes_match)}")
 
     print()
-    print("=== historical-tier emptying events ===")
+    print("=== GATE EMPTYING_EMITTED: historical-tier emptying events ===")
     events, samples = emptying_events(historical)
     if events.empty:
         emptying_emitted = False
@@ -348,22 +381,27 @@ def run(config: dict[str, Any]) -> int:
                 )
     if not emptying_emitted:
         failures.append("EMPTYING_EMITTED")
-    print(f"CHECK EMPTYING_EMITTED: {_verdict(emptying_emitted)}")
+    print(f"GATE EMPTYING_EMITTED: {_verdict(emptying_emitted)}")
 
     print()
     if failures:
         print(f"OVERALL: FAIL ({', '.join(failures)})")
         print(
-            "A failure here blocks the census: carry-forward as the primary "
+            "A failed gate blocks the census: carry-forward as the primary "
             "statistic assumes omitted periods are uneventful."
         )
         return 1
     print("OVERALL: PASS")
     print(
-        "Omitted historical-tier periods carry no volume and emptying is emitted, "
-        "so carrying the last quote forward reproduces the book rather than "
-        "inventing one."
+        "Omitted periods carry no volume and emptying is emitted, so carrying "
+        "the last quote forward reproduces the book rather than inventing one."
     )
+    if not live_unconditional:
+        print(
+            "Qualification: both tiers emit on change, so this rests on the "
+            "volume reconciliation alone. There is no dense tier to cross-check "
+            "it against."
+        )
     return 0
 
 
