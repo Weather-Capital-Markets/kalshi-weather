@@ -182,3 +182,48 @@ Official docs: https://docs.kalshi.com/getting_started/quick_start_market_data
 Both documented production hostnames were verified to return KXHIGHNY market JSON
 on 2026-08-14. The logger defaults to `external-api.kalshi.com`;
 `api.elections.kalshi.com` remains a config-only alternate.
+
+## Session 2 — historical backfill + spread census (laptop only)
+
+Do **not** run these on the VPS. `data/backfill.sqlite` is laptop scratch;
+`data/heartbeat.sqlite` is live-logger evidence. The two files must not mix.
+
+```bash
+pip install -r requirements-analysis.txt
+```
+
+Order is binding:
+
+```bash
+# 1. Probe — paste the raw JSON back before going further
+python -m ingestion.kalshi_history --probe
+
+# 2. Dry-run — market count + volume/time estimate; stops
+python -m ingestion.kalshi_history --dry-run
+
+# 3. Bulk history — only after the dry-run readout is confirmed
+python -m ingestion.kalshi_history
+
+# CLINYC labels (independent of Kalshi candles; can overlap with step 3)
+python -m ingestion.cli_labels
+
+# Census on whatever data exists (partial is valid)
+# Do not run this until kill thresholds are ratified in the root chat.
+python -m analysis.spread_census
+```
+
+`--probe` prints raw `/historical/cutoff`, one market object, and one candlestick
+page. It settles live-vs-historical routing, the candlestick path, and
+`close_dollars`/`volume_fp` vs `close`/`volume`.
+
+`--dry-run` enumerates markets only. If the estimate exceeds ~20 GB or ~24 h at
+the configured rate cap, the prepared fallback is restricting candles to
+`[T−72h, close]` per market. That decision is made at readout, not by the tool.
+
+Resume: kill -9 and re-run either backfill; completed markets/months are skipped.
+Writer repairs a truncated gzip tail on reopen.
+
+CLINYC parser stores `time_of_high_raw` and `time_col_label` verbatim. Clock B
+in the census carries ±1 h uncertainty until summer LST-vs-LDT is checked
+against IEM ASOS hourly KNYC (~3 summer days).
+
