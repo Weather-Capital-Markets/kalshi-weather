@@ -29,7 +29,7 @@ import json
 import logging
 import re
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +60,20 @@ NOTE_T48_STRUCTURAL = (
     "NOTE: markets open ~38h before the climate-day end, so near-zero coverage at "
     "T-48h is structural (the market was not open yet), not a data gap. T-36h is "
     "the earliest horizon that exists in practice."
+)
+NOTE_SPARSE_CANDLES = (
+    "NOTE: the historical tier emits candles only when the book or price changed, so "
+    "gaps far exceed the 15-minute staleness window. `coverage`/`median_spread` apply "
+    "the 15-minute rule (A2); `coverage_carryforward`/`median_spread_carryforward` "
+    "carry the last quote forward at any age, with quote_age_*_min reported. Which "
+    "definition feeds Kill Test 1 is a ratification decision, not a code default."
+)
+NOTE_TRADING_WINDOW = (
+    "NOTE: `outside_trading_window_share` separates 'market was shut' from 'market "
+    "open but unquoted'. Last trading time moved between eras (2024 markets closed "
+    "03:59Z = 11:59 PM EDT; 2026 markets close 04:59Z), so the T-1h column is "
+    "structurally empty for older markets. `coverage_given_open` conditions on the "
+    "window; `coverage` keeps its A2 definition."
 )
 NOTE_ERA_SPLIT = (
     "NOTE: rows are split by era. 2021 traded ~1.3 brackets/day vs ~6/day from 2022 "
@@ -154,6 +168,18 @@ def select_full_day_labels(csv_path: Path) -> pd.DataFrame:
     full = labels.loc[~flag.astype(bool)].copy()
     full = full.sort_values("issuance_ts_utc")
     return full.groupby("climate_date", as_index=False).tail(1)
+
+
+def parse_iso_utc(value: str | None) -> datetime | None:
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def era_of(climate_date: str) -> str:
@@ -265,12 +291,20 @@ def build_snapshot_table(
         t_end = climate_day_end(datetime.fromisoformat(climate_date).date())
         open_ts = market.get("open_time")
         close_ts = market.get("close_time")
+        open_dt = parse_iso_utc(open_ts if isinstance(open_ts, str) else None)
+        close_dt = parse_iso_utc(close_ts if isinstance(close_ts, str) else None)
+        window_known = open_dt is not None and close_dt is not None
         candles = candles_by_ticker.get(ticker, [])
         label = label_map.get(climate_date)
         for hours in HORIZONS_H:
             snapshot = t_end - timedelta(hours=hours)
             snapshot_ts = int(snapshot.timestamp())
             quote_attempts += 1
+            # Unknown open/close counts as in-window: absence of times is not
+            # evidence the market was shut.
+            in_window = (open_dt is None or snapshot >= open_dt) and (
+                close_dt is None or snapshot <= close_dt
+            )
             candle = last_candle_at_or_before(candles, snapshot_ts)
             stale = False
             if candle is None:
@@ -288,6 +322,17 @@ def build_snapshot_table(
             spread = (ask - bid) if two_sided else None
             book_present = bid is not None and ask is not None
             extreme_only = valid and book_present and not two_sided
+            # Carry-forward view: the historical tier emits candles only when the
+            # book or price changed, so a 40-minute-old quote is often the live
+            # book rather than a stale one. Reported alongside the 15-minute rule
+            # so the staleness choice can be judged on data, not assumed.
+            quote_present = candle is not None
+            quote_age_sec = (
+                float(snapshot_ts - int(candle["end_period_ts"])) if quote_present else None
+            )
+            two_sided_cf = quote_present and is_two_sided(bid, ask)
+            mid_cf = (bid + ask) / 2.0 if two_sided_cf else None
+            spread_cf = (ask - bid) if two_sided_cf else None
             regime, uncertain = (None, True)
             if label is not None:
                 regime, uncertain = regime_at_snapshot(
@@ -309,6 +354,13 @@ def build_snapshot_table(
                     "two_sided": two_sided,
                     "book_fields_present": book_present,
                     "extreme_empty_book": extreme_only,
+                    "in_trading_window": in_window,
+                    "window_times_known": window_known,
+                    "quote_present": quote_present,
+                    "quote_age_sec": quote_age_sec,
+                    "two_sided_carryforward": two_sided_cf,
+                    "mid_carryforward": mid_cf,
+                    "spread_carryforward": spread_cf,
                     "mid": mid,
                     "spread": spread,
                     "volume": candle["volume"] if candle else None,
@@ -332,6 +384,9 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
     for band_name, lo, hi in BANDS:
         tagged = snapshots.copy()
         tagged["in_band"] = tagged["two_sided"] & tagged["mid"].between(lo, hi)
+        tagged["in_band_cf"] = tagged["two_sided_carryforward"] & tagged[
+            "mid_carryforward"
+        ].between(lo, hi)
         grouped = tagged.groupby(
             ["horizon_h", "era", "season", "regime", "regime_uncertain"],
             dropna=False,
@@ -345,7 +400,18 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
             quoted = group[group["quote_valid"]]
             two_sided_given_quote = float(quoted["two_sided"].mean()) if len(quoted) else 0.0
             empty_book_share = float(group["extreme_empty_book"].mean()) if len(group) else 0.0
+            in_window = group[group["in_trading_window"]]
+            outside_window_share = (
+                float((~group["in_trading_window"]).mean()) if len(group) else 0.0
+            )
+            coverage_given_open = float(in_window["quote_valid"].mean()) if len(in_window) else 0.0
+            coverage_cf = float(group["quote_present"].mean()) if len(group) else 0.0
+            two_sided_share_cf = (
+                float(group["two_sided_carryforward"].mean()) if len(group) else 0.0
+            )
+            ages_min = group.loc[group["quote_present"], "quote_age_sec"] / 60.0
             spread_rows = group[group["in_band"] & group["spread"].notna()]
+            spread_rows_cf = group[group["in_band_cf"] & group["spread_carryforward"].notna()]
             per_day = (
                 group.groupby("climate_date")["in_band"].sum()
                 if len(group)
@@ -366,6 +432,14 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
                     "two_sided_share": two_sided_share,
                     "two_sided_share_given_quote": two_sided_given_quote,
                     "extreme_empty_book_share": empty_book_share,
+                    "outside_trading_window_share": outside_window_share,
+                    "coverage_given_open": coverage_given_open,
+                    "coverage_carryforward": coverage_cf,
+                    "two_sided_share_carryforward": two_sided_share_cf,
+                    "quote_age_median_min": (float(ages_min.median()) if len(ages_min) else None),
+                    "quote_age_p90_min": (
+                        float(ages_min.quantile(0.90)) if len(ages_min) else None
+                    ),
                     "tradeable_brackets_per_day_median": (
                         float(per_day.median()) if len(per_day) else 0.0
                     ),
@@ -382,6 +456,12 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
                         float(spread_rows["spread"].quantile(0.90)) if len(spread_rows) else None
                     ),
                     "n_spread_obs": int(len(spread_rows)),
+                    "median_spread_carryforward": (
+                        float(spread_rows_cf["spread_carryforward"].median())
+                        if len(spread_rows_cf)
+                        else None
+                    ),
+                    "n_spread_obs_carryforward": int(len(spread_rows_cf)),
                     "volume_sum": float(group["volume"].fillna(0).sum()),
                 }
             )
@@ -463,6 +543,8 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
         json.dumps({k: round(v, 6) if isinstance(v, float) else v for k, v in stale_stats.items()})
     )
     print(NOTE_T48_STRUCTURAL)
+    print(NOTE_TRADING_WINDOW)
+    print(NOTE_SPARSE_CANDLES)
     print(NOTE_ERA_SPLIT)
     print(OPEN_ITEM_LST)
     print(f"wrote {csv_path}")
