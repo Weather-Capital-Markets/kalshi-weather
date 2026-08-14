@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 from analysis.window_mismatch import _mismatch_rows, summarize_by_season
@@ -26,7 +28,7 @@ def test_mismatch_rows_under_lst_and_ldt() -> None:
     assert set(summary["convention"]) == {"lst", "ldt"}
 
 
-def test_window_mismatch_refuses_headline_when_unknown(monkeypatch) -> None:
+def test_window_mismatch_refuses_headline_when_unknown(tmp_path: Path, monkeypatch) -> None:
     from analysis import window_mismatch as module
 
     labels = pd.DataFrame(
@@ -39,6 +41,8 @@ def test_window_mismatch_refuses_headline_when_unknown(monkeypatch) -> None:
             }
         ]
     )
+    labels_csv = tmp_path / "clinyc.csv"
+    labels_csv.write_text("climate_date\n", encoding="utf-8")
 
     def fake_select(_path):
         return labels
@@ -51,7 +55,10 @@ def test_window_mismatch_refuses_headline_when_unknown(monkeypatch) -> None:
 
     monkeypatch.setattr("builtins.print", capture_print)
     module.run(
-        {"storage": {}, "climate": {"cli_time_convention": "unknown"}},
-        module.Path("/tmp/out"),
+        {
+            "storage": {"labels_csv": str(labels_csv)},
+            "climate": {"cli_time_convention": "unknown"},
+        },
+        tmp_path / "out",
     )
     assert any("REFUSED" in line for line in captured)
