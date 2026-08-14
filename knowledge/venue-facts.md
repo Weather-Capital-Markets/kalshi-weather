@@ -1,7 +1,7 @@
 # venue-facts.md — Kalshi venue mechanics (settlement, fees, API)
 
-**Status:** PARTIAL — §1 populated from live and historical API payloads; the rest is
-placeholder.
+**Status:** PARTIAL — §1 populated from live and historical API payloads and from the
+completed 9,364-market backfill; the rest is placeholder.
 **Owner:** the **venue research lane**. Entries below are contributed observations, not
 lane-ratified facts; the venue lane ratifies, amends, or rejects each one and owns this file.
 **Scope:** venue matters — settlement rules, fees, API endpoint specs, collateral netting.
@@ -33,11 +33,17 @@ python -m ingestion.kalshi_history --probe    # 2026-08-14T14:54Z
 Source market: `KXHIGHNY-26AUG12-T90` (event `KXHIGHNY-26AUG12`), status `finalized`, from
 `GET /markets?series_ticker=KXHIGHNY&status=settled`.
 
-§1.6 comes from `--dry-run` (2026-08-14); §1.7–§1.9 from
+§1.6 comes from `--dry-run` (2026-08-14); §1.8–§1.9 from
 `--probe --ticker HIGHNY-24AUG15-T83` (2026-08-14), which exercised the historical tier.
 
 Raw JSON for each was pasted in full to the session-2 chat. These are verbatim payload
 fields, not recall or documentation.
+
+§1.1, §1.7, §1.8, §1.10 and §1.11 were subsequently revised or established from the
+**completed backfill** — all 9,364 markets and 5.25 M candles, 2026-08-14 — via
+`python -m analysis.venue_eras` and `python -m analysis.validate_candles`. Where a
+single-market probe reading disagreed with the population, the population wins and the
+superseded reading is called out in place.
 
 ### 1.1 Last trading minute aligns to the LST climate-day end — from 2026-03-18 only
 
@@ -178,24 +184,36 @@ still strings; `end_period_ts` is unchanged. `price.*` is `null` for periods wit
 }
 ```
 
-**Candles are sparse, not a dense 1-minute series.** With `period_interval=1` over a
-24-hour window from market open, the endpoint returned **5 candles spanning 11.7 h**, with
-inter-candle gaps of 600 s, 1,680 s, 1,800 s, and 38,040 s — 3 of 4 gaps exceed 15 minutes.
-Two of five candles had non-zero volume; the others recorded quote changes only. The endpoint
-appears to emit a candle when the book or price changed, and to omit unchanged periods.
+**Both tiers emit candles on change; sparseness is a property of quiet markets, not of the
+historical tier.** The `(verify)` on this entry is now **resolved, and the original reading
+was wrong.** The probe market was nearly dead (`volume_fp` 63.00 lifetime) and returned
+5 candles spanning 11.7 h, which was read as a tier property. Across the completed backfill —
+5.25 M candles over all 9,364 markets — the two tiers are almost indistinguishable:
 
-Two consequences, both measurement-critical:
+| tier | markets | candles | modal gap | median gap | p90 gap | gaps > 1 min | gaps > 15 min |
+|---|---|---|---|---|---|---|---|
+| live (`/series/.../candlesticks`) | 366 | 430,195 | 60 s | 60 s | 180 s | 22.8% | 1.04% |
+| historical (`/historical/...`) | 8,998 | 4,820,806 | 60 s | 60 s | 240 s | 22.1% | 3.07% |
 
-- A 15-minute staleness rule designed for dense live candles will discard most historical
-  snapshots even though the quote it discards was the live book. `spread_census.py` therefore
-  reports both the 15-minute-fresh statistics and carry-forward statistics with a quote-age
-  distribution; which one is load-bearing is a ratification decision.
-- Volume estimates built on "one candle per open minute" are large overestimates for this
-  tier. The 2026-08-14 dry-run projected ~21.3 M candles / 9.94 GB assuming density; the
-  realized historical-tier footprint should be far smaller.
+`[V-LOCAL]` — `python -m analysis.validate_candles`, 2026-08-14, after the full backfill.
 
-`(verify)` — one market, and a nearly dead one (`volume_fp` 63.00 lifetime). Candle density
-plausibly scales with activity; confirm against a liquid market once bulk data exists.
+The live tier skips 22.8% of its own minute boundaries, so it is **not** a dense
+one-candle-per-minute series either, and cannot serve as a dense control. The historical tier
+is modestly quieter (higher p90, 3× the share of >15-minute gaps), which is what an older and
+less liquid market population predicts — not a different emission mechanism.
+
+Three consequences, all measurement-critical:
+
+- A 15-minute staleness rule discards live books on **both** tiers. The count of long gaps is
+  small but their time coverage is not: at T−6h on the live tier, 24.6% of in-window snapshots
+  have a last quote older than 15 minutes even though 99% of gaps are under it. Carry-forward
+  is the ratified primary statistic in `spread_census.py`, with the 15-minute rule retained as
+  `_strict15` robustness.
+- Volume estimates built on "one candle per open minute" are large overestimates. The
+  2026-08-14 dry-run projected ~21.3 M candles / 9.94 GB; realized is **5.25 M candles and
+  87 MB on disk**, 0.9% of the projection. Density and per-candle bytes both came in low.
+- Emission-on-change is safe for carry-forward only if omitted periods carry no trades. That
+  holds for 9,317 of 9,364 markets exactly; see §1.11 for the 47 that do not.
 
 ### 1.8 Last trading time changed once, between climate days 2026-03-17 and 2026-03-18
 
@@ -278,6 +296,31 @@ revision that a 7/8 AM snapshot cannot. `data-sources.md` §1.3 defines the labe
 issuance visible at the settlement snapshot, so the snapshot time is era-dependent and the
 label rule cannot be applied with a single fixed hour across the archive.
 
+### 1.11 Candle volume does not always reconcile to the market's lifetime volume
+
+`[V-LOCAL]` — `python -m analysis.validate_candles` over the completed backfill, 2026-08-14.
+
+Summing every candle's `volume` for a market should reproduce that market's `volume_fp`. It
+does exactly for **9,317 of 9,364 markets**. The 47 that miss account for 7,225 of
+138,212,600.30 contracts — **0.0052%** — spread over 34 of 1,829 climate days.
+
+The residual is **not** simply missing capture:
+
+- 40 markets fall short of the lifetime volume, but **7 exceed it**. A candle sum above the
+  market total cannot be produced by omitting candles, so at least part of this is venue-side
+  bookkeeping disagreement between two fields.
+- Re-fetching the single live-tier mismatch (`KXHIGHNY-26JUN18-T83`, short 15.00 of 54,302.97)
+  over a window widened by a day on each side returned a byte-identical candle set. The gap is
+  in the venue's data, not in our chunking.
+- Mismatches cluster on a few dates (2025-03-10 accounts for 6 markets and 2,788 contracts),
+  which points at venue incidents rather than a systematic tier property.
+
+Consequence: the emission-validation gate as pre-registered ("any mismatch fails") **fails**.
+The magnitude is small and two-directional, but the threshold was named in advance and is not
+being moved after seeing the number. Whether 0.0052% two-directional disagreement blocks the
+census, or whether the 34 affected climate days are simply excluded, is a ratification
+decision and is recorded here rather than decided in code.
+
 ---
 
 ## 1.99 Open items (venue lane)
@@ -286,6 +329,7 @@ label rule cannot be applied with a single fixed hour across the archive.
 |---|---|---|---|
 | V1 | Settlement-time regime history: the 2021-08-06 → 2021-12-25 era (141 climate days) names no snapshot time, deferring to Rulebook Rule 100.19. Those days cannot have `data-sources.md` §1.3 applied from contract text alone. | Before labelling 2021 market days | Read Rule 100.19 as it stood in 2021 from the archived rulebook PDF |
 | V2 | The contract prose ("11:59 PM ET") contradicts `close_time` (04:59Z) after 2026-03-18 (§1.8). Whether the venue changed policy or has a stale template is unknown. | No — the timestamp is authoritative for measurement | Venue support, or watch whether the prose catches up |
+| V3 | 47 markets across 34 climate days whose candle volume does not reconcile to `volume_fp`, in both directions (§1.11). Fails the pre-registered emission gate at 0.0052% of total volume. | Yes for the census — the gate was named in advance | Ratify whether to accept the residual or exclude the 34 climate days |
 
 ---
 

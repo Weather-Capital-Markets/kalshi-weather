@@ -15,9 +15,9 @@ book as bid 0.00 / ask 1.00; those snapshots are counted as no-market, not as
 a 99-cent spread, and never reach the spread statistics.
 
 Every metric that depends on the staleness rule is reported twice, suffixed
-`_carryforward` (primary) and `_strict15` (robustness). The historical tier
-emits candles only on change, so the 15-minute rule discards live books; the
-suffixes are explicit on both so no reader has to infer which one they hold.
+`_carryforward` (primary) and `_strict15` (robustness). Both API tiers emit
+candles only on change, so the 15-minute rule discards live books; the suffixes
+are explicit on both so no reader has to infer which one they hold.
 
 Horizons run T-48h to T-1h (A7). T-48h is kept even though markets open ~38h
 before T, because its empty column documents that fact; T-36h is the earliest
@@ -67,15 +67,16 @@ NOTE_T48_STRUCTURAL = (
     "the earliest horizon that exists in practice."
 )
 NOTE_SPARSE_CANDLES = (
-    "NOTE: the historical tier emits candles only when the book or price changed, so "
-    "gaps far exceed the 15-minute staleness window and a 40-minute-old quote is "
-    "usually the live book. Per ratification the `_carryforward` columns are the "
-    "primary statistic; the `_strict15` columns apply the 15-minute rule (A2) as "
-    "robustness. Both are restricted to in_trading_window snapshots so they differ "
-    "only in the staleness rule. `coverage` and `coverage_carryforward` stay "
-    "unconditional so markets that were never open remain visible. If the two "
-    "variants disagree on the direction of a kill threshold, the verdict is deferred "
-    "rather than taken from the primary."
+    "NOTE: both API tiers emit candles only when the book or price changed (22% of "
+    "gaps exceed one minute on each), so an old quote is usually the live book. Only "
+    "1-3% of gaps exceed 15 minutes, but long gaps cover disproportionate time: on "
+    "the live tier at T-6h, 24.6% of in-window snapshots carry a quote older than 15 "
+    "minutes. Per ratification the `_carryforward` columns are the primary statistic; "
+    "the `_strict15` columns apply the 15-minute rule (A2) as robustness. Both are "
+    "restricted to in_trading_window snapshots so they differ only in the staleness "
+    "rule. `coverage` and `coverage_carryforward` stay unconditional so markets that "
+    "were never open remain visible. If the two variants disagree on the direction of "
+    "a kill threshold, the verdict is deferred rather than taken from the primary."
 )
 NOTE_TRADING_WINDOW = (
     "NOTE: `outside_trading_window_share` separates 'market was shut' from 'market "

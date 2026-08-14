@@ -210,7 +210,7 @@ python -m ingestion.kalshi_history
 # 5. CLINYC labels — run after step 4, not alongside it
 python -m ingestion.cli_labels
 
-# 6. Validate that sparse historical candles omit only uneventful periods
+# 6. Validate that change-emitted candles omit only uneventful periods
 python -m analysis.validate_candles
 
 # 7. Locate the venue convention changeover dates
@@ -228,10 +228,13 @@ roughly 80 monthly requests at 1 rps.
 Step 8 is gated on step 6 because the census makes **carry-forward the primary
 statistic**: every metric that depends on the staleness rule appears twice, as
 `*_carryforward` (primary) and `*_strict15` (robustness). That is only sound if
-the historical tier omits periods because nothing happened. `validate_candles.py`
-tests exactly that and prints PASS/FAIL per check. If the two variants disagree
-on the direction of a kill threshold, the verdict is deferred rather than taken
-from the primary.
+a tier omits a period because nothing happened rather than because data is
+missing. `validate_candles.py` tests exactly that with two gates and prints
+PASS/FAIL for each. If the two variants disagree on the direction of a kill
+threshold, the verdict is deferred rather than taken from the primary.
+
+Run step 6 only after step 4 finishes. A market whose candles are still being
+fetched is indistinguishable there from one whose candles are missing.
 
 Steps 6 and 7 read raw JSONL only and open no database, so they are safe to
 re-run at any time.
