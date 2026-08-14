@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from analysis.spread_census import (
     HORIZONS_H,
@@ -394,3 +395,62 @@ def test_summarize_exclnoreconcile_drops_excluded_tickers() -> None:
     assert row["median_spread_exclnoreconcile"] == 0.05
     assert row["n_spread_obs_carryforward"] == 2
     assert row["n_spread_obs_exclnoreconcile"] == 1
+
+
+@pytest.mark.parametrize(
+    "climate_date",
+    ["2025-06-02", "2025-06-03", "2025-06-18", "2025-11-13"],
+)
+def test_label_less_climate_days_degrade_gracefully(climate_date: str) -> None:
+    # These four market climate days have no usable CLINYC label (data-sources O10).
+    year = int(climate_date[:4])
+    month = climate_date[5:7]
+    day = climate_date[8:10]
+    month_names = {
+        "01": "JAN",
+        "02": "FEB",
+        "03": "MAR",
+        "04": "APR",
+        "05": "MAY",
+        "06": "JUN",
+        "07": "JUL",
+        "08": "AUG",
+        "09": "SEP",
+        "10": "OCT",
+        "11": "NOV",
+        "12": "DEC",
+    }
+    yy = year % 100
+    ticker = f"KXHIGHNY-{yy:02d}{month_names[month]}{int(day):02d}-T90"
+    t_end = climate_day_end(datetime.fromisoformat(climate_date).date())
+    end_ts = int((t_end - timedelta(hours=24)).timestamp()) - 60
+    candles = [
+        candle_fields(
+            {
+                "end_period_ts": end_ts,
+                "yes_bid": {"close_dollars": "0.40"},
+                "yes_ask": {"close_dollars": "0.45"},
+                "volume_fp": "1.00",
+            }
+        )
+    ]
+    snapshots, _stats = build_snapshot_table(
+        markets=[
+            {
+                "ticker": ticker,
+                "open_time": f"{climate_date}T14:00:00Z",
+                "close_time": f"{climate_date}T23:59:00Z",
+            }
+        ],
+        candles_by_ticker={ticker: candles},
+        labels=pd.DataFrame(),
+    )
+    day_rows = snapshots[snapshots["climate_date"] == climate_date]
+    assert not day_rows.empty
+    assert day_rows["regime"].isna().all()
+    assert bool(day_rows["regime_uncertain"].all())
+
+    summary = summarize(snapshots)
+    grouped = summary[(summary["horizon_h"] == 24) & (summary["band"] == "10_90")]
+    assert int(grouped["n_market_days"].sum()) >= 1
+    assert float(grouped["coverage"].max()) > 0.0
