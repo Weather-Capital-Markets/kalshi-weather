@@ -62,3 +62,22 @@ validity machinery; the census stayed frozen until v3 was registered here.
 | Census execution | **Frozen** — awaiting v3 date in root chat + VPS `--status` |
 | PR #2 | Bulk backfill branch ready to merge after this housekeeping |
 | Open (load-bearing) | VPS `--status` (K4 + forward quote validation); root-chat ratification date; Polymarket; Gate 0 |
+
+## 5. Session 2.5 — instrument calibration + forward-validation tooling
+
+**Status:** IN PROGRESS — laptop only. No census execution, no NBM ingestion, no models.
+
+| Item | Script | Notes |
+|---|---|---|
+| A1 ASOS pull | `ingestion/asos_obs.py` | IEM `NYC`/`NY_ASOS`/`tmpf`, monthly, `category=asos_obs`, sample from 2025-05-01 |
+| A2 Clock B check | `analysis/clockb_check.py` | ~15 sampled labeled days; LST vs LDT hypothesis table; measurement only |
+| B Window mismatch | `analysis/window_mismatch.py` | CLI time-of-high vs NBM 12Z–06Z window; refuses headline when convention=unknown |
+| C Forward emission | `analysis/validate_emission_forward.py` | Logger orderbook JSONL vs live candles; read-only, never `heartbeat.sqlite` |
+| D Label-less days | `tests/test_spread_census.py` | Four missing-label climate days degrade gracefully |
+| Config | `climate.cli_time_convention` | `lst` \| `ldt` \| `unknown` (default) → current ±1h `regime_uncertain` behavior |
+
+```text
+asos_obs → clockb_check → [write Clock B conclusion to data-sources.md]
+window_mismatch (K2 prep)
+validate_emission_forward (run when VPS alive; rsync or on-box)
+```
