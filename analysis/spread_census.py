@@ -44,6 +44,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from ingestion.climate_day import LST, MONTHS, climate_day_end, parse_lst_clock
+from ingestion.climate_time import CliTimeConvention, cli_max_instant, load_cli_time_convention
 from ingestion.config_loader import load_config
 from ingestion.writer import read_jsonl_gz
 
@@ -220,23 +221,33 @@ def regime_at_snapshot(
     snapshot: datetime,
     climate_date: str,
     time_of_high_raw: str,
+    convention: CliTimeConvention = "unknown",
 ) -> tuple[str | None, bool]:
     """Return (pre_max|post_max|None, uncertain).
 
-    Printed max time is used as a clock on the climate date in LST. Until the
-    LST-vs-LDT check, any snapshot within ±1h of that clock is marked uncertain.
+    With convention unknown, the printed max time is treated as LST but any
+    snapshot within ±1h of that clock is marked uncertain. With lst or ldt the
+    clock is interpreted per config and uncertainty is dropped when parsing works.
     """
-    parsed = parse_lst_clock(str(time_of_high_raw or ""))
-    if parsed is None:
+    if convention == "unknown":
+        parsed = parse_lst_clock(str(time_of_high_raw or ""))
+        if parsed is None:
+            return None, True
+        hour, minute = parsed
+        year, month, day = (int(p) for p in climate_date.split("-"))
+        max_lst = datetime(year, month, day, hour, minute, tzinfo=LST)
+        snap_lst = snapshot.astimezone(LST)
+        delta = abs((snap_lst - max_lst).total_seconds())
+        uncertain = delta <= 3600
+        regime = "pre_max" if snap_lst < max_lst else "post_max"
+        return regime, uncertain
+
+    max_instant = cli_max_instant(climate_date, time_of_high_raw, convention)
+    if max_instant is None:
         return None, True
-    hour, minute = parsed
-    year, month, day = (int(p) for p in climate_date.split("-"))
-    max_lst = datetime(year, month, day, hour, minute, tzinfo=LST)
-    snap_lst = snapshot.astimezone(LST)
-    delta = abs((snap_lst - max_lst).total_seconds())
-    uncertain = delta <= 3600
-    regime = "pre_max" if snap_lst < max_lst else "post_max"
-    return regime, uncertain
+    snap = snapshot.astimezone(max_instant.tzinfo)
+    regime = "pre_max" if snap < max_instant else "post_max"
+    return regime, False
 
 
 def load_markets(raw_dir: Path) -> list[dict[str, Any]]:
@@ -290,6 +301,7 @@ def build_snapshot_table(
     markets: list[dict[str, Any]],
     candles_by_ticker: dict[str, list[dict[str, Any]]],
     labels: pd.DataFrame,
+    cli_time_convention: CliTimeConvention = "unknown",
 ) -> tuple[pd.DataFrame, dict[str, float]]:
     label_map = {}
     if not labels.empty:
@@ -354,6 +366,7 @@ def build_snapshot_table(
                     snapshot=snapshot,
                     climate_date=climate_date,
                     time_of_high_raw=str(getattr(label, "time_of_high_raw", "") or ""),
+                    convention=cli_time_convention,
                 )
             rows.append(
                 {
@@ -616,10 +629,12 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
         markets=markets,
         candles_by_tier=load_candles_by_tier(raw_dir),
     )
+    cli_convention = load_cli_time_convention(config)
     snapshots, stale_stats = build_snapshot_table(
         markets=markets,
         candles_by_ticker=candles,
         labels=labels,
+        cli_time_convention=cli_convention,
     )
     summary = summarize(snapshots, excl_noreconcile_tickers=excl_noreconcile)
     out_dir.mkdir(parents=True, exist_ok=True)
