@@ -9,6 +9,11 @@ settlement-snapshot timing is session 3.
 
 Clock B (pre_max / post_max) treats printed CLINYC max times as carrying
 ±1 hour uncertainty until summer LST-vs-LDT is verified against KNYC ASOS.
+
+Two-sided means bid >= $0.01 and ask <= $0.99 (A6). Kalshi renders an empty
+book as bid 0.00 / ask 1.00; those snapshots are counted as no-market, not as
+a 99-cent spread, and never reach the spread statistics.
+
 This script prints distributions only — no thresholds, no pass/fail.
 """
 
@@ -36,6 +41,9 @@ logger = logging.getLogger(__name__)
 HORIZONS_H = (48, 24, 12, 6, 3, 1)
 STALE_SEC = 15 * 60
 BANDS = (("10_90", 0.10, 0.90), ("20_80", 0.20, 0.80))
+# A6: bid 0.00 / ask 1.00 is an empty book rendered as extreme quotes.
+MIN_BID_DOLLARS = 0.01
+MAX_ASK_DOLLARS = 0.99
 TICKER_DATE = re.compile(r"-(\d{2})([A-Z]{3})(\d{2})-")
 OPEN_ITEM_LST = (
     "OPEN: verify printed CLINYC MAXIMUM times against IEM ASOS hourly KNYC "
@@ -80,6 +88,19 @@ def candle_fields(candle: dict[str, Any]) -> dict[str, Any]:
         "ask_close": _float(ask.get("close_dollars", ask.get("close"))),
         "volume": _float(candle.get("volume_fp", candle.get("volume"))),
     }
+
+
+def is_two_sided(bid: float | None, ask: float | None) -> bool:
+    """A6: a real two-sided book needs bid >= $0.01 and ask <= $0.99.
+
+    Kalshi renders an *empty* book as bid 0.00 / ask 1.00. Presence-checking
+    alone would score that as a 99-cent spread instead of "no market", and a
+    0.00 bid is absence, not a price. Both sides must be inside the bounds
+    before the snapshot feeds spread statistics.
+    """
+    if bid is None or ask is None:
+        return False
+    return bid >= MIN_BID_DOLLARS and ask <= MAX_ASK_DOLLARS
 
 
 def last_candle_at_or_before(
@@ -235,9 +256,11 @@ def build_snapshot_table(
                 valid = True
             bid = candle["bid_close"] if candle else None
             ask = candle["ask_close"] if candle else None
-            two_sided = valid and bid is not None and ask is not None
+            two_sided = valid and is_two_sided(bid, ask)
             mid = (bid + ask) / 2.0 if two_sided else None
             spread = (ask - bid) if two_sided else None
+            book_present = bid is not None and ask is not None
+            extreme_only = valid and book_present and not two_sided
             regime, uncertain = (None, True)
             if label is not None:
                 regime, uncertain = regime_at_snapshot(
@@ -256,6 +279,8 @@ def build_snapshot_table(
                     "quote_valid": valid,
                     "stale": stale,
                     "two_sided": two_sided,
+                    "book_fields_present": book_present,
+                    "extreme_empty_book": extreme_only,
                     "mid": mid,
                     "spread": spread,
                     "volume": candle["volume"] if candle else None,
@@ -291,6 +316,7 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
             two_sided_share = float(group["two_sided"].mean()) if len(group) else 0.0
             quoted = group[group["quote_valid"]]
             two_sided_given_quote = float(quoted["two_sided"].mean()) if len(quoted) else 0.0
+            empty_book_share = float(group["extreme_empty_book"].mean()) if len(group) else 0.0
             spread_rows = group[group["in_band"] & group["spread"].notna()]
             per_day = (
                 group.groupby("climate_date")["in_band"].sum()
@@ -310,6 +336,7 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
                     "coverage": coverage,
                     "two_sided_share": two_sided_share,
                     "two_sided_share_given_quote": two_sided_given_quote,
+                    "extreme_empty_book_share": empty_book_share,
                     "tradeable_brackets_per_day_median": (
                         float(per_day.median()) if len(per_day) else 0.0
                     ),

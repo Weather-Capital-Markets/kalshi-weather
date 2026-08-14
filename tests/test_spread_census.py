@@ -9,7 +9,10 @@ from pathlib import Path
 import pandas as pd
 
 from analysis.spread_census import (
+    build_snapshot_table,
+    candle_fields,
     is_stale,
+    is_two_sided,
     last_candle_at_or_before,
     run,
     ticker_climate_date,
@@ -30,6 +33,59 @@ def test_staleness_guard() -> None:
     assert is_stale(stale, snapshot)
     chosen = last_candle_at_or_before([fresh, stale], snapshot)
     assert chosen == fresh
+
+
+def test_extreme_quotes_are_not_two_sided() -> None:
+    # A6: bid 0.00 / ask 1.00 is an empty book, not a 99-cent spread.
+    assert not is_two_sided(0.00, 1.00)
+    assert not is_two_sided(0.00, 0.03)
+    assert not is_two_sided(0.40, 1.00)
+    assert is_two_sided(0.01, 0.99)
+    assert is_two_sided(0.40, 0.45)
+
+
+def test_probe_empty_book_candle_is_excluded_from_spread_stats() -> None:
+    # Verbatim first candle from the 2026-08-14 --probe run.
+    candle = candle_fields(
+        {
+            "end_period_ts": 1786456860,
+            "open_interest_fp": "951.00",
+            "price": {"close_dollars": "0.0100"},
+            "volume_fp": "951.00",
+            "yes_ask": {"close_dollars": "1.0000"},
+            "yes_bid": {"close_dollars": "0.0000"},
+        }
+    )
+    assert candle["bid_close"] == 0.0
+    assert candle["ask_close"] == 1.0
+    assert not is_two_sided(candle["bid_close"], candle["ask_close"])
+
+
+def test_snapshot_table_flags_empty_book_without_spread(tmp_path: Path) -> None:
+    climate_date = "2026-07-04"
+    t_end = climate_day_end(datetime.fromisoformat(climate_date).date())
+    snapshot_ts = int((t_end - timedelta(hours=1)).timestamp())
+    ticker = "KXHIGHNY-26JUL04-T90"
+    candles = [
+        candle_fields(
+            {
+                "end_period_ts": snapshot_ts - 60,
+                "yes_bid": {"close_dollars": "0.0000"},
+                "yes_ask": {"close_dollars": "1.0000"},
+                "volume_fp": "0.00",
+            }
+        )
+    ]
+    snapshots, _stats = build_snapshot_table(
+        markets=[{"ticker": ticker}],
+        candles_by_ticker={ticker: candles},
+        labels=pd.DataFrame(),
+    )
+    row = snapshots[snapshots["horizon_h"] == 1].iloc[0]
+    assert bool(row["quote_valid"])
+    assert not bool(row["two_sided"])
+    assert bool(row["extreme_empty_book"])
+    assert pd.isna(row["spread"])
 
 
 def test_census_writes_csv_and_pngs(tmp_path: Path) -> None:
@@ -119,3 +175,4 @@ def test_census_writes_csv_and_pngs(tmp_path: Path) -> None:
     assert "coverage" in summary.columns
     assert "two_sided_share" in summary.columns
     assert "tradeable_brackets_per_day_median" in summary.columns
+    assert "extreme_empty_book_share" in summary.columns
