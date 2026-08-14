@@ -9,8 +9,10 @@ from pathlib import Path
 import pandas as pd
 
 from analysis.spread_census import (
+    HORIZONS_H,
     build_snapshot_table,
     candle_fields,
+    era_of,
     is_stale,
     is_two_sided,
     last_candle_at_or_before,
@@ -33,6 +35,21 @@ def test_staleness_guard() -> None:
     assert is_stale(stale, snapshot)
     chosen = last_candle_at_or_before([fresh, stale], snapshot)
     assert chosen == fresh
+
+
+def test_horizon_grid_includes_t36_and_keeps_t48() -> None:
+    # A7: T-48h predates market open almost everywhere but its empty column is
+    # the evidence; T-36h is the earliest horizon with real books.
+    assert 36 in HORIZONS_H
+    assert 48 in HORIZONS_H
+    assert HORIZONS_H == tuple(sorted(HORIZONS_H, reverse=True))
+
+
+def test_era_split_keeps_2021_separate() -> None:
+    assert era_of("2021-08-05") == "2021_early"
+    assert era_of("2021-12-31") == "2021_early"
+    assert era_of("2022-01-01") == "2022_plus"
+    assert era_of("2026-08-13") == "2022_plus"
 
 
 def test_extreme_quotes_are_not_two_sided() -> None:
@@ -176,3 +193,5 @@ def test_census_writes_csv_and_pngs(tmp_path: Path) -> None:
     assert "two_sided_share" in summary.columns
     assert "tradeable_brackets_per_day_median" in summary.columns
     assert "extreme_empty_book_share" in summary.columns
+    assert "era" in summary.columns
+    assert set(summary["horizon_h"]) == set(HORIZONS_H)

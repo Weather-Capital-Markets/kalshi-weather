@@ -14,6 +14,11 @@ Two-sided means bid >= $0.01 and ask <= $0.99 (A6). Kalshi renders an empty
 book as bid 0.00 / ask 1.00; those snapshots are counted as no-market, not as
 a 99-cent spread, and never reach the spread statistics.
 
+Horizons run T-48h to T-1h (A7). T-48h is kept even though markets open ~38h
+before T, because its empty column documents that fact; T-36h is the earliest
+horizon with real books. Rows carry an `era` column so the structurally
+different 2021 market never pools with 2022+.
+
 This script prints distributions only — no thresholds, no pass/fail.
 """
 
@@ -38,13 +43,28 @@ from ingestion.writer import read_jsonl_gz
 plt.switch_backend("Agg")
 logger = logging.getLogger(__name__)
 
-HORIZONS_H = (48, 24, 12, 6, 3, 1)
+# A7: markets open ~38h before the climate-day end, so T-48h predates open almost
+# everywhere and its near-zero coverage is a structural fact worth showing. T-36h
+# is the earliest horizon that actually exists (~1 PM ET the day before).
+HORIZONS_H = (48, 36, 24, 12, 6, 3, 1)
+# The 2021 market was structurally different (~1.3 brackets/day vs ~6/day from
+# 2022 on), so it is grouped separately instead of pooling with the modern regime.
+EARLY_ERA_LAST_YEAR = 2021
 STALE_SEC = 15 * 60
 BANDS = (("10_90", 0.10, 0.90), ("20_80", 0.20, 0.80))
 # A6: bid 0.00 / ask 1.00 is an empty book rendered as extreme quotes.
 MIN_BID_DOLLARS = 0.01
 MAX_ASK_DOLLARS = 0.99
 TICKER_DATE = re.compile(r"-(\d{2})([A-Z]{3})(\d{2})-")
+NOTE_T48_STRUCTURAL = (
+    "NOTE: markets open ~38h before the climate-day end, so near-zero coverage at "
+    "T-48h is structural (the market was not open yet), not a data gap. T-36h is "
+    "the earliest horizon that exists in practice."
+)
+NOTE_ERA_SPLIT = (
+    "NOTE: rows are split by era. 2021 traded ~1.3 brackets/day vs ~6/day from 2022 "
+    "on; do not pool 2021 with the modern regime at readout."
+)
 OPEN_ITEM_LST = (
     "OPEN: verify printed CLINYC MAXIMUM times against IEM ASOS hourly KNYC "
     "for ~3 summer days — is the TIME column LST or LDT in summer issuances? "
@@ -134,6 +154,13 @@ def select_full_day_labels(csv_path: Path) -> pd.DataFrame:
     full = labels.loc[~flag.astype(bool)].copy()
     full = full.sort_values("issuance_ts_utc")
     return full.groupby("climate_date", as_index=False).tail(1)
+
+
+def era_of(climate_date: str) -> str:
+    year = int(climate_date[:4])
+    if year <= EARLY_ERA_LAST_YEAR:
+        return f"{EARLY_ERA_LAST_YEAR}_early"
+    return f"{EARLY_ERA_LAST_YEAR + 1}_plus"
 
 
 def season_of(climate_date: str) -> str:
@@ -274,6 +301,7 @@ def build_snapshot_table(
                     "climate_date": climate_date,
                     "horizon_h": hours,
                     "season": season_of(climate_date),
+                    "era": era_of(climate_date),
                     "regime": regime,
                     "regime_uncertain": uncertain,
                     "quote_valid": valid,
@@ -305,11 +333,11 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
         tagged = snapshots.copy()
         tagged["in_band"] = tagged["two_sided"] & tagged["mid"].between(lo, hi)
         grouped = tagged.groupby(
-            ["horizon_h", "season", "regime", "regime_uncertain"],
+            ["horizon_h", "era", "season", "regime", "regime_uncertain"],
             dropna=False,
         )
         for keys, group in grouped:
-            horizon_h, season, regime, uncertain = keys
+            horizon_h, era, season, regime, uncertain = keys
             n_market_days = group[["ticker", "climate_date"]].drop_duplicates().shape[0]
             n_days = group["climate_date"].nunique()
             coverage = float(group["quote_valid"].mean()) if len(group) else 0.0
@@ -326,6 +354,7 @@ def summarize(snapshots: pd.DataFrame) -> pd.DataFrame:
             rows.append(
                 {
                     "horizon_h": horizon_h,
+                    "era": era,
                     "season": season,
                     "regime": regime,
                     "regime_uncertain": uncertain,
@@ -433,6 +462,8 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
     print(
         json.dumps({k: round(v, 6) if isinstance(v, float) else v for k, v in stale_stats.items()})
     )
+    print(NOTE_T48_STRUCTURAL)
+    print(NOTE_ERA_SPLIT)
     print(OPEN_ITEM_LST)
     print(f"wrote {csv_path}")
     for path in pngs:
