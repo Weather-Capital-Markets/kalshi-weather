@@ -1,4 +1,7 @@
-"""Kalshi KXHIGHNY market-data logger."""
+"""Kalshi KXHIGHNY market-data logger.
+
+Allowed DB: storage.heartbeat_db only. Never open storage.backfill_db.
+"""
 
 from __future__ import annotations
 

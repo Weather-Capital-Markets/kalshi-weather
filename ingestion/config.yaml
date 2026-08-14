@@ -5,6 +5,10 @@ api:
     market: "/markets/{ticker}"
     orderbook: "/markets/{ticker}/orderbook"
     trades: "/markets/trades"
+    historical_cutoff: "/historical/cutoff"
+    historical_markets: "/historical/markets"
+    candlesticks: "/series/{series_ticker}/markets/{ticker}/candlesticks"
+    historical_candlesticks: "/historical/markets/{ticker}/candlesticks"
   timeout_sec: 15
   max_requests_per_sec: 5
   orderbook_depth: 0
@@ -23,6 +27,24 @@ cadence_sec:
 storage:
   raw_dir: "data/raw"
   heartbeat_db: "data/heartbeat.sqlite"
+  backfill_db: "data/backfill.sqlite"
+  labels_csv: "data/labels/clinyc.csv"
+
+history:
+  # TODO(verify): Kalshi renamed series with a KX prefix ~2024; HIGHNY is the
+  # suspected legacy NYC-high series. Live /markets?series_ticker=HIGHNY returned [].
+  series:
+    - KXHIGHNY
+    - HIGHNY
+  statuses:
+    - settled
+    - closed
+  candle_period_minutes: 1
+  candle_chunk_minutes: 1440
+
+cli_labels:
+  start_date: "2020-01-01"
+  iem_retrieve_url: "https://mesonet.agron.iastate.edu/cgi-bin/afos/retrieve.py"
 
 logging:
   level: INFO

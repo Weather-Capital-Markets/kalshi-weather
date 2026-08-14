@@ -1,4 +1,8 @@
-"""Persistent state: trades cursor, dedup, known markets."""
+"""Persistent sqlite helpers.
+
+Callers choose the file. Live logger passes heartbeat.sqlite; backfill tools
+pass backfill.sqlite. This module never opens a path on its own.
+"""
 
 from __future__ import annotations
 
@@ -165,3 +169,114 @@ def get_open_tickers(conn: sqlite3.Connection) -> set[str]:
         """
     ).fetchall()
     return {row["ticker"] for row in rows}
+
+
+BACKFILL_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS history_markets (
+  ticker TEXT PRIMARY KEY,
+  series_ticker TEXT,
+  open_time TEXT,
+  close_time TEXT,
+  status TEXT,
+  enumerated_utc TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS candlestick_progress (
+  ticker TEXT PRIMARY KEY,
+  last_end_ts INTEGER NOT NULL,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cli_month_progress (
+  month TEXT PRIMARY KEY,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
+"""
+
+
+def init_backfill_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(BACKFILL_SCHEMA_SQL)
+    conn.commit()
+
+
+def upsert_history_market(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    series_ticker: str,
+    open_time: str | None,
+    close_time: str | None,
+    status: str | None,
+    enumerated_utc: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO history_markets (
+            ticker, series_ticker, open_time, close_time, status, enumerated_utc
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ticker) DO UPDATE SET
+            series_ticker = excluded.series_ticker,
+            open_time = excluded.open_time,
+            close_time = excluded.close_time,
+            status = excluded.status,
+            enumerated_utc = excluded.enumerated_utc
+        """,
+        (ticker, series_ticker, open_time, close_time, status, enumerated_utc),
+    )
+    conn.commit()
+
+
+def list_history_markets(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT ticker, series_ticker, open_time, close_time, status FROM history_markets"
+    ).fetchall()
+
+
+def get_candle_progress(conn: sqlite3.Connection, ticker: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT ticker, last_end_ts, complete, updated_utc "
+        "FROM candlestick_progress WHERE ticker = ?",
+        (ticker,),
+    ).fetchone()
+
+
+def set_candle_progress(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    last_end_ts: int,
+    complete: bool,
+    updated_utc: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO candlestick_progress (ticker, last_end_ts, complete, updated_utc)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(ticker) DO UPDATE SET
+            last_end_ts = excluded.last_end_ts,
+            complete = excluded.complete,
+            updated_utc = excluded.updated_utc
+        """,
+        (ticker, last_end_ts, 1 if complete else 0, updated_utc),
+    )
+    conn.commit()
+
+
+def month_complete(conn: sqlite3.Connection, month: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM cli_month_progress WHERE month = ?",
+        (month,),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_month_complete(conn: sqlite3.Connection, month: str, updated_utc: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO cli_month_progress (month, complete, updated_utc)
+        VALUES (?, 1, ?)
+        ON CONFLICT(month) DO UPDATE SET complete = 1, updated_utc = excluded.updated_utc
+        """,
+        (month, updated_utc),
+    )
+    conn.commit()

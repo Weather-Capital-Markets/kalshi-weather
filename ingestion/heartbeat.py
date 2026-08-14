@@ -1,4 +1,8 @@
-"""SQLite heartbeat logging for every poll attempt."""
+"""SQLite heartbeat logging for every poll attempt.
+
+This module is conn-scoped. Live logger opens heartbeat.sqlite; backfill tools
+may reuse record_attempt() on a backfill.sqlite connection. Never hardcode a path.
+"""
 
 from __future__ import annotations
 
