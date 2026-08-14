@@ -226,6 +226,22 @@ NNN:BYTEOFF:d=YYYYMMDDCC:TMP:2 m above ground:A-B hour min fcst:prob <233:prob f
 5. KNYC grid-point coordinates: Central Park ≈ 40.779 N, 73.969 W; exact station coordinates
    and nearest-gridpoint policy `(verify — O8)`. CONUS grid ≈ 2345×1597 (Herbie doc,
    secondary) `(verify)`.
+6. **The retrospective leg covers 100% of market history.** Kalshi NYC-high market history
+   begins **2021-08-05** — 10 months *after* the v4.0 boundary (2020-09-29), so the 99-level
+   percentile ladder of §3.1 is available for every market-day we can ever backfill. There is
+   no pre-v4.0 market segment to carve out, and no era boundary inside the retrospective leg
+   other than v4.1/v4.2/v4.3 (which do not change the 99-level window instrument).
+   `[V-LOCAL]` — `python -m ingestion.kalshi_history --dry-run`, 2026-08-14: 9,364 markets,
+   `date_span_open_close: 2021-08-05 to 2026-08-13`.
+7. **Early-market regime break (2021).** Bracket density was ~1.3 markets/day in 2021 vs ~6/day
+   from 2022 on (by close year: 2021: 197, 2022: 1250, 2023: 2181, 2024: 2196, 2025: 2190,
+   2026-partial: 1350). The 2021 market was structurally different — materially fewer brackets
+   per day — so 2021 is reported as a **separate regime** in any liquidity or bracket-count
+   readout and never pooled with 2022+. `analysis/spread_census.py` enforces this with an `era`
+   column. `[V-LOCAL]` — same dry-run.
+8. Kalshi's own contract text names the settlement source: `rules_primary` cites the "National
+   Weather Service's Climatological Report (Daily)" verbatim, corroborating §1.2's choice of
+   CLINYC from the venue side. Details in `venue-facts.md` §1.3.
 
 ---
 
