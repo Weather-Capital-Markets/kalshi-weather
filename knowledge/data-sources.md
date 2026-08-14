@@ -54,6 +54,21 @@ tool's *interpretation* — only on quoted raw output cross-checked against prim
   2020→335 `[REPORTED]`).
 - Multiple issuances per climate day exist (same-day intermediates "VALID TODAY AS OF ...",
   next-morning report, corrections). `[CORR]`
+- **`retrieve.py` caps `limit` at 9999** and answers anything larger with HTTP 422 and a
+  pydantic validation body — not an empty result. A too-large limit therefore fails every
+  month silently unless the status code is checked. `[V-LOCAL]` — 2026-08-14; `ingestion/cli_labels.py`
+  pins the limit and warns if a month's product count reaches it.
+- **Realized backfill (2020-01 → 2026-08, `python -m ingestion.cli_labels`, 2026-08-14)**
+  `[V-LOCAL]`: 4,913 parsed issuances over 2,416 distinct climate dates (2019-12-31 →
+  2026-08-13), of which 2,440 are same-day intermediates. Applying the full-day rule leaves
+  **2,413 candidate labels**; 25 report `MM` rather than a temperature. Only 2 products in the
+  whole range failed the modern-parser check. Against the 1,829 climate days that carry a
+  Kalshi market, **1,825 have a full-day label and 4 do not**: 2025-06-02 and 2025-06-03 have
+  no CLINYC issuance in the archive at all, while 2025-06-18 and 2025-11-13 have only a
+  same-day intermediate and no full-day report. Tracked as O10.
+- The TIME column header is `(LST)` on **every** parsed issuance, with no seasonal variation.
+  That is the printed label, not proof the values are LST in summer; the ASOS cross-check
+  (`spread_census.py` `OPEN_ITEM_LST`) is still required.
 
 ### 1.3 Label-selection rule (DECIDED)
 
@@ -266,6 +281,7 @@ NNN:BYTEOFF:d=YYYYMMDDCC:TMP:2 m above ground:A-B hour min fcst:prob <233:prob f
 | O7 | One-click confirmation of `[REPORTED]` URLs (NWSI 10-1004, 10-201, lot-FAQ, ndfd_metadata, NBM Versions) | Before citing externally | 10 minutes of clicks; fix links in place |
 | O8 | Exact KNYC station coords + gridpoint-selection policy | Before first grid extraction | MDL station table / bulletin metadata |
 | O9 | §1.3 label selection needs a per-era settlement snapshot hour (10 AM before 2024-09-04, 7/8 AM after, unspecified before 2021-12-28). One fixed hour silently mis-selects the issuance, which is the exact silent-label-error class §1.3 exists to prevent | Before building labels for pre-2024-09-04 market days | Take era bounds from `venue-facts.md` §1.10; resolve the 2021 era from Rulebook Rule 100.19 (venue lane, V1) |
+| O10 | 4 market climate days have no usable CLINYC label: 2025-06-02 / 2025-06-03 (no issuance archived) and 2025-06-18 / 2025-11-13 (same-day intermediate only). Kalshi settled those markets on something | Before labelling those 4 days | Re-query IEM per-issuance (`p.php`) for the exact dates; if genuinely absent, exclude the days and record the exclusion |
 
 **Decisions pending in other lanes (not this file's to make):** Polymarket logger inclusion
 (root chat, recorded decision); knowledge-file naming set (root chat); Chicago settlement
