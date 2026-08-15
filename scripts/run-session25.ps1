@@ -1,6 +1,8 @@
 # Session 2.5 calibration scripts (Windows PowerShell).
-# Run from the repo root:  .\scripts\run-session25.ps1
-# Optional: .\scripts\run-session25.ps1 -Step asos
+# Run from the repo root:
+#   scripts\run-session25.cmd asos          # no execution-policy change needed
+#   .\scripts\run-session25.ps1 -Step asos  # if scripts are allowed
+# If .ps1 is blocked: powershell -ExecutionPolicy Bypass -File .\scripts\run-session25.ps1 -Step asos
 
 param(
     [ValidateSet("all", "asos", "clockb", "window")]
