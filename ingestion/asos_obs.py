@@ -109,8 +109,9 @@ class AsosObsBackfill:
             "network": self.network,
             "station": self.station,
             "data": ",".join(self.data_fields),
-            "sts": f"{year:04d}/{mon:02d}/01 0000",
-            "ets": f"{year:04d}/{mon:02d}/{last:02d} 2359",
+            # IEM asos.py requires timezone-aware ISO timestamps (HTTP 422 otherwise).
+            "sts": f"{year:04d}-{mon:02d}-01T00:00:00Z",
+            "ets": f"{year:04d}-{mon:02d}-{last:02d}T23:59:59Z",
             "tz": "UTC",
             "format": "onlycomma",
             "latlon": "no",
