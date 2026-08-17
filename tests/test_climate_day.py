@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from ingestion.climate_day import climate_date_of, parse_lst_clock, parse_nws_issuance_ts
+from ingestion.climate_day import (
+    climate_date_of,
+    climate_dst_status,
+    parse_lst_clock,
+    parse_nws_issuance_ts,
+)
 
 NY = ZoneInfo("America/New_York")
 
@@ -35,3 +40,9 @@ def test_parse_lst_clock_is_timezone_naive() -> None:
     assert parse_lst_clock("455 PM") == (16, 55)
     assert parse_lst_clock("105 PM") == (13, 5)
     assert parse_lst_clock("12:40 AM") == (0, 40)
+
+
+def test_climate_dst_status_marks_edt_est_and_transition() -> None:
+    assert climate_dst_status("2026-07-04") == "edt"
+    assert climate_dst_status("2026-01-10") == "est"
+    assert climate_dst_status("2026-03-08") == "transition"

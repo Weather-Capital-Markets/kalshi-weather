@@ -50,7 +50,7 @@ climate:
   cli_time_convention: unknown  # lst | ldt | unknown
 
 asos_obs:
-  start_date: "2025-05-01"
+  start_date: "2021-01-01"
   # TODO(verify): IEM station id for Central Park in NY_ASOS (GHCNH USW00094728).
   station: "NYC"
   network: "NY_ASOS"
@@ -59,7 +59,7 @@ asos_obs:
     - tmpf  # TODO(verify): air temperature Fahrenheit @ 2m
 
 clockb_check:
-  sample_days: 15
+  out_dir: "analysis/out"
 
 window_mismatch:
   out_dir: "analysis/out"
