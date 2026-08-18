@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
+from unittest.mock import MagicMock
 
+from ingestion.client import RequestResult
 from ingestion.polymarket_gamma import (
     bracket_labels,
+    discover_daily_events,
     enrich_market,
     event_slug_candidates,
     ladder_strike_set,
@@ -92,3 +95,46 @@ def test_ladder_strike_set_sorted() -> None:
     ladder = ladder_strike_set(markets)
     assert ladder[0]["strike_f"] == 76
     assert ladder[1]["strike_f"] == 88
+
+
+def test_discover_daily_events_returns_events_and_results() -> None:
+    client = MagicMock()
+    event = {
+        "slug": "highest-temperature-in-nyc-on-august-18-2026",
+        "markets": [
+            {
+                "slug": "m1",
+                "groupItemTitle": "76-77°F",
+                "active": True,
+                "closed": False,
+                "acceptingOrders": True,
+                "clobTokenIds": "[\"1\"]",
+            }
+        ],
+    }
+    client.list_series_events.return_value = RequestResult(
+        status_code=200,
+        latency_ms=1,
+        json_body=[],
+        error_text=None,
+        endpoint="/events",
+    )
+    client.event_by_slug.return_value = RequestResult(
+        status_code=200,
+        latency_ms=1,
+        json_body=event,
+        error_text=None,
+        endpoint="/events/slug/test",
+    )
+    now = datetime(2026, 8, 18, 12, 0, 0, tzinfo=timezone.utc)
+    discovered, results = discover_daily_events(
+        client,
+        series_slug="nyc-daily-weather",
+        event_prefix="highest-temperature-in-nyc-on",
+        horizon_days=1,
+        discovery_limit=5,
+        now=now,
+    )
+    assert len(discovered) == 1
+    assert discovered[0][0] == "highest-temperature-in-nyc-on-august-18-2026"
+    assert len(results) >= 2

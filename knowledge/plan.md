@@ -59,6 +59,8 @@ validity machinery; the census stayed frozen until v3 was registered here.
 | `validate_candles.py` | **Run** — EMPTYING_EMITTED PASS; VOLUME_RECONCILE FAIL at pre-registered exact equality; accepted per v3 validity |
 | `venue_eras.py` | **Run** — last trading time change 2026-03-17→18; settlement eras in `venue-facts.md` §1.10 |
 | Census code | **Ready** — carry-forward primary, `_strict15` + `_exclnoreconcile` robustness columns |
+| Polymarket logger | **Done** — Gamma `nyc-daily-weather` ladder + CLOB books; PR #10 on `main` |
+| VPS dual logger | **Runbook** — `scripts/vps-setup.sh`; `scripts/verify-setup.sh` for local smoke |
 | Census execution | **Frozen** — awaiting v3 date in root chat + VPS `--status` |
 | PR #2 | Bulk backfill branch ready to merge after this housekeeping |
 | Open (load-bearing) | VPS `--status` (K4 + forward quote validation); root-chat ratification date; Polymarket; Gate 0 |
