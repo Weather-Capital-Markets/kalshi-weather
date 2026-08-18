@@ -306,31 +306,41 @@ def discover_daily_events(
     horizon_days: int,
     discovery_limit: int,
     now: datetime | None = None,
-) -> list[tuple[str, dict[str, Any]]]:
-    """Return (event_slug, event) for each calendar day in the discovery horizon."""
+) -> tuple[list[tuple[str, dict[str, Any]]], list[RequestResult]]:
+    """Return (event_slug, event) pairs and all Gamma HTTP results for heartbeat."""
     current = now or datetime.now(timezone.utc)
     today = current.date()
     discovered: list[tuple[str, dict[str, Any]]] = []
     seen_slugs: set[str] = set()
+    request_results: list[RequestResult] = []
 
     series_result = client.list_series_events(series_slug, limit=discovery_limit)
+    request_results.append(series_result)
     series_events = _extract_events(series_result.json_body)
     for day_offset in range(max(horizon_days, 1)):
         day = today + timedelta(days=day_offset)
-        slug, _, event = resolve_event_for_day(client, day, prefix=event_prefix)
-        if event is not None and slug and slug not in seen_slugs:
-            discovered.append((slug, event))
-            seen_slugs.add(slug)
+        for slug in event_slug_candidates(day, prefix=event_prefix):
+            if slug in seen_slugs:
+                continue
+            result = client.event_by_slug(slug)
+            request_results.append(result)
+            if result.ok and isinstance(result.json_body, dict):
+                discovered.append((slug, result.json_body))
+                seen_slugs.add(slug)
+                break
 
     if not discovered and series_events:
         picked_current, picked_next = pick_current_and_next_events(series_events, now=current)
         for event in (picked_current, picked_next):
-            if isinstance(event, dict):
-                slug = event.get("slug")
-                if isinstance(slug, str) and slug not in seen_slugs:
-                    full = client.event_by_slug(slug)
-                    if full.ok and isinstance(full.json_body, dict):
-                        discovered.append((slug, full.json_body))
-                        seen_slugs.add(slug)
+            if not isinstance(event, dict):
+                continue
+            slug = event.get("slug")
+            if not isinstance(slug, str) or slug in seen_slugs:
+                continue
+            full = client.event_by_slug(slug)
+            request_results.append(full)
+            if full.ok and isinstance(full.json_body, dict):
+                discovered.append((slug, full.json_body))
+                seen_slugs.add(slug)
 
-    return discovered
+    return discovered, request_results

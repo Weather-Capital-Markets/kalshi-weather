@@ -92,10 +92,13 @@ validate_emission_forward (run when VPS alive; rsync or on-box)
 |---|---|---|
 | A Depth census | `analysis/depth_census.py` | Logger orderbook JSONL only; horizons T-24h…T-1h; 10–90¢ band |
 | B Forward emission | `analysis/validate_emission_forward.py` | Logger vs live candles; silent-gap count; shortfall reporting |
-| C Polymarket logger | `ingestion/polymarket_logger.py` | `pm_*` categories; separate `polymarket_heartbeat.sqlite`; `--probe` |
+| C Polymarket logger | `ingestion/polymarket_logger.py` | Gamma `series_slug=nyc-daily-weather`; full daily ladder; CLOB books; `pm_meta` strike/direction |
 
 ```text
 depth_census → validate_emission_forward (when logger has ≥3d raw)
 polymarket_logger --probe → --once on VPS alongside Kalshi logger
 ```
+
+Polymarket logging is **measurement only**. Deferred in code comments: (a) S2 threshold
+monotonicity on the `>=` ladder; (b) cross-venue Kalshi cumulative reconstruction.
 

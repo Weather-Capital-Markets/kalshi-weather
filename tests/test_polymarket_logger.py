@@ -112,10 +112,13 @@ def test_polymarket_once_writes_all_ladder_books(tmp_path: Path) -> None:
     app.clob = clob
 
     with patch("ingestion.polymarket_logger.discover_daily_events") as discover:
-        discover.return_value = [
-            (current_slug, current_event),
-            (next_slug, next_event),
-        ]
+        discover.return_value = (
+            [
+                (current_slug, current_event),
+                (next_slug, next_event),
+            ],
+            [],
+        )
         try:
             app.run_once()
         finally:
@@ -180,7 +183,7 @@ def test_polymarket_probe_prints_strike_set(
         mock_dt.now.return_value = __import__("datetime").datetime(
             2026, 8, 18, 2, 0, 0, tzinfo=__import__("datetime").timezone.utc
         )
-        mock_dt.side_effect = lambda *args, **kwargs: __import__("datetime").datetime(*args, **kwargs)
+        mock_dt.side_effect = lambda *a, **kw: __import__("datetime").datetime(*a, **kw)
         try:
             assert app.probe() == 0
         finally:

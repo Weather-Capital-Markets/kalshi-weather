@@ -16,7 +16,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -30,10 +30,10 @@ from ingestion.heartbeat import (
 )
 from ingestion.polymarket_clob import PolymarketClobClient
 from ingestion.polymarket_gamma import (
+    PolymarketGammaClient,
     discover_daily_events,
     ladder_strike_set,
     open_threshold_markets,
-    PolymarketGammaClient,
     resolve_event_for_day,
 )
 from ingestion.state import get_state, init_state_schema, set_state
@@ -146,13 +146,17 @@ class PolymarketLogger:
 
     def poll_markets(self) -> None:
         series_slug = self._series_slug()
-        discovered = discover_daily_events(
+        discovered, gamma_results = discover_daily_events(
             self.gamma,
             series_slug=series_slug,
             event_prefix=self._event_prefix(),
             horizon_days=self._horizon_days(),
             discovery_limit=int(self.gamma_cfg.get("discovery_limit") or 10),
         )
+        for result in gamma_results:
+            ticker = "gamma_series" if result.endpoint == "/events" else "gamma_event"
+            self._record(result, ticker=ticker)
+
         ladder_entries: list[LadderEntry] = []
         for event_slug, event in discovered:
             markets = open_threshold_markets(event)
@@ -215,7 +219,7 @@ class PolymarketLogger:
             self._record(result, ticker=entry.market_slug)
             payload: dict[str, Any] = {
                 "pm_meta": entry.as_dict(),
-                "book": result.json_body if isinstance(result.json_body, dict) else result.json_body,
+                "book": result.json_body,
             }
             if result.ok:
                 self.writer.write(
