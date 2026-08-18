@@ -124,28 +124,51 @@ sqlite3 data/heartbeat.sqlite "SELECT key, value FROM kv_state WHERE key LIKE 't
 
 ## Deploy to Ubuntu VPS (user-level systemd)
 
+Target: both loggers on one box (`kalshi-logger` + `polymarket-logger`), surviving logout.
+
+### Automated (on the VPS, from repo root)
+
 ```bash
-# On the VPS, after cloning and setting up the venv (see Quick start)
+git clone https://github.com/Weather-Capital-Markets/kalshi-weather.git
+cd kalshi-weather
+./scripts/vps-setup.sh
+```
+
+`vps-setup.sh` creates the venv, installs deps, runs `--once` smoke tests, installs user
+systemd units from `deploy/`, enables lingering, and starts both services.
+
+### Manual equivalent
+
+```bash
+# After clone + venv (see Quick start)
 mkdir -p ~/.config/systemd/user
-cp deploy/kalshi-logger.service ~/.config/systemd/user/
-# Edit WorkingDirectory/ExecStart paths if not using ~/kalshi-weather
+cp deploy/kalshi-logger.service deploy/polymarket-logger.service ~/.config/systemd/user/
+# Edit WorkingDirectory/ExecStart if not using ~/kalshi-weather
 
 systemctl --user daemon-reload
-systemctl --user enable kalshi-logger
-systemctl --user start kalshi-logger
+systemctl --user enable --now kalshi-logger polymarket-logger
+sudo loginctl enable-linger $USER
 
 # Verify
-systemctl --user status kalshi-logger
-journalctl --user -u kalshi-logger -f
+systemctl --user status kalshi-logger polymarket-logger
 python -m ingestion.kalshi_logger --status
-sqlite3 ~/kalshi-weather/data/heartbeat.sqlite "SELECT COUNT(*) FROM poll_attempts;"
+python -m ingestion.polymarket_logger --status
+journalctl --user -u kalshi-logger -f
+journalctl --user -u polymarket-logger -f
 ```
 
-Enable lingering so the user service survives logout:
+Kalshi heartbeat: `data/heartbeat.sqlite`. Polymarket heartbeat:
+`data/polymarket_heartbeat.sqlite`. Both write under `data/raw/` (Kalshi
+`orderbook/`, Polymarket `pm_orderbook/` + `pm_markets/`).
+
+### Local verification (laptop or CI-style)
 
 ```bash
-sudo loginctl enable-linger $USER
+./scripts/verify-setup.sh
 ```
+
+Runs `ruff`, `pytest`, live `--once` for both loggers, `--status`, and a Kalshi
+`depth_census` sanity check.
 
 ## Tests
 
@@ -161,7 +184,7 @@ Tests mock HTTP; no live API calls in CI.
 knowledge/          Source-of-truth docs (weather, venue facts)
 ingestion/          Kalshi market-data logger
 tests/              Unit tests
-deploy/             systemd unit file
+deploy/             systemd unit files + VPS scripts in scripts/
 data/               Runtime captures (gitignored)
 ```
 
