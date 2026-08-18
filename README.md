@@ -310,20 +310,27 @@ python -m analysis.depth_census --data-dir data/raw
 python -m analysis.validate_emission_forward \
   --data-dir data/raw --start 2026-08-01 --end 2026-08-03
 
-# C. Polymarket US logger (isolated heartbeat + pm_* raw categories)
-python -m ingestion.polymarket_logger --probe   # verify endpoints + one book raw JSON
-python -m ingestion.polymarket_logger --once
+# C. Polymarket NYC daily-high ladder logger (Gamma + CLOB; isolated heartbeat)
+python -m ingestion.polymarket_logger --probe   # series discovery + strike ladder + sample book
+python -m ingestion.polymarket_logger --once    # all open thresholds × horizon_days
 python -m ingestion.polymarket_logger --status
 ```
+
+Discovery uses `polymarket.markets.series_slug` (`nyc-daily-weather`), not per-market
+slugs. Each `--once` writes one `pm_markets` file per calendar day (full ladder with
+`pm_meta.strike_f` and `pm_meta.direction`) and one `pm_orderbook` file per open strike
+(CLOB `/book?token_id=...`). Orderbooks are on `clob.polymarket.com`, not the US sports
+gateway.
 
 Depth census history is **logger-length only** (days). Re-run as the VPS logger accrues.
 Polymarket writes to `data/polymarket_heartbeat.sqlite` and `pm_orderbook` / `pm_markets`
 under `data/raw/` — it does not touch the Kalshi heartbeat DB.
 
-On VPS, enable the second unit:
+On VPS, enable both units after `git pull` and venv setup:
 
 ```bash
-systemctl --user enable --now deploy/polymarket-logger.service
+systemctl --user enable --now kalshi-logger polymarket-logger
+systemctl --user status kalshi-logger polymarket-logger
 ```
 
 After deploying the Kalshi logger with deeper books, consider raising `api.orderbook_depth`

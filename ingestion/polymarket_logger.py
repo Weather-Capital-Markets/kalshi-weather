@@ -1,6 +1,10 @@
-"""Polymarket US public market-data logger.
+"""Polymarket NYC daily-high temperature logger (Gamma discovery + CLOB books).
 
 Allowed DB: polymarket storage.heartbeat_db only. Isolated from Kalshi logger.
+
+Deferred analysis (logging only — not implemented here):
+  (a) S2-on-Polymarket = threshold monotonicity across the >= ladder.
+  (b) cross-venue = reconstruct Kalshi cumulative onto these strikes.
 """
 
 from __future__ import annotations
@@ -12,6 +16,7 @@ import signal
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -23,13 +28,38 @@ from ingestion.heartbeat import (
     last_hour_summary,
     record_attempt,
 )
-from ingestion.polymarket_client import PolymarketClient
+from ingestion.polymarket_clob import PolymarketClobClient
+from ingestion.polymarket_gamma import (
+    PolymarketGammaClient,
+    discover_daily_events,
+    ladder_strike_set,
+    open_threshold_markets,
+    resolve_event_for_day,
+)
 from ingestion.state import get_state, init_state_schema, set_state
 from ingestion.writer import RawJsonlWriter, utc_now_iso
 
 logger = logging.getLogger(__name__)
 
-ACTIVE_SLUGS_KEY = "pm_active_slugs"
+ACTIVE_LADDER_KEY = "pm_active_ladder"
+
+
+@dataclass
+class LadderEntry:
+    event_slug: str
+    market_slug: str
+    yes_token_id: str
+    strike_f: int
+    direction: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "event_slug": self.event_slug,
+            "market_slug": self.market_slug,
+            "yes_token_id": self.yes_token_id,
+            "strike_f": self.strike_f,
+            "direction": self.direction,
+        }
 
 
 @dataclass
@@ -48,27 +78,6 @@ class Scheduler:
         self.last_run[name] = now if now is not None else time.monotonic()
 
 
-def _extract_markets(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, dict):
-        markets = payload.get("markets")
-        if isinstance(markets, list):
-            return [m for m in markets if isinstance(m, dict)]
-        data = payload.get("data")
-        if isinstance(data, list):
-            return [m for m in data if isinstance(m, dict)]
-    if isinstance(payload, list):
-        return [m for m in payload if isinstance(m, dict)]
-    return []
-
-
-def _market_slug(market: dict[str, Any]) -> str | None:
-    for key in ("slug", "marketSlug", "market_slug"):
-        value = market.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
 class PolymarketLogger:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -77,15 +86,18 @@ class PolymarketLogger:
         self.conn = connect(storage["heartbeat_db"])
         init_schema(self.conn)
         init_state_schema(self.conn)
-        self.client = PolymarketClient(config)
+        self.gamma = PolymarketGammaClient(config)
+        self.clob = PolymarketClobClient(config)
         self.markets_cfg = config.get("markets") or {}
+        self.gamma_cfg = config.get("gamma") or {}
         self.scheduler = Scheduler({k: float(v) for k, v in config["cadence_sec"].items()})
         self._shutdown = False
-        self._active_slugs: set[str] = set()
+        self._active_ladder: list[LadderEntry] = []
 
     def close(self) -> None:
         self.writer.close()
-        self.client.close()
+        self.gamma.close()
+        self.clob.close()
         self.conn.close()
 
     def install_signal_handlers(self) -> None:
@@ -119,100 +131,216 @@ class PolymarketLogger:
             self.poll_orderbooks()
             self.scheduler.mark("orderbook")
 
+    def _series_slug(self) -> str:
+        return str(
+            self.markets_cfg.get("series_slug")
+            or self.gamma_cfg.get("series_slug")
+            or "nyc-daily-weather"
+        )
+
+    def _event_prefix(self) -> str:
+        return str(self.gamma_cfg.get("event_slug_prefix") or "highest-temperature-in-nyc-on")
+
+    def _horizon_days(self) -> int:
+        return int(self.markets_cfg.get("horizon_days") or self.gamma_cfg.get("horizon_days") or 2)
+
     def poll_markets(self) -> None:
-        path = str(self.markets_cfg.get("list_path") or "/v1/markets")
-        params: dict[str, Any] = {"limit": int(self.markets_cfg.get("limit") or 100)}
-        slug_filter = str(self.markets_cfg.get("slug_filter") or "").strip()
-        if slug_filter:
-            params["search"] = slug_filter
-        result = self.client.get(path, params=params)
-        self._record(result, ticker="markets")
-        if result.ok and isinstance(result.json_body, (dict, list)):
-            payload = result.json_body
-            if not isinstance(payload, dict):
-                payload = {"markets": result.json_body}
+        series_slug = self._series_slug()
+        discovered, gamma_results = discover_daily_events(
+            self.gamma,
+            series_slug=series_slug,
+            event_prefix=self._event_prefix(),
+            horizon_days=self._horizon_days(),
+            discovery_limit=int(self.gamma_cfg.get("discovery_limit") or 10),
+        )
+        for result in gamma_results:
+            ticker = "gamma_series" if result.endpoint == "/events" else "gamma_event"
+            self._record(result, ticker=ticker)
+
+        ladder_entries: list[LadderEntry] = []
+        for event_slug, event in discovered:
+            markets = open_threshold_markets(event)
+            ladder = ladder_strike_set(markets)
+            endpoint = f"/events/slug/{event_slug}"
             self.writer.write(
                 ts_utc=utc_now_iso(),
-                endpoint=path,
+                endpoint=endpoint,
                 category="pm_markets",
-                key="list",
-                http_status=result.status_code,
-                latency_ms=result.latency_ms,
-                payload=payload,
+                key=event_slug,
+                http_status=200,
+                latency_ms=0,
+                payload={
+                    "event_slug": event_slug,
+                    "series_slug": series_slug,
+                    "event": event,
+                    "markets": markets,
+                    "ladder": ladder,
+                },
             )
-            slugs = []
-            for market in _extract_markets(result.json_body):
-                slug = _market_slug(market)
-                if slug:
-                    slugs.append(slug)
-            configured = [
-                str(s).strip() for s in (self.markets_cfg.get("slugs") or []) if str(s).strip()
-            ]
-            if configured:
-                slugs = configured
-            self._active_slugs = set(slugs)
-            set_state(self.conn, ACTIVE_SLUGS_KEY, json.dumps(sorted(self._active_slugs)))
-        elif not self._active_slugs:
-            raw = get_state(self.conn, ACTIVE_SLUGS_KEY)
-            if raw:
-                try:
-                    self._active_slugs = set(json.loads(raw))
-                except json.JSONDecodeError:
-                    self._active_slugs = set()
+            for market in markets:
+                meta = market.get("pm_meta") if isinstance(market.get("pm_meta"), dict) else {}
+                token = meta.get("yes_token_id")
+                slug = meta.get("market_slug")
+                strike = meta.get("strike_f")
+                direction = meta.get("direction")
+                if (
+                    isinstance(token, str)
+                    and token
+                    and isinstance(slug, str)
+                    and isinstance(strike, int)
+                    and isinstance(direction, str)
+                ):
+                    ladder_entries.append(
+                        LadderEntry(
+                            event_slug=event_slug,
+                            market_slug=slug,
+                            yes_token_id=token,
+                            strike_f=strike,
+                            direction=direction,
+                        )
+                    )
+
+        if ladder_entries:
+            self._active_ladder = ladder_entries
+            set_state(
+                self.conn,
+                ACTIVE_LADDER_KEY,
+                json.dumps([entry.as_dict() for entry in ladder_entries]),
+            )
+        elif not self._active_ladder:
+            self._restore_ladder_state()
 
     def poll_orderbooks(self) -> None:
-        if not self._active_slugs:
-            raw = get_state(self.conn, ACTIVE_SLUGS_KEY)
-            if raw:
-                try:
-                    self._active_slugs = set(json.loads(raw))
-                except json.JSONDecodeError:
-                    self._active_slugs = set()
-        book_template = str(self.markets_cfg.get("book_path_template") or "/v1/markets/{slug}/book")
-        for slug in sorted(self._active_slugs):
-            path = book_template.replace("{slug}", slug)
-            result = self.client.get(path)
-            self._record(result, ticker=slug)
-            if result.ok and isinstance(result.json_body, dict):
+        if not self._active_ladder:
+            self._restore_ladder_state()
+        book_path = str((self.config.get("clob") or {}).get("book_path") or "/book")
+        for entry in self._active_ladder:
+            result = self.clob.get_book(entry.yes_token_id)
+            self._record(result, ticker=entry.market_slug)
+            payload: dict[str, Any] = {
+                "pm_meta": entry.as_dict(),
+                "book": result.json_body,
+            }
+            if result.ok:
                 self.writer.write(
                     ts_utc=utc_now_iso(),
-                    endpoint=path,
+                    endpoint=book_path,
                     category="pm_orderbook",
-                    key=slug,
+                    key=entry.market_slug,
                     http_status=result.status_code,
                     latency_ms=result.latency_ms,
-                    payload=result.json_body,
+                    payload=payload,
                 )
 
     def probe(self) -> int:
-        path = str(self.markets_cfg.get("list_path") or "/v1/markets")
-        params: dict[str, Any] = {"limit": int(self.markets_cfg.get("limit") or 10)}
-        slug_filter = str(self.markets_cfg.get("slug_filter") or "").strip()
-        if slug_filter:
-            params["search"] = slug_filter
-        result = self.client.get(path, params=params)
-        print("=== PROBE GET markets list ===")
-        print(f"status={result.status_code}")
-        print(json.dumps(result.json_body, indent=2, default=str))
-        markets = _extract_markets(result.json_body)
-        slug = None
-        configured = [
-            str(s).strip() for s in (self.markets_cfg.get("slugs") or []) if str(s).strip()
-        ]
-        if configured:
-            slug = configured[0]
-        elif markets:
-            slug = _market_slug(markets[0])
-        if not slug:
-            print("probe: no market slug resolved — set polymarket.markets.slugs in config")
+        series_slug = self._series_slug()
+        event_prefix = self._event_prefix()
+        today = datetime.now(timezone.utc).date()
+
+        print("=== PROBE Gamma series discovery ===")
+        print(
+            "query="
+            + json.dumps(
+                {
+                    "series_slug": series_slug,
+                    "active": True,
+                    "closed": False,
+                    "limit": int(self.gamma_cfg.get("discovery_limit") or 10),
+                    "order": "endDate",
+                    "ascending": True,
+                }
+            )
+        )
+        series_result = self.gamma.list_series_events(
+            series_slug,
+            limit=int(self.gamma_cfg.get("discovery_limit") or 10),
+        )
+        print(f"status={series_result.status_code}")
+
+        slug, slug_result, event = resolve_event_for_day(
+            self.gamma,
+            today,
+            prefix=event_prefix,
+        )
+        print(f"=== PROBE Gamma GET /events/slug/{{slug}} (current day {today.isoformat()}) ===")
+        print(f"resolved_slug={slug}")
+        if slug_result is not None:
+            print(f"status={slug_result.status_code}")
+
+        if event is None:
+            print("probe: no current-day event resolved")
             return 0
-        book_template = str(self.markets_cfg.get("book_path_template") or "/v1/markets/{slug}/book")
-        book_path = book_template.replace("{slug}", slug)
-        book_result = self.client.get(book_path)
-        print(f"=== PROBE GET {book_path} ===")
-        print(f"status={book_result.status_code}")
-        print(json.dumps(book_result.json_body, indent=2, default=str))
+
+        open_markets = open_threshold_markets(event)
+        ladder = ladder_strike_set(open_markets)
+        ge_ladder = [row for row in ladder if row.get("direction") == ">="]
+
+        print("=== PROBE STRUCTURE (logging contract) ===")
+        print(
+            "market_structure=CUMULATIVE_THRESHOLD_BINARIES "
+            "(single threshold per contract; 2°F spacing on >= ladder; logging only)"
+        )
+        print(f"open_threshold_count={len(open_markets)}")
+        print(f"ge_strike_count={len(ge_ladder)}")
+        print("strike_set_ge=" + json.dumps(ge_ladder, indent=2))
+        print("full_ladder=" + json.dumps(ladder, indent=2))
+
+        print(f"=== RAW MARKETS current event slug={slug} (open thresholds only) ===")
+        print(json.dumps(open_markets, indent=2, default=str))
+
+        if open_markets:
+            sample_token = None
+            for market in open_markets:
+                meta = market.get("pm_meta") if isinstance(market.get("pm_meta"), dict) else {}
+                token = meta.get("yes_token_id")
+                if isinstance(token, str) and token:
+                    sample_token = token
+                    break
+            if sample_token:
+                book_result = self.clob.get_book(sample_token)
+                print("=== PROBE CLOB GET /book (sample Yes token) ===")
+                print("query=" + json.dumps({"token_id": sample_token}))
+                print(f"status={book_result.status_code}")
+                print(json.dumps(book_result.json_body, indent=2, default=str))
+
         return 0
+
+    def _restore_ladder_state(self) -> None:
+        raw = get_state(self.conn, ACTIVE_LADDER_KEY)
+        if not raw:
+            return
+        try:
+            rows = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        if not isinstance(rows, list):
+            return
+        restored: list[LadderEntry] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            token = row.get("yes_token_id")
+            slug = row.get("market_slug")
+            event_slug = row.get("event_slug")
+            strike = row.get("strike_f")
+            direction = row.get("direction")
+            if (
+                isinstance(token, str)
+                and isinstance(slug, str)
+                and isinstance(event_slug, str)
+                and isinstance(strike, int)
+                and isinstance(direction, str)
+            ):
+                restored.append(
+                    LadderEntry(
+                        event_slug=event_slug,
+                        market_slug=slug,
+                        yes_token_id=token,
+                        strike_f=strike,
+                        direction=direction,
+                    )
+                )
+        self._active_ladder = restored
 
     def _record(self, result: Any, *, ticker: str) -> None:
         attempts = result.attempts or (result,)
@@ -242,14 +370,14 @@ def configure_logging(level_name: str) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Polymarket US market-data logger")
+    parser = argparse.ArgumentParser(description="Polymarket NYC daily-high temperature logger")
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--status", action="store_true")
     parser.add_argument(
         "--probe",
         action="store_true",
-        help="Fetch one market list + book raw JSON",
+        help="Gamma series discovery + current-day strike ladder + sample CLOB book",
     )
     return parser
 

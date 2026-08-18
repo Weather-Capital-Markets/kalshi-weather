@@ -73,18 +73,24 @@ validate_emission_forward:
   out_dir: "analysis/out"
 
 polymarket:
-  api:
-    base_url: "https://gateway.polymarket.us"
+  gamma:
+    base_url: "https://gamma-api.polymarket.com"
+    timeout_sec: 15
+    max_requests_per_sec: 10
+    max_retries: 3
+    series_slug: "nyc-daily-weather"
+    event_slug_prefix: "highest-temperature-in-nyc-on"
+    discovery_limit: 10
+    horizon_days: 2
+  clob:
+    base_url: "https://clob.polymarket.com"
+    book_path: "/book"
     timeout_sec: 15
     max_requests_per_sec: 15
     max_retries: 5
   markets:
-    list_path: "/v1/markets"
-    book_path_template: "/v1/markets/{slug}/book"
-    # TODO(verify): NYC daily-high slug after live probe
-    slug_filter: ""
-    slugs: []
-    limit: 100
+    series_slug: "nyc-daily-weather"
+    horizon_days: 2
   cadence_sec:
     markets: 300
     orderbook: 5
