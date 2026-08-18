@@ -83,3 +83,19 @@ validate_emission_forward (run when VPS alive; rsync or on-box)
 ```
 
 **Code landed 2026-08-14** — 71 tests passing; census still not executed.
+
+## 6. Session 3 — depth census (K1 2b) + forward emission + Polymarket logger
+
+**Status:** IN PROGRESS — VPS logger data; no NBM, no models.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Depth census | `analysis/depth_census.py` | Logger orderbook JSONL only; horizons T-24h…T-1h; 10–90¢ band |
+| B Forward emission | `analysis/validate_emission_forward.py` | Logger vs live candles; silent-gap count; shortfall reporting |
+| C Polymarket logger | `ingestion/polymarket_logger.py` | `pm_*` categories; separate `polymarket_heartbeat.sqlite`; `--probe` |
+
+```text
+depth_census → validate_emission_forward (when logger has ≥3d raw)
+polymarket_logger --probe → --once on VPS alongside Kalshi logger
+```
+

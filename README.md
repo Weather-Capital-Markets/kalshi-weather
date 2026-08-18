@@ -300,3 +300,32 @@ Set `climate.cli_time_convention` in `ingestion/config.yaml` (`lst`, `ldt`, or
 `unknown`, default) before relying on Clock B or window-mismatch headline numbers.
 Census execution remains gated on K1 v3 ratification in the root chat.
 
+## Session 3 — depth census (K1 2b), forward emission, Polymarket logger
+
+```bash
+# A. Prospective depth census from logger orderbook JSONL (not candlesticks)
+python -m analysis.depth_census --data-dir data/raw
+
+# B. Forward quote-emission cross-check (v3 standing obligation)
+python -m analysis.validate_emission_forward \
+  --data-dir data/raw --start 2026-08-01 --end 2026-08-03
+
+# C. Polymarket US logger (isolated heartbeat + pm_* raw categories)
+python -m ingestion.polymarket_logger --probe   # verify endpoints + one book raw JSON
+python -m ingestion.polymarket_logger --once
+python -m ingestion.polymarket_logger --status
+```
+
+Depth census history is **logger-length only** (days). Re-run as the VPS logger accrues.
+Polymarket writes to `data/polymarket_heartbeat.sqlite` and `pm_orderbook` / `pm_markets`
+under `data/raw/` — it does not touch the Kalshi heartbeat DB.
+
+On VPS, enable the second unit:
+
+```bash
+systemctl --user enable --now deploy/polymarket-logger.service
+```
+
+After deploying the Kalshi logger with deeper books, consider raising `api.orderbook_depth`
+in `ingestion/config.yaml` so multi-level depth metrics are meaningful.
+
