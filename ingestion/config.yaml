@@ -64,5 +64,33 @@ clockb_check:
 window_mismatch:
   out_dir: "analysis/out"
 
+depth_census:
+  horizons_h: [24, 12, 6, 3, 1]
+  out_dir: "analysis/out"
+  primary_band: [0.10, 0.90]
+
+validate_emission_forward:
+  out_dir: "analysis/out"
+
+polymarket:
+  api:
+    base_url: "https://gateway.polymarket.us"
+    timeout_sec: 15
+    max_requests_per_sec: 15
+    max_retries: 5
+  markets:
+    list_path: "/v1/markets"
+    book_path_template: "/v1/markets/{slug}/book"
+    # TODO(verify): NYC daily-high slug after live probe
+    slug_filter: ""
+    slugs: []
+    limit: 100
+  cadence_sec:
+    markets: 300
+    orderbook: 5
+  storage:
+    raw_dir: "data/raw"
+    heartbeat_db: "data/polymarket_heartbeat.sqlite"
+
 logging:
   level: INFO

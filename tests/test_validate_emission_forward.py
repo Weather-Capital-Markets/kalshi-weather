@@ -65,6 +65,46 @@ def test_compare_ticker_flags_silent_book_change_without_candle(tmp_path: Path) 
     assert len(result["silent_changes"]) == 1
 
 
+def test_forward_validator_reports_shortfall_with_two_markets(tmp_path: Path, capsys) -> None:
+    from analysis import validate_emission_forward as module
+
+    raw_dir = tmp_path / "raw"
+    writer = RawJsonlWriter(raw_dir)
+    tickers = ["KXHIGHNY-26AUG10-T90", "KXHIGHNY-26AUG11-T90"]
+    for ticker in tickers:
+        writer.write(
+            ts_utc="2026-08-10T14:00:00.000Z",
+            endpoint=f"/markets/{ticker}/orderbook",
+            category="orderbook",
+            key=ticker,
+            http_status=200,
+            latency_ms=1,
+            payload={
+                "orderbook_fp": {
+                    "yes_dollars": [["0.4000", "10.00"]],
+                    "no_dollars": [["0.6000", "10.00"]],
+                }
+            },
+        )
+    writer.close()
+
+    assert (
+        module.run(
+            config={"api": {"base_url": "https://example.test", "max_requests_per_sec": 100}},
+            data_dir=raw_dir,
+            start=datetime(2026, 8, 10).date(),
+            end=datetime(2026, 8, 10).date(),
+            markets=tickers,
+            client=MagicMock(),
+            out_dir=tmp_path / "out",
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "SHORTFALL" in out
+    assert (tmp_path / "out" / "emission_forward.txt").exists()
+
+
 def test_forward_validator_run_uses_mock_client(tmp_path: Path, monkeypatch) -> None:
     from analysis import validate_emission_forward as module
 
