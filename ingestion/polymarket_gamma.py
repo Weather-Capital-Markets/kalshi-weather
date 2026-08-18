@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -11,6 +13,11 @@ import httpx
 from ingestion.client import RateLimiter, RequestAttempt, RequestResult
 
 logger = logging.getLogger(__name__)
+
+_STRIKE_RE_HIGHER = re.compile(r"(\d+)\s*(?:°|º)?F?\s*or higher", re.I)
+_STRIKE_RE_BELOW = re.compile(r"(\d+)\s*(?:°|º)?F?\s*or below", re.I)
+_STRIKE_RE_BETWEEN = re.compile(r"between\s+(\d+)\s*[-–]\s*(\d+)", re.I)
+_STRIKE_RE_BIN = re.compile(r"(\d+)\s*[-–]\s*(\d+)\s*(?:°|º)?F", re.I)
 
 
 def _extract_events(payload: Any) -> list[dict[str, Any]]:
@@ -202,3 +209,128 @@ def bracket_labels(markets: list[dict[str, Any]]) -> list[str]:
         else:
             labels.append(str(market.get("question") or market.get("slug") or ""))
     return labels
+
+
+def parse_strike_direction(market: dict[str, Any]) -> tuple[int | None, str | None]:
+    """Map Gamma market text to numeric strike and comparison direction."""
+    for text in (market.get("groupItemTitle"), market.get("question")):
+        if not isinstance(text, str) or not text.strip():
+            continue
+        match = _STRIKE_RE_HIGHER.search(text)
+        if match:
+            return int(match.group(1)), ">="
+        match = _STRIKE_RE_BELOW.search(text)
+        if match:
+            return int(match.group(1)), "<="
+        match = _STRIKE_RE_BETWEEN.search(text)
+        if match:
+            return int(match.group(1)), ">="
+        match = _STRIKE_RE_BIN.search(text)
+        if match:
+            return int(match.group(1)), ">="
+    return None, None
+
+
+def yes_token_id(market: dict[str, Any]) -> str | None:
+    raw = market.get("clobTokenIds")
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list) and parsed:
+                return str(parsed[0])
+        except json.JSONDecodeError:
+            return None
+    if isinstance(raw, list) and raw:
+        return str(raw[0])
+    return None
+
+
+def is_open_threshold_market(market: dict[str, Any]) -> bool:
+    if market.get("closed"):
+        return False
+    if market.get("active") is False:
+        return False
+    if market.get("acceptingOrders") is False:
+        return False
+    return parse_strike_direction(market)[0] is not None
+
+
+def enrich_market(market: dict[str, Any], *, event_slug: str | None = None) -> dict[str, Any]:
+    strike, direction = parse_strike_direction(market)
+    slug = market.get("slug")
+    return {
+        **market,
+        "pm_meta": {
+            "strike_f": strike,
+            "direction": direction,
+            "event_slug": event_slug,
+            "market_slug": slug if isinstance(slug, str) else None,
+            "yes_token_id": yes_token_id(market),
+        },
+    }
+
+
+def open_threshold_markets(event: dict[str, Any]) -> list[dict[str, Any]]:
+    markets = event.get("markets")
+    if not isinstance(markets, list):
+        return []
+    event_slug = event.get("slug") if isinstance(event.get("slug"), str) else None
+    open_markets = [m for m in markets if isinstance(m, dict) and is_open_threshold_market(m)]
+    return [enrich_market(m, event_slug=event_slug) for m in open_markets]
+
+
+def ladder_strike_set(markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for market in markets:
+        meta = market.get("pm_meta") if isinstance(market.get("pm_meta"), dict) else {}
+        strike = meta.get("strike_f")
+        direction = meta.get("direction")
+        if strike is None or not isinstance(direction, str):
+            continue
+        rows.append(
+            {
+                "strike_f": strike,
+                "direction": direction,
+                "market_slug": meta.get("market_slug") or market.get("slug"),
+            }
+        )
+    rows.sort(key=lambda row: (row["direction"], row["strike_f"]))
+    return rows
+
+
+def discover_daily_events(
+    client: PolymarketGammaClient,
+    *,
+    series_slug: str,
+    event_prefix: str,
+    horizon_days: int,
+    discovery_limit: int,
+    now: datetime | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
+    """Return (event_slug, event) for each calendar day in the discovery horizon."""
+    current = now or datetime.now(timezone.utc)
+    today = current.date()
+    discovered: list[tuple[str, dict[str, Any]]] = []
+    seen_slugs: set[str] = set()
+
+    series_result = client.list_series_events(series_slug, limit=discovery_limit)
+    series_events = _extract_events(series_result.json_body)
+    for day_offset in range(max(horizon_days, 1)):
+        day = today + timedelta(days=day_offset)
+        slug, _, event = resolve_event_for_day(client, day, prefix=event_prefix)
+        if event is not None and slug and slug not in seen_slugs:
+            discovered.append((slug, event))
+            seen_slugs.add(slug)
+
+    if not discovered and series_events:
+        picked_current, picked_next = pick_current_and_next_events(series_events, now=current)
+        for event in (picked_current, picked_next):
+            if isinstance(event, dict):
+                slug = event.get("slug")
+                if isinstance(slug, str) and slug not in seen_slugs:
+                    full = client.event_by_slug(slug)
+                    if full.ok and isinstance(full.json_body, dict):
+                        discovered.append((slug, full.json_body))
+                        seen_slugs.add(slug)
+
+    return discovered
