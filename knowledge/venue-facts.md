@@ -1,7 +1,7 @@
 # venue-facts.md — Kalshi venue mechanics (settlement, fees, API)
 
-**Status:** PARTIAL — §1 populated from live and historical API payloads and from the
-completed 9,364-market backfill; the rest is placeholder.
+**Status:** PARTIAL — §1 populated from Kalshi backfill; §3 from live Polymarket Gamma/CLOB
+probe (2026-08-18); §2.1 fees verified 2026-08-15.
 **Owner:** the **venue research lane**. Entries below are contributed observations, not
 lane-ratified facts; the venue lane ratifies, amends, or rejects each one and owns this file.
 **Scope:** venue matters — settlement rules, fees, API endpoint specs, collateral netting.
@@ -361,3 +361,80 @@ though no change is scheduled today.
 ### 2.2 Collateral, order types
 
 **PLACEHOLDER** — venue lane. Not yet observed from primary sources.
+
+---
+
+## 3. Polymarket NYC daily-high (Gamma `nyc-daily-weather`)
+
+`[V-LOCAL]` — `python -m ingestion.polymarket_logger --probe` and `--once` against live Gamma +
+CLOB, 2026-08-18. Supersedes any earlier gateway-probe claim that Polymarket settled on the same
+NWS Central Park report as Kalshi.
+
+### 3.1 Market structure — exhaustive disjoint bracket ladder
+
+`[V-LOCAL]` + `[V-PRIMARY]` — Gamma event payloads (`groupItemTitle`, `question`, `negRisk`).
+
+Polymarket's NYC daily-high series is an **exhaustive bracket ladder**, not a set of cumulative
+`≥X` threshold binaries:
+
+- Tails: `≤75°F` (`tail_below`) and `≥94°F` (`tail_above`).
+- Interior: disjoint 2°F bins (`between 76-77°F`, `between 78-79°F`, …).
+- `negRisk: true` on every open bracket — the venue links them as a **mutually exclusive** set.
+- The probability law is **Σp ≈ 1 across the ~11 brackets**, identical to Kalshi's ladder form.
+  Monotonicity laws for cumulative thresholds (P(≥87) ≥ P(≥89)) **do not apply**.
+
+Cross-venue S2 comparison is therefore **bracket-to-bracket** (same bin label), not threshold-to-
+threshold.
+
+Logger metadata encodes `bracket_kind`, `bracket_low_f`, `bracket_high_f`, `bracket_label`, and
+`neg_risk` — not `strike_f` / `direction` cumulative reframing.
+
+### 3.2 Settlement station and data source — KLGA, not KNYC
+
+`[V-PRIMARY]` — Polymarket contract / resolution rules (market questions and resolution criteria
+on Gamma); `[CORR]` — station climatology (LaGuardia vs Central Park summer bias).
+
+**Hard finding:** Polymarket resolves NYC daily-high on **LaGuardia (KLGA)** using **Weather
+Underground's Daily Observations** table. Kalshi resolves on **Central Park (KNYC)** via the
+**NWS Climate Report** (CLINYC). Different station, different data provider, different revision
+rule:
+
+| | Polymarket | Kalshi |
+|---|---|---|
+| Station | KLGA (LaGuardia) | KNYC (Central Park) |
+| Source | Weather Underground Daily Observations | NWS Climate Report |
+| Revision | Accepts revisions until the next day's first datapoint | Settles on first 7/8 AM ET snapshot; ignores later revisions |
+
+LaGuardia routinely runs **1–3°F warmer** than Central Park in summer — enough to land in a
+different 2°F bracket on most warm days.
+
+**Consequence:** cross-venue price differences are **mostly basis** (KLGA–KNYC spread), not
+mispricing. Any naive "arbitrage" between venues is a bet on the station spread, not free money.
+This **kills naive cross-venue arb** as a thesis.
+
+### 3.3 Order-book depth and fees — materially deeper than Kalshi
+
+`[V-LOCAL]` — CLOB `/book` dumps from `--probe`, 2026-08-18; compared to Kalshi depth census
+(~$14 within 2¢ on KXHIGHNY).
+
+Polymarket's resting liquidity on NYC weather brackets is **an order of magnitude deeper** than
+Kalshi's observed books:
+
+- ~100 contracts resting at nearly every penny from 3¢ to 35¢ on sample brackets; thousands at
+  tails; `liquidityNum` ~$20–38k per bracket; daily volume ~$10–50k per bracket on active days.
+- `feeSchedule`: **`takerOnly: true`**, rate **0.05**, **`rebateRate: 0.25`** — taker-only fees
+  with a maker rebate.
+- `rewardsMinSize` / `rewardsMaxSpread: 4.5` fields indicate a **liquidity-rewards** program.
+
+**Consequence for maker thesis:** shallow Kalshi books may be a **Kalshi-specific** depth
+problem, not a weather-market problem. Polymarket appears to have depth, volume, and a maker-
+friendly fee structure — with the tradeoff that it settles on a different station (§3.2).
+Depth and fee findings should be reported **venue-split** in any census readout.
+
+### 3.99 Open items (Polymarket)
+
+| # | Item | Blocking? | Resolution path |
+|---|---|---|---|
+| P1 | Exact Polymarket revision cutoff rule in contract text (Wunderground table row selection) | Before label backfill | Read resolution criteria from Gamma / primary contract |
+| P2 | Liquidity-rewards economics (maker rebate + rewards program) | Before capital on Polymarket | Fee schedule doc + live account terms |
+| P3 | KLGA–KNYC spread distribution by season (basis sizing) | Before cross-venue analysis | ASOS / CLI archive comparison |
