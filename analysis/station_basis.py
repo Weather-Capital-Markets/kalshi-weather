@@ -230,6 +230,77 @@ def _plot_delta_by_month(frame: pd.DataFrame, path: Path) -> None:
     plt.close()
 
 
+def disagree_by_knyc_max(frame: pd.DataFrame) -> pd.DataFrame:
+    """Bracket disagreement rate conditional on KNYC whole-°F daily max."""
+    if frame.empty:
+        return pd.DataFrame(
+            columns=["knyc_max_f", "n_days", "bracket_disagree_frac", "delta_median"]
+        )
+    grouped = (
+        frame.groupby("knyc_max_f", as_index=False)
+        .agg(
+            n_days=("bracket_disagree", "size"),
+            bracket_disagree_frac=("bracket_disagree", "mean"),
+            delta_median=("delta_f", "median"),
+        )
+        .sort_values("knyc_max_f")
+    )
+    grouped["bracket_disagree_frac"] = grouped["bracket_disagree_frac"].round(4)
+    grouped["delta_median"] = grouped["delta_median"].round(3)
+    return grouped
+
+
+def write_disagree_by_knyc_csv(path: Path, table: pd.DataFrame) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(
+            "# bracket_disagree_frac conditional on KNYC whole-°F daily max; "
+            "same IEM-vs-WU lower-bound caveat as station_basis.csv\n"
+        )
+    table.to_csv(path, mode="a", index=False)
+
+
+def _plot_disagree_by_knyc_max(
+    table: pd.DataFrame,
+    path: Path,
+    *,
+    title: str,
+    min_days: int = 5,
+) -> None:
+    if table.empty:
+        return
+    plot = table[table["n_days"] >= min_days].copy()
+    if plot.empty:
+        plot = table.copy()
+    plt.figure(figsize=(11, 4))
+    plt.bar(plot["knyc_max_f"], plot["bracket_disagree_frac"], width=0.8)
+    plt.xlabel("KNYC daily max (whole °F)")
+    plt.ylabel("bracket_disagree_frac")
+    plt.title(title)
+    plt.ylim(0, 1)
+    plt.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(path)
+    plt.close()
+
+
+def _print_disagree_by_knyc(table: pd.DataFrame) -> None:
+    if table.empty:
+        return
+    print("\n=== bracket disagreement by KNYC max (whole °F) ===")
+    eligible = table[table["n_days"] >= 10].copy()
+    if eligible.empty:
+        eligible = table.copy()
+    top = eligible.sort_values("bracket_disagree_frac", ascending=False).head(8)
+    for row in top.itertuples(index=False):
+        print(
+            f"knyc_max_f={int(row.knyc_max_f):>3} "
+            f"n={int(row.n_days):>4} "
+            f"disagree_frac={row.bracket_disagree_frac:.4f} "
+            f"delta_median={row.delta_median:.1f}"
+        )
+
+
 def _print_slice(row: dict[str, Any]) -> None:
     print(
         f"\n=== {row['slice']} (n={row['n_days']}) ===\n"
@@ -299,9 +370,34 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
     _plot_delta_hist(paired, hist_path)
     _plot_disagree_by_season(pd.DataFrame(summary_rows), season_path)
     _plot_delta_by_month(paired, month_path)
+
+    by_knyc = disagree_by_knyc_max(paired)
+    by_knyc_path = out_dir / "station_basis_disagree_by_knyc_max.csv"
+    by_knyc_png = out_dir / "station_basis_disagree_by_knyc_max.png"
+    by_knyc_jja_png = out_dir / "station_basis_disagree_by_knyc_max_jja.png"
+    write_disagree_by_knyc_csv(by_knyc_path, by_knyc)
+    _plot_disagree_by_knyc_max(
+        by_knyc,
+        by_knyc_png,
+        title="Bracket disagreement rate by KNYC daily max (all seasons)",
+    )
+    jja = paired[paired["season"] == "JJA"]
+    by_knyc_jja = disagree_by_knyc_max(jja)
+    _plot_disagree_by_knyc_max(
+        by_knyc_jja,
+        by_knyc_jja_png,
+        title="Bracket disagreement rate by KNYC daily max (JJA only)",
+        min_days=3,
+    )
+
     print(f"histogram delta_f: {hist_path}")
     print(f"bracket disagreement by season: {season_path}")
     print(f"delta_f by month: {month_path}")
+    print(f"disagreement by KNYC max csv: {by_knyc_path}")
+    print(f"disagreement by KNYC max plot: {by_knyc_png}")
+    print(f"disagreement by KNYC max plot (JJA): {by_knyc_jja_png}")
+    _print_disagree_by_knyc(by_knyc)
+    _print_disagree_by_knyc(by_knyc_jja)
 
     for row in summary_rows:
         _print_slice(row)
