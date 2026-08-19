@@ -120,3 +120,20 @@ asos_obs → station_basis
 Load-bearing for venue-facts §3.2 / gate decision on cross-venue comparison. Measures
 **IEM-ASOS station spread only** — WU provider gap documented as lower bound in NOTES.
 
+## 8. Session 5 — turnover census (Gate 0 capacity)
+
+**Status:** IN PROGRESS — laptop only; frozen historical candlesticks, no network.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Turnover census | `analysis/turnover_census.py` | Premium + contract volume per market/climate day; 10–90¢ + full-range bands; distributions only |
+
+```text
+spread_census loaders → turnover_census
+```
+
+Measures **premium and contracts traded** on Kalshi KXHIGHNY — an upper bound on maker
+capture. No Gate 0 arithmetic in code; four mandatory NOTES in CSV header. Outputs:
+`turnover_census.csv`, `turnover_census_monthly.csv`, three PNGs. Run on laptop with full
+bulk corpus (~9,364 markets).
+
