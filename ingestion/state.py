@@ -193,9 +193,11 @@ CREATE TABLE IF NOT EXISTS cli_month_progress (
   updated_utc TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS asos_month_progress (
-  month TEXT PRIMARY KEY,
+  station TEXT NOT NULL,
+  month TEXT NOT NULL,
   complete INTEGER NOT NULL DEFAULT 0,
-  updated_utc TEXT NOT NULL
+  updated_utc TEXT NOT NULL,
+  PRIMARY KEY (station, month)
 );
 """
 
@@ -205,8 +207,38 @@ BACKFILL_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def _migrate_asos_month_progress(conn: sqlite3.Connection) -> None:
+    """Upgrade legacy month-only progress rows to (station, month) keys."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(asos_month_progress)")}
+    if not columns:
+        return
+    if "station" in columns:
+        return
+    conn.execute(
+        """
+        CREATE TABLE asos_month_progress_v2 (
+          station TEXT NOT NULL,
+          month TEXT NOT NULL,
+          complete INTEGER NOT NULL DEFAULT 0,
+          updated_utc TEXT NOT NULL,
+          PRIMARY KEY (station, month)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO asos_month_progress_v2 (station, month, complete, updated_utc)
+        SELECT 'NYC', month, complete, updated_utc FROM asos_month_progress
+        """
+    )
+    conn.execute("DROP TABLE asos_month_progress")
+    conn.execute("ALTER TABLE asos_month_progress_v2 RENAME TO asos_month_progress")
+    conn.commit()
+
+
 def init_backfill_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(BACKFILL_SCHEMA_SQL)
+    _migrate_asos_month_progress(conn)
     # CREATE TABLE IF NOT EXISTS is a no-op on a database written by an earlier
     # schema, so columns added later need an explicit ALTER.
     for table, column, decl in BACKFILL_MIGRATIONS:
@@ -311,21 +343,28 @@ def set_month_complete(conn: sqlite3.Connection, month: str, updated_utc: str) -
     conn.commit()
 
 
-def asos_month_complete(conn: sqlite3.Connection, month: str) -> bool:
+def asos_month_complete(conn: sqlite3.Connection, station: str, month: str) -> bool:
     row = conn.execute(
-        "SELECT complete FROM asos_month_progress WHERE month = ?",
-        (month,),
+        "SELECT complete FROM asos_month_progress WHERE station = ? AND month = ?",
+        (station, month),
     ).fetchone()
     return bool(row and row["complete"])
 
 
-def set_asos_month_complete(conn: sqlite3.Connection, month: str, updated_utc: str) -> None:
+def set_asos_month_complete(
+    conn: sqlite3.Connection,
+    station: str,
+    month: str,
+    updated_utc: str,
+) -> None:
     conn.execute(
         """
-        INSERT INTO asos_month_progress (month, complete, updated_utc)
-        VALUES (?, 1, ?)
-        ON CONFLICT(month) DO UPDATE SET complete = 1, updated_utc = excluded.updated_utc
+        INSERT INTO asos_month_progress (station, month, complete, updated_utc)
+        VALUES (?, ?, 1, ?)
+        ON CONFLICT(station, month) DO UPDATE SET
+            complete = 1,
+            updated_utc = excluded.updated_utc
         """,
-        (month, updated_utc),
+        (station, month, updated_utc),
     )
     conn.commit()

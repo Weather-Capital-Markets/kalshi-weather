@@ -101,6 +101,22 @@ depth_census → validate_emission_forward (when logger has ≥3d raw)
 polymarket_logger --probe → --once on VPS alongside Kalshi logger
 ```
 
-Polymarket logging is **measurement only**. Deferred in code comments: (a) S2 threshold
-monotonicity on the `>=` ladder; (b) cross-venue Kalshi cumulative reconstruction.
+Polymarket logging is **measurement only**. Deferred in code comments: (a) S2 bracket sum
+law on Polymarket; (b) cross-venue bracket-to-bracket comparison (KLGA vs KNYC basis).
+
+## 7. Session 4 — KLGA–KNYC station basis measurement
+
+**Status:** IN PROGRESS — analysis only; no models, no trading logic, no NBM.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Dual-station ASOS pull | `ingestion/asos_obs.py` | IEM `NYC` + `LGA` / `NY_ASOS`; resumable per station×month; `2021-01-01`→present |
+| B Station basis | `analysis/station_basis.py` | LST daily max; Polymarket even-edged bracket disagreement rate; distributions only |
+
+```text
+asos_obs → station_basis
+```
+
+Load-bearing for venue-facts §3.2 / gate decision on cross-venue comparison. Measures
+**IEM-ASOS station spread only** — WU provider gap documented as lower bound in NOTES.
 

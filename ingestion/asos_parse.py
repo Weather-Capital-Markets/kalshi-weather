@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from datetime import datetime, timezone
+from pathlib import Path
 
 from ingestion.climate_time import AsosObservation
+
+_STATION_KEY_RE = re.compile(r"^([A-Z0-9]+)_(\d{4}-\d{2})$")
 
 
 def parse_asos_csv(text: str) -> list[AsosObservation]:
@@ -32,17 +36,40 @@ def parse_asos_csv(text: str) -> list[AsosObservation]:
     return observations
 
 
-def load_asos_observations_from_raw(raw_dir) -> list[AsosObservation]:
-    from pathlib import Path
+def infer_station_from_key(key: str) -> str | None:
+    match = _STATION_KEY_RE.match(key)
+    if match:
+        return match.group(1)
+    if re.fullmatch(r"\d{4}-\d{2}", key):
+        return "NYC"
+    return None
 
+
+def load_asos_observations_from_raw(
+    raw_dir,
+    *,
+    station: str = "NYC",
+) -> list[AsosObservation]:
     from ingestion.writer import read_jsonl_gz
 
     root = Path(raw_dir)
     observations: list[AsosObservation] = []
     for path in sorted(root.glob("*/asos_obs/*.jsonl.gz")):
+        file_station = infer_station_from_key(path.stem)
         for record in read_jsonl_gz(path):
             payload = record.get("payload") or {}
-            text = payload.get("text") if isinstance(payload, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            payload_station = payload.get("station")
+            if isinstance(payload_station, str) and payload_station.strip():
+                record_station = payload_station.strip()
+            elif file_station is not None:
+                record_station = file_station
+            else:
+                record_station = "NYC"
+            if record_station != station:
+                continue
+            text = payload.get("text")
             if isinstance(text, str):
                 observations.extend(parse_asos_csv(text))
     observations.sort(key=lambda obs: obs.valid_utc)

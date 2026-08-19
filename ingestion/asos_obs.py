@@ -1,4 +1,4 @@
-"""KNYC ASOS/METAR backfill from IEM.
+"""KNYC/KLGA ASOS/METAR backfill from IEM.
 
 Allowed DB: storage.backfill_db only. Never open storage.heartbeat_db.
 """
@@ -42,6 +42,16 @@ def month_range(start: date, end: date) -> list[str]:
     return months
 
 
+def resolve_stations(asos_cfg: dict[str, Any]) -> list[str]:
+    stations = asos_cfg.get("stations")
+    if isinstance(stations, list) and stations:
+        return [str(station) for station in stations]
+    legacy = asos_cfg.get("station")
+    if isinstance(legacy, str) and legacy.strip():
+        return [legacy.strip()]
+    return ["NYC"]
+
+
 class AsosObsBackfill:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -53,7 +63,7 @@ class AsosObsBackfill:
         init_backfill_schema(self.conn)
         asos = config.get("asos_obs") or {}
         self.start = date.fromisoformat(str(asos.get("start_date") or "2025-05-01"))
-        self.station = str(asos.get("station") or "NYC")
+        self.stations = resolve_stations(asos)
         self.network = str(asos.get("network") or "NY_ASOS")
         self.data_fields = list(asos.get("data_fields") or ["tmpf"])
         self.iem_url = str(
@@ -94,20 +104,26 @@ class AsosObsBackfill:
     def run(self) -> int:
         today = datetime.now(timezone.utc).date()
         current_month = f"{today.year:04d}-{today.month:02d}"
-        for month in month_range(self.start, today):
+        months = month_range(self.start, today)
+        for station in self.stations:
             if self._shutdown:
                 break
-            if asos_month_complete(self.conn, month):
-                continue
-            self._fetch_month(month, can_complete=month != current_month)
+            for month in months:
+                if self._shutdown:
+                    break
+                if asos_month_complete(self.conn, station, month):
+                    continue
+                self._fetch_month(station, month, can_complete=month != current_month)
         return 0
 
-    def _fetch_month(self, month: str, *, can_complete: bool = True) -> None:
+    def _fetch_month(self, station: str, month: str, *, can_complete: bool = True) -> None:
+        if asos_month_complete(self.conn, station, month):
+            return
         year, mon = (int(part) for part in month.split("-"))
         last = monthrange(year, mon)[1]
         params = {
             "network": self.network,
-            "station": self.station,
+            "station": station,
             "data": ",".join(self.data_fields),
             # IEM asos.py requires timezone-aware ISO timestamps (HTTP 422 otherwise).
             "sts": f"{year:04d}-{mon:02d}-01T00:00:00Z",
@@ -126,23 +142,32 @@ class AsosObsBackfill:
             self.conn,
             ts_utc=utc_now_iso(),
             endpoint=self.iem_path,
-            ticker=month,
+            ticker=f"{station}:{month}",
             ok=result.ok,
             http_status=result.status_code,
             latency_ms=result.latency_ms,
             error_text=result.error_text,
         )
         if not result.ok:
-            logger.warning("IEM ASOS month %s failed status=%s", month, result.status_code)
+            logger.warning(
+                "IEM ASOS month %s station=%s failed status=%s",
+                month,
+                station,
+                result.status_code,
+            )
             return
         text = result.text_body or ""
         if not text.strip():
-            logger.warning("IEM ASOS month %s returned empty body; not marking complete", month)
+            logger.warning(
+                "IEM ASOS month %s station=%s returned empty body; not marking complete",
+                month,
+                station,
+            )
             return
         payload = {
             "text": text,
             "month": month,
-            "station": self.station,
+            "station": station,
             "network": self.network,
             "http_status": result.status_code,
         }
@@ -150,17 +175,17 @@ class AsosObsBackfill:
             ts_utc=utc_now_iso(),
             endpoint=self.iem_path,
             category="asos_obs",
-            key=month,
+            key=f"{station}_{month}",
             http_status=result.status_code,
             latency_ms=result.latency_ms,
             payload=payload,
         )
         if can_complete:
-            set_asos_month_complete(self.conn, month, utc_now_iso())
+            set_asos_month_complete(self.conn, station, month, utc_now_iso())
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Backfill KNYC ASOS observations from IEM")
+    parser = argparse.ArgumentParser(description="Backfill NYC-area ASOS observations from IEM")
     parser.add_argument("--config", type=Path, default=None)
     return parser
 
