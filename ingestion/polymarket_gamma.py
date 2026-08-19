@@ -211,24 +211,59 @@ def bracket_labels(markets: list[dict[str, Any]]) -> list[str]:
     return labels
 
 
-def parse_strike_direction(market: dict[str, Any]) -> tuple[int | None, str | None]:
-    """Map Gamma market text to numeric strike and comparison direction."""
-    for text in (market.get("groupItemTitle"), market.get("question")):
+def parse_bracket(market: dict[str, Any]) -> dict[str, Any] | None:
+    """Parse disjoint Fahrenheit bracket metadata (not cumulative >= thresholds)."""
+    label = market.get("groupItemTitle")
+    if isinstance(label, str) and label.strip():
+        label_text = label.strip()
+    else:
+        label_text = ""
+    for text in (label_text, market.get("question")):
         if not isinstance(text, str) or not text.strip():
             continue
         match = _STRIKE_RE_HIGHER.search(text)
         if match:
-            return int(match.group(1)), ">="
+            low = int(match.group(1))
+            bracket_label = label_text or f"{low}°F or higher"
+            return {
+                "bracket_kind": "tail_above",
+                "bracket_low_f": low,
+                "bracket_high_f": None,
+                "bracket_label": bracket_label,
+            }
         match = _STRIKE_RE_BELOW.search(text)
         if match:
-            return int(match.group(1)), "<="
+            high = int(match.group(1))
+            bracket_label = label_text or f"{high}°F or below"
+            return {
+                "bracket_kind": "tail_below",
+                "bracket_low_f": None,
+                "bracket_high_f": high,
+                "bracket_label": bracket_label,
+            }
         match = _STRIKE_RE_BETWEEN.search(text)
         if match:
-            return int(match.group(1)), ">="
+            low = int(match.group(1))
+            high = int(match.group(2))
+            bracket_label = label_text or f"{low}-{high}°F"
+            return {
+                "bracket_kind": "between",
+                "bracket_low_f": low,
+                "bracket_high_f": high,
+                "bracket_label": bracket_label,
+            }
         match = _STRIKE_RE_BIN.search(text)
         if match:
-            return int(match.group(1)), ">="
-    return None, None
+            low = int(match.group(1))
+            high = int(match.group(2))
+            bracket_label = label_text or f"{low}-{high}°F"
+            return {
+                "bracket_kind": "between",
+                "bracket_low_f": low,
+                "bracket_high_f": high,
+                "bracket_label": bracket_label,
+            }
+    return None
 
 
 def yes_token_id(market: dict[str, Any]) -> str | None:
@@ -245,57 +280,74 @@ def yes_token_id(market: dict[str, Any]) -> str | None:
     return None
 
 
-def is_open_threshold_market(market: dict[str, Any]) -> bool:
+def is_open_bracket_market(market: dict[str, Any]) -> bool:
     if market.get("closed"):
         return False
     if market.get("active") is False:
         return False
     if market.get("acceptingOrders") is False:
         return False
-    return parse_strike_direction(market)[0] is not None
+    return parse_bracket(market) is not None
 
 
 def enrich_market(market: dict[str, Any], *, event_slug: str | None = None) -> dict[str, Any]:
-    strike, direction = parse_strike_direction(market)
+    bracket = parse_bracket(market)
     slug = market.get("slug")
+    pm_meta: dict[str, Any] = {
+        "event_slug": event_slug,
+        "market_slug": slug if isinstance(slug, str) else None,
+        "yes_token_id": yes_token_id(market),
+        "neg_risk": market.get("negRisk"),
+    }
+    if bracket is not None:
+        pm_meta.update(bracket)
     return {
         **market,
-        "pm_meta": {
-            "strike_f": strike,
-            "direction": direction,
-            "event_slug": event_slug,
-            "market_slug": slug if isinstance(slug, str) else None,
-            "yes_token_id": yes_token_id(market),
-        },
+        "pm_meta": pm_meta,
     }
 
 
-def open_threshold_markets(event: dict[str, Any]) -> list[dict[str, Any]]:
+def open_bracket_markets(event: dict[str, Any]) -> list[dict[str, Any]]:
     markets = event.get("markets")
     if not isinstance(markets, list):
         return []
     event_slug = event.get("slug") if isinstance(event.get("slug"), str) else None
-    open_markets = [m for m in markets if isinstance(m, dict) and is_open_threshold_market(m)]
+    open_markets = [m for m in markets if isinstance(m, dict) and is_open_bracket_market(m)]
     return [enrich_market(m, event_slug=event_slug) for m in open_markets]
 
 
-def ladder_strike_set(markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def bracket_ladder_set(markets: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for market in markets:
         meta = market.get("pm_meta") if isinstance(market.get("pm_meta"), dict) else {}
-        strike = meta.get("strike_f")
-        direction = meta.get("direction")
-        if strike is None or not isinstance(direction, str):
+        kind = meta.get("bracket_kind")
+        if not isinstance(kind, str):
             continue
         rows.append(
             {
-                "strike_f": strike,
-                "direction": direction,
+                "bracket_kind": kind,
+                "bracket_low_f": meta.get("bracket_low_f"),
+                "bracket_high_f": meta.get("bracket_high_f"),
+                "bracket_label": meta.get("bracket_label"),
                 "market_slug": meta.get("market_slug") or market.get("slug"),
+                "neg_risk": meta.get("neg_risk"),
             }
         )
-    rows.sort(key=lambda row: (row["direction"], row["strike_f"]))
+
+    def sort_key(row: dict[str, Any]) -> tuple[int, int]:
+        low = row.get("bracket_low_f")
+        high = row.get("bracket_high_f")
+        low_sort = low if isinstance(low, int) else -1
+        high_sort = high if isinstance(high, int) else 999
+        return (low_sort, high_sort)
+
+    rows.sort(key=sort_key)
     return rows
+
+
+# Back-compat aliases
+open_threshold_markets = open_bracket_markets
+ladder_strike_set = bracket_ladder_set
 
 
 def discover_daily_events(

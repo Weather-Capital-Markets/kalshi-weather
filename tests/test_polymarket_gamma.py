@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 from ingestion.client import RequestResult
 from ingestion.polymarket_gamma import (
     bracket_labels,
+    bracket_ladder_set,
     discover_daily_events,
     enrich_market,
     event_slug_candidates,
-    ladder_strike_set,
-    open_threshold_markets,
-    parse_strike_direction,
+    open_bracket_markets,
+    parse_bracket,
 )
 
 
@@ -34,14 +34,34 @@ def test_bracket_labels_use_group_item_title() -> None:
     assert bracket_labels(markets) == ["75°F or below", "76-77°F"]
 
 
-def test_parse_strike_direction_cumulative_ge() -> None:
-    assert parse_strike_direction({"groupItemTitle": "94°F or higher"}) == (94, ">=")
-    assert parse_strike_direction({"groupItemTitle": "76-77°F"}) == (76, ">=")
-    assert parse_strike_direction({"question": "between 80-81°F on August 18"}) == (80, ">=")
-    assert parse_strike_direction({"groupItemTitle": "75°F or below"}) == (75, "<=")
+def test_parse_bracket_disjoint_ranges() -> None:
+    assert parse_bracket({"groupItemTitle": "94°F or higher"}) == {
+        "bracket_kind": "tail_above",
+        "bracket_low_f": 94,
+        "bracket_high_f": None,
+        "bracket_label": "94°F or higher",
+    }
+    assert parse_bracket({"groupItemTitle": "76-77°F"}) == {
+        "bracket_kind": "between",
+        "bracket_low_f": 76,
+        "bracket_high_f": 77,
+        "bracket_label": "76-77°F",
+    }
+    assert parse_bracket({"question": "between 80-81°F on August 18"}) == {
+        "bracket_kind": "between",
+        "bracket_low_f": 80,
+        "bracket_high_f": 81,
+        "bracket_label": "80-81°F",
+    }
+    assert parse_bracket({"groupItemTitle": "75°F or below"}) == {
+        "bracket_kind": "tail_below",
+        "bracket_low_f": None,
+        "bracket_high_f": 75,
+        "bracket_label": "75°F or below",
+    }
 
 
-def test_open_threshold_markets_adds_pm_meta() -> None:
+def test_open_bracket_markets_adds_pm_meta() -> None:
     event = {
         "slug": "highest-temperature-in-nyc-on-august-18-2026",
         "markets": [
@@ -51,6 +71,7 @@ def test_open_threshold_markets_adds_pm_meta() -> None:
                 "active": True,
                 "closed": False,
                 "acceptingOrders": True,
+                "negRisk": True,
                 "clobTokenIds": "[\"123\", \"456\"]",
             },
             {
@@ -62,14 +83,16 @@ def test_open_threshold_markets_adds_pm_meta() -> None:
             },
         ],
     }
-    markets = open_threshold_markets(event)
+    markets = open_bracket_markets(event)
     assert len(markets) == 1
-    assert markets[0]["pm_meta"]["strike_f"] == 76
-    assert markets[0]["pm_meta"]["direction"] == ">="
+    assert markets[0]["pm_meta"]["bracket_kind"] == "between"
+    assert markets[0]["pm_meta"]["bracket_low_f"] == 76
+    assert markets[0]["pm_meta"]["bracket_high_f"] == 77
+    assert markets[0]["pm_meta"]["neg_risk"] is True
     assert markets[0]["pm_meta"]["yes_token_id"] == "123"
 
 
-def test_ladder_strike_set_sorted() -> None:
+def test_bracket_ladder_set_sorted() -> None:
     markets = [
         enrich_market(
             {
@@ -92,9 +115,9 @@ def test_ladder_strike_set_sorted() -> None:
             event_slug="event",
         ),
     ]
-    ladder = ladder_strike_set(markets)
-    assert ladder[0]["strike_f"] == 76
-    assert ladder[1]["strike_f"] == 88
+    ladder = bracket_ladder_set(markets)
+    assert ladder[0]["bracket_low_f"] == 76
+    assert ladder[1]["bracket_low_f"] == 88
 
 
 def test_discover_daily_events_returns_events_and_results() -> None:

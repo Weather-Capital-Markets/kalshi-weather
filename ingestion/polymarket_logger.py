@@ -3,8 +3,8 @@
 Allowed DB: polymarket storage.heartbeat_db only. Isolated from Kalshi logger.
 
 Deferred analysis (logging only — not implemented here):
-  (a) S2-on-Polymarket = threshold monotonicity across the >= ladder.
-  (b) cross-venue = reconstruct Kalshi cumulative onto these strikes.
+  (a) S2-on-Polymarket = bracket probability sum law (Σ Yes across negRisk set ≈ 1).
+  (b) cross-venue = bracket-to-bracket comparison (KLGA vs KNYC basis — see venue-facts §3).
 """
 
 from __future__ import annotations
@@ -31,9 +31,9 @@ from ingestion.heartbeat import (
 from ingestion.polymarket_clob import PolymarketClobClient
 from ingestion.polymarket_gamma import (
     PolymarketGammaClient,
+    bracket_ladder_set,
     discover_daily_events,
-    ladder_strike_set,
-    open_threshold_markets,
+    open_bracket_markets,
     resolve_event_for_day,
 )
 from ingestion.state import get_state, init_state_schema, set_state
@@ -49,16 +49,20 @@ class LadderEntry:
     event_slug: str
     market_slug: str
     yes_token_id: str
-    strike_f: int
-    direction: str
+    bracket_kind: str
+    bracket_low_f: int | None
+    bracket_high_f: int | None
+    bracket_label: str
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "event_slug": self.event_slug,
             "market_slug": self.market_slug,
             "yes_token_id": self.yes_token_id,
-            "strike_f": self.strike_f,
-            "direction": self.direction,
+            "bracket_kind": self.bracket_kind,
+            "bracket_low_f": self.bracket_low_f,
+            "bracket_high_f": self.bracket_high_f,
+            "bracket_label": self.bracket_label,
         }
 
 
@@ -159,8 +163,8 @@ class PolymarketLogger:
 
         ladder_entries: list[LadderEntry] = []
         for event_slug, event in discovered:
-            markets = open_threshold_markets(event)
-            ladder = ladder_strike_set(markets)
+            markets = open_bracket_markets(event)
+            ladder = bracket_ladder_set(markets)
             endpoint = f"/events/slug/{event_slug}"
             self.writer.write(
                 ts_utc=utc_now_iso(),
@@ -181,22 +185,26 @@ class PolymarketLogger:
                 meta = market.get("pm_meta") if isinstance(market.get("pm_meta"), dict) else {}
                 token = meta.get("yes_token_id")
                 slug = meta.get("market_slug")
-                strike = meta.get("strike_f")
-                direction = meta.get("direction")
+                kind = meta.get("bracket_kind")
+                label = meta.get("bracket_label")
                 if (
                     isinstance(token, str)
                     and token
                     and isinstance(slug, str)
-                    and isinstance(strike, int)
-                    and isinstance(direction, str)
+                    and isinstance(kind, str)
+                    and isinstance(label, str)
                 ):
+                    low = meta.get("bracket_low_f")
+                    high = meta.get("bracket_high_f")
                     ladder_entries.append(
                         LadderEntry(
                             event_slug=event_slug,
                             market_slug=slug,
                             yes_token_id=token,
-                            strike_f=strike,
-                            direction=direction,
+                            bracket_kind=kind,
+                            bracket_low_f=low if isinstance(low, int) else None,
+                            bracket_high_f=high if isinstance(high, int) else None,
+                            bracket_label=label,
                         )
                     )
 
@@ -271,21 +279,20 @@ class PolymarketLogger:
             print("probe: no current-day event resolved")
             return 0
 
-        open_markets = open_threshold_markets(event)
-        ladder = ladder_strike_set(open_markets)
-        ge_ladder = [row for row in ladder if row.get("direction") == ">="]
+        open_markets = open_bracket_markets(event)
+        ladder = bracket_ladder_set(open_markets)
 
         print("=== PROBE STRUCTURE (logging contract) ===")
         print(
-            "market_structure=CUMULATIVE_THRESHOLD_BINARIES "
-            "(single threshold per contract; 2°F spacing on >= ladder; logging only)"
+            "market_structure=EXHAUSTIVE_BRACKET_LADDER "
+            "(disjoint 2°F bins + tails; negRisk mutually exclusive; Σp≈1 across set)"
         )
-        print(f"open_threshold_count={len(open_markets)}")
-        print(f"ge_strike_count={len(ge_ladder)}")
-        print("strike_set_ge=" + json.dumps(ge_ladder, indent=2))
-        print("full_ladder=" + json.dumps(ladder, indent=2))
+        print(f"open_bracket_count={len(open_markets)}")
+        print("bracket_set=" + json.dumps(ladder, indent=2))
+        neg_risk = any(m.get("negRisk") for m in open_markets)
+        print(f"neg_risk_linked={neg_risk}")
 
-        print(f"=== RAW MARKETS current event slug={slug} (open thresholds only) ===")
+        print(f"=== RAW MARKETS current event slug={slug} (open brackets only) ===")
         print(json.dumps(open_markets, indent=2, default=str))
 
         if open_markets:
@@ -322,24 +329,53 @@ class PolymarketLogger:
             token = row.get("yes_token_id")
             slug = row.get("market_slug")
             event_slug = row.get("event_slug")
-            strike = row.get("strike_f")
-            direction = row.get("direction")
+            kind = row.get("bracket_kind")
+            label = row.get("bracket_label")
             if (
                 isinstance(token, str)
                 and isinstance(slug, str)
                 and isinstance(event_slug, str)
-                and isinstance(strike, int)
-                and isinstance(direction, str)
+                and isinstance(kind, str)
+                and isinstance(label, str)
             ):
+                low = row.get("bracket_low_f")
+                high = row.get("bracket_high_f")
                 restored.append(
                     LadderEntry(
                         event_slug=event_slug,
                         market_slug=slug,
                         yes_token_id=token,
-                        strike_f=strike,
-                        direction=direction,
+                        bracket_kind=kind,
+                        bracket_low_f=low if isinstance(low, int) else None,
+                        bracket_high_f=high if isinstance(high, int) else None,
+                        bracket_label=label,
                     )
                 )
+            elif (
+                isinstance(token, str)
+                and isinstance(slug, str)
+                and isinstance(event_slug, str)
+                and isinstance(row.get("strike_f"), int)
+                and isinstance(row.get("direction"), str)
+            ):
+                # Legacy state from cumulative-threshold metadata (pre-bracket fix)
+                strike = row["strike_f"]
+                direction = row["direction"]
+                if direction == ">=":
+                    is_between = "between" in slug
+                    kind = "between" if is_between else "tail_above"
+                    high = strike + 1 if is_between else None
+                    restored.append(
+                        LadderEntry(
+                            event_slug=event_slug,
+                            market_slug=slug,
+                            yes_token_id=token,
+                            bracket_kind=kind,
+                            bracket_low_f=strike,
+                            bracket_high_f=high,
+                            bracket_label=str(row.get("bracket_label") or slug),
+                        )
+                    )
         self._active_ladder = restored
 
     def _record(self, result: Any, *, ticker: str) -> None:

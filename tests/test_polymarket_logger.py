@@ -128,9 +128,11 @@ def test_polymarket_once_writes_all_ladder_books(tmp_path: Path) -> None:
     assert len(market_files) == 2
     book_files = list((tmp_path / "raw").rglob("pm_orderbook/*.jsonl.gz"))
     assert len(book_files) == 4
-    sample = read_jsonl_gz(book_files[0])[0]
-    assert sample["payload"]["pm_meta"]["direction"] == ">="
-    assert "book" in sample["payload"]
+    samples = [read_jsonl_gz(f)[0] for f in book_files]
+    meta_rows = [s["payload"]["pm_meta"] for s in samples]
+    assert all(m["bracket_kind"] == "between" for m in meta_rows)
+    assert {m["bracket_low_f"] for m in meta_rows} == {76, 78}
+    assert all("book" in s["payload"] for s in samples)
 
     conn = connect(config["storage"]["heartbeat_db"])
     init_schema(conn)
@@ -139,7 +141,7 @@ def test_polymarket_once_writes_all_ladder_books(tmp_path: Path) -> None:
     assert count >= 4
 
 
-def test_polymarket_probe_prints_strike_set(
+def test_polymarket_probe_prints_bracket_set(
     tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:
     config = _pm_config(tmp_path)
@@ -190,7 +192,8 @@ def test_polymarket_probe_prints_strike_set(
             app.close()
 
     out = capsys.readouterr().out
-    assert "CUMULATIVE_THRESHOLD_BINARIES" in out
-    assert "strike_set_ge" in out
+    assert "EXHAUSTIVE_BRACKET_LADDER" in out
+    assert "bracket_set" in out
+    assert "strike_set_ge" not in out
     assert "76-77f" in out
     assert "PROBE CLOB GET /book" in out
