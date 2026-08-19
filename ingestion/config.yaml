@@ -51,8 +51,8 @@ climate:
 
 asos_obs:
   start_date: "2021-01-01"
-  # TODO(verify): IEM station id for Central Park in NY_ASOS (GHCNH USW00094728).
-  station: "NYC"
+  # TODO(verify): IEM station ids in NY_ASOS (NYC=Central Park; LGA=LaGuardia).
+  stations: ["NYC", "LGA"]
   network: "NY_ASOS"
   iem_asos_url: "https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py"
   data_fields:
@@ -60,6 +60,12 @@ asos_obs:
 
 clockb_check:
   out_dir: "analysis/out"
+
+station_basis:
+  out_dir: "analysis/out"
+  start_date: "2021-01-01"
+  knyc_station: "NYC"
+  klga_station: "LGA"
 
 window_mismatch:
   out_dir: "analysis/out"

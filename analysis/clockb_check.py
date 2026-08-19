@@ -40,7 +40,7 @@ def build_clockb_table(
     labels: pd.DataFrame,
     raw_dir: Path,
 ) -> pd.DataFrame:
-    observations = load_asos_observations_from_raw(raw_dir)
+    observations = load_asos_observations_from_raw(raw_dir, station="NYC")
     obs_by_day: dict[str, list] = {}
     for obs in observations:
         climate = climate_date_of(obs.valid_utc).isoformat()
