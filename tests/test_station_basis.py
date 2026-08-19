@@ -12,6 +12,7 @@ from analysis.station_basis import (
     NOTES_CAVEAT,
     build_paired_days,
     daily_max_table,
+    disagree_by_knyc_max,
     polymarket_bracket,
     run,
     summarize_slice,
@@ -112,6 +113,26 @@ def test_daily_max_table_from_fixture() -> None:
     maxes = daily_max_table(obs, start=date(2025, 5, 1), end=date(2025, 5, 1))
     assert maxes["2025-05-01"] == 81
 
+
+def test_disagree_by_knyc_max_spikes_at_bin_edges() -> None:
+    frame = pd.DataFrame(
+        [
+            {"knyc_max_f": 85, "delta_f": 1, "bracket_disagree": True},
+            {"knyc_max_f": 85, "delta_f": 1, "bracket_disagree": True},
+            {"knyc_max_f": 85, "delta_f": 0, "bracket_disagree": False},
+            {"knyc_max_f": 86, "delta_f": 0, "bracket_disagree": False},
+            {"knyc_max_f": 86, "delta_f": 0, "bracket_disagree": False},
+            {"knyc_max_f": 40, "delta_f": 1, "bracket_disagree": False},
+            {"knyc_max_f": 40, "delta_f": 1, "bracket_disagree": False},
+        ]
+    )
+    table = disagree_by_knyc_max(frame)
+    row85 = table.loc[table["knyc_max_f"] == 85].iloc[0]
+    row86 = table.loc[table["knyc_max_f"] == 86].iloc[0]
+    row40 = table.loc[table["knyc_max_f"] == 40].iloc[0]
+    assert row85["bracket_disagree_frac"] == pytest.approx(0.6667, abs=0.001)
+    assert row86["bracket_disagree_frac"] == 0.0
+    assert row40["bracket_disagree_frac"] == 0.0
 
 def test_station_basis_run_writes_csv_and_notes(
     tmp_path: Path, capsys: pytest.CaptureFixture[str],
