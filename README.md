@@ -359,3 +359,18 @@ systemctl --user status kalshi-logger polymarket-logger
 After deploying the Kalshi logger with deeper books, consider raising `api.orderbook_depth`
 in `ingestion/config.yaml` so multi-level depth metrics are meaningful.
 
+## Session 6a — K2 prerequisites (window mismatch K2 + NBM archive)
+
+```bash
+# A. Extended window mismatch (CLI lst/ldt + ASOS KNYC; window_mismatch_k2.csv)
+python -m analysis.window_mismatch
+
+# B. NBM qmd archive probe (paste output before bulk backfill)
+python -m ingestion.nbm_archive --probe
+python -m ingestion.nbm_archive --dry-run
+python -m ingestion.nbm_archive
+```
+
+NBM ingestion uses HTTP byte-range requests via `.idx` sidecars only — never downloads
+whole 283 MB grib2 files. Requires `requirements-analysis.txt` (cfgrib, pyarrow).
+

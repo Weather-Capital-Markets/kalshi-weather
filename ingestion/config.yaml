@@ -74,6 +74,16 @@ turnover_census:
 window_mismatch:
   out_dir: "analysis/out"
 
+nbm_archive:
+  base_url: "https://noaa-nbm-grib2-pds.s3.amazonaws.com"
+  publication_latency_min: 60
+  station_lat: 40.779
+  station_lon: -73.969
+  start_date: "2021-08-05"
+  end_date: "2026-05-03"
+  snapshot_horizon_h: 24
+  decoded_dir: "data/nbm/decoded"
+
 depth_census:
   horizons_h: [24, 12, 6, 3, 1]
   out_dir: "analysis/out"
