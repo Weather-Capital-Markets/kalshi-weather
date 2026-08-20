@@ -20,7 +20,7 @@ IDX_LINE_RE = re.compile(
 )
 
 PERCENTILE_TAIL_RE = re.compile(r"^P?(\d+)% level$")
-MAX_WINDOW_STAT = "0-18 hour max fcst"
+WINDOW_STAT_RE = re.compile(r"^(?P<start>\d+)-(?P<end>\d+) hour max fcst$")
 
 # f018, f030, … f270 — multiples of 6 with f ≡ 6 (mod 12).
 QMD_WINDOW_FORECAST_HOURS: tuple[int, ...] = tuple(range(18, 271, 12))
@@ -38,8 +38,19 @@ class IdxLine:
     raw_line: str
 
     @property
+    def window_hours(self) -> tuple[int, int] | None:
+        match = WINDOW_STAT_RE.match(self.window_stat)
+        if not match:
+            return None
+        return int(match.group("start")), int(match.group("end"))
+
+    @property
     def is_max_window_percentile(self) -> bool:
-        return self.window_stat == MAX_WINDOW_STAT and self.percentile_level is not None
+        hours = self.window_hours
+        if hours is None:
+            return False
+        start_h, end_h = hours
+        return (end_h - start_h) == 18 and self.percentile_level is not None
 
     @property
     def percentile_level(self) -> int | None:
@@ -136,8 +147,20 @@ def byte_ranges_for_selected_lines(
     return ranges
 
 
-def select_max_window_percentile_lines(lines: list[IdxLine]) -> list[IdxLine]:
-    return [line for line in lines if line.is_max_window_percentile]
+def select_max_window_percentile_lines(
+    lines: list[IdxLine],
+    *,
+    forecast_hour: int | None = None,
+) -> list[IdxLine]:
+    selected = [line for line in lines if line.is_max_window_percentile]
+    if forecast_hour is None:
+        return selected
+    matched: list[IdxLine] = []
+    for line in selected:
+        hours = line.window_hours
+        if hours is not None and hours[1] == forecast_hour:
+            matched.append(line)
+    return matched
 
 
 def era_level_count_for_date(climate_date: date) -> int:

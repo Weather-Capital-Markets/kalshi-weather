@@ -162,7 +162,7 @@ class NbmArchiveBackfill:
             logger.warning("idx fetch failed %s status=%s", idx_url, status)
             return [], [], 0
         all_lines = parse_idx_text(idx_text)
-        pct_lines = select_max_window_percentile_lines(all_lines)
+        pct_lines = select_max_window_percentile_lines(all_lines, forecast_hour=forecast_hour)
         if not pct_lines:
             return [], [], 0
         ranges = byte_ranges_for_selected_lines(all_lines, pct_lines)

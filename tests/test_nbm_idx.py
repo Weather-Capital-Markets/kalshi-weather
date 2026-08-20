@@ -23,10 +23,22 @@ def test_parse_v4_idx_fixture_matches_data_sources_format() -> None:
     text = Path("tests/fixtures/nbm_idx_v4_sample.txt").read_text(encoding="utf-8")
     lines = parse_idx_text(text)
     assert len(lines) >= 4
-    pct = select_max_window_percentile_lines(lines)
+    pct = select_max_window_percentile_lines(lines, forecast_hour=18)
     levels = sorted(line.percentile_level for line in pct)
     assert levels == [1, 2, 50, 99]
-    assert all(line.window_stat == "0-18 hour max fcst" for line in pct)
+    assert all(line.window_hours == (0, 18) for line in pct)
+
+
+def test_f030_12_30_hour_max_window_is_selected() -> None:
+    text = (
+        "325:453890124:d=2022070400:TMP:2 m above ground:12-30 hour max fcst:1% level\n"
+        "326:459291540:d=2022070400:TMP:2 m above ground:12-30 hour max fcst:2% level\n"
+        "327:464693853:d=2022070400:TMP:2 m above ground:12-30 hour StdDev fcst:\n"
+    )
+    lines = parse_idx_text(text)
+    pct = select_max_window_percentile_lines(lines, forecast_hour=30)
+    assert [line.percentile_level for line in pct] == [1, 2]
+    assert pct[0].window_hours == (12, 30)
 
 
 def test_parse_v5_idx_fixture_21_level_format() -> None:
@@ -50,7 +62,7 @@ def test_byte_range_construction() -> None:
 def test_selected_percentile_ranges_use_full_idx_boundaries() -> None:
     text = Path("tests/fixtures/nbm_idx_v4_sample.txt").read_text(encoding="utf-8")
     all_lines = parse_idx_text(text)
-    pct_lines = select_max_window_percentile_lines(all_lines)
+    pct_lines = select_max_window_percentile_lines(all_lines, forecast_hour=18)
     wrong = byte_ranges_for_messages(pct_lines)
     right = byte_ranges_for_selected_lines(all_lines, pct_lines)
     assert wrong[-1].size == 1
