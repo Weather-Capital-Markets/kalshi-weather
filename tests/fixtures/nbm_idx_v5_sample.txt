@@ -1,0 +1,6 @@
+1:0:d=2026050412:TMP:2 m above ground:0-18 hour max fcst:0% level
+2:15000:d=2026050412:TMP:2 m above ground:0-18 hour max fcst:5% level
+3:30000:d=2026050412:TMP:2 m above ground:0-18 hour max fcst:50% level
+4:45000:d=2026050412:TMP:2 m above ground:0-18 hour max fcst:100% level
+5:60000:d=2026050412:TMP:2 m above ground:0-18 hour max fcst:
+6:75000:d=2026050412:TMP:2 m above ground:0-18 hour min fcst:prob <233:prob fcst 255/255
