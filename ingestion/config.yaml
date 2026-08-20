@@ -67,6 +67,10 @@ station_basis:
   knyc_station: "NYC"
   klga_station: "LGA"
 
+turnover_census:
+  out_dir: "analysis/out"
+  primary_band: [0.10, 0.90]
+
 window_mismatch:
   out_dir: "analysis/out"
 
