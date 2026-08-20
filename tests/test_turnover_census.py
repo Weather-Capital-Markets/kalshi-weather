@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -18,11 +19,14 @@ from analysis.turnover_census import (
     build_climate_day_table,
     build_market_day_table,
     candle_in_trading_window,
+    candle_matches_band,
     candle_mid_price,
+    load_candles_for_ticker,
+    price_region,
     run,
     summarize_turnover,
+    time_to_close_bucket,
 )
-from ingestion.climate_day import climate_day_end
 from ingestion.writer import RawJsonlWriter, utc_now_iso
 
 
@@ -35,6 +39,19 @@ def test_candle_in_trading_window_respects_open_and_close() -> None:
     assert not candle_in_trading_window(before_open, open_dt=open_dt, close_dt=close_dt)
     assert not candle_in_trading_window(after_close, open_dt=open_dt, close_dt=close_dt)
     assert candle_in_trading_window(inside, open_dt=open_dt, close_dt=close_dt)
+
+
+def test_price_region_band_edges() -> None:
+    assert price_region(0.10) == "10_90"
+    assert price_region(0.90) == "10_90"
+    assert price_region(0.09) == "tails"
+    assert price_region(0.91) == "tails"
+    assert price_region(None) is None
+    assert candle_matches_band(0.10, "10_90")
+    assert candle_matches_band(0.90, "10_90")
+    assert candle_matches_band(0.09, "tails")
+    assert candle_matches_band(0.91, "tails")
+    assert candle_matches_band(None, "all")
 
 
 def test_candle_mid_price_two_sided_and_trade_fallback() -> None:
@@ -86,27 +103,69 @@ def test_aggregate_market_day_premium_band_and_vol_concentration() -> None:
         candles,
         open_dt=open_dt,
         close_dt=close_dt,
-        band_lo=None,
-        band_hi=None,
+        band="all",
     )
     assert all_band["contracts_traded"] == pytest.approx(20.0)
     assert all_band["premium_traded"] == pytest.approx(10 * 0.45 + 4 * 0.03 + 6 * 0.45)
     assert all_band["share_vol_last_1h"] == pytest.approx(10 / 20)
     assert all_band["share_vol_last_3h"] == pytest.approx(14 / 20)
     assert all_band["share_vol_last_6h"] == pytest.approx(20 / 20)
+    assert all_band["time_bucket_volumes"]["0-1h"] == pytest.approx(10.0)
+    assert all_band["time_bucket_volumes"]["1-3h"] == pytest.approx(4.0)
 
     mid_band = aggregate_market_day(
         candles,
         open_dt=open_dt,
         close_dt=close_dt,
-        band_lo=0.10,
-        band_hi=0.90,
+        band="10_90",
     )
     assert mid_band["contracts_traded"] == pytest.approx(16.0)
     assert mid_band["premium_traded"] == pytest.approx(10 * 0.45 + 6 * 0.45)
 
+    tails = aggregate_market_day(
+        candles,
+        open_dt=open_dt,
+        close_dt=close_dt,
+        band="tails",
+    )
+    assert tails["contracts_traded"] == pytest.approx(4.0)
 
-def test_build_climate_day_table_sums_brackets() -> None:
+
+def test_time_to_close_uses_market_close_not_climate_day_end() -> None:
+    # Close-time convention change: bucket relative to each market's close_time.
+    open_dt = datetime(2026, 3, 16, 14, 0, tzinfo=timezone.utc)
+    close_old = parse_iso_utc("2026-03-18T03:59:00Z")  # civil ET era, 2026-03-17 day
+    close_new = parse_iso_utc("2026-03-18T04:59:00Z")  # fixed 04:59Z era, 2026-03-18 day
+    assert close_old is not None and close_new is not None
+    candle_ts = int(parse_iso_utc("2026-03-18T02:59:00Z").timestamp())
+
+    candles = [
+        {
+            "end_period_ts": candle_ts,
+            "yes_bid": {"close_dollars": "0.40"},
+            "yes_ask": {"close_dollars": "0.50"},
+            "volume_fp": "5.00",
+        }
+    ]
+    old_metrics = aggregate_market_day(
+        candles,
+        open_dt=open_dt,
+        close_dt=close_old,
+        band="10_90",
+    )
+    new_metrics = aggregate_market_day(
+        candles,
+        open_dt=open_dt,
+        close_dt=close_new,
+        band="10_90",
+    )
+    assert old_metrics["share_vol_last_1h"] == pytest.approx(1.0)
+    assert new_metrics["share_vol_last_3h"] == pytest.approx(1.0)
+    assert time_to_close_bucket(1.0) == "0-1h"
+    assert time_to_close_bucket(2.0) == "1-3h"
+
+
+def test_build_climate_day_table_bracket_concentration() -> None:
     market_days = pd.DataFrame(
         [
             {
@@ -133,26 +192,45 @@ def test_build_climate_day_table_sums_brackets() -> None:
                 "share_vol_last_3h": 0.5,
                 "share_vol_last_6h": 0.8,
             },
+            {
+                "ticker": "KXHIGHNY-26JUL04-T92",
+                "climate_date": "2026-07-04",
+                "season": "JJA",
+                "era": "2022_plus",
+                "band": "10_90",
+                "premium_traded": 0.0,
+                "contracts_traded": 0.0,
+                "share_vol_last_1h": float("nan"),
+                "share_vol_last_3h": float("nan"),
+                "share_vol_last_6h": float("nan"),
+            },
         ]
     )
     climate = build_climate_day_table(market_days)
-    row = climate.iloc[0]
+    row = climate[climate["band"] == "10_90"].iloc[0]
     assert row["premium_traded_climate_day"] == pytest.approx(15.0)
     assert row["contracts_traded_climate_day"] == pytest.approx(28.0)
-    assert row["n_brackets"] == 2
-    assert row["month"] == "2026-07"
+    assert row["n_brackets_with_volume"] == 2
+    assert row["top_bracket_share"] == pytest.approx(20 / 28)
 
 
-def test_era_split_keeps_2021_separate() -> None:
-    assert era_of("2021-08-05") == "2021_early"
-    assert era_of("2022-01-01") == "2022_plus"
-
-
-def test_summarize_turnover_includes_distribution_columns() -> None:
+def test_summarize_turnover_reports_zero_volume_fraction() -> None:
     market_days = pd.DataFrame(
         [
             {
                 "ticker": "A",
+                "climate_date": "2026-07-04",
+                "season": "JJA",
+                "era": "2022_plus",
+                "band": "10_90",
+                "premium_traded": 0.0,
+                "contracts_traded": 0.0,
+                "share_vol_last_1h": float("nan"),
+                "share_vol_last_3h": float("nan"),
+                "share_vol_last_6h": float("nan"),
+            },
+            {
+                "ticker": "B",
                 "climate_date": "2026-07-04",
                 "season": "JJA",
                 "era": "2022_plus",
@@ -162,22 +240,25 @@ def test_summarize_turnover_includes_distribution_columns() -> None:
                 "share_vol_last_1h": 0.5,
                 "share_vol_last_3h": 0.7,
                 "share_vol_last_6h": 1.0,
-            }
+            },
         ]
     )
     climate_days = build_climate_day_table(market_days)
     summary = summarize_turnover(market_days, climate_days)
     row = summary[(summary["band"] == "10_90") & (summary["season"] == "JJA")].iloc[0]
-    assert row["n_market_days"] == 1
-    assert row["median_premium_climate_day"] == pytest.approx(10.0)
-    assert "climate_day_premium_p10" in summary.columns
+    assert row["zero_volume_market_day_frac"] == pytest.approx(0.5)
+    assert row["median_contracts_market_day"] == pytest.approx(10.0)
+    assert "p25_contracts_market_day" in summary.columns
+
+
+def test_era_split_keeps_2021_separate() -> None:
+    assert era_of("2021-08-05") == "2021_early"
+    assert era_of("2022-01-01") == "2022_plus"
 
 
 def test_turnover_writes_csv_and_pngs(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     writer = RawJsonlWriter(raw_dir)
-    climate_date = "2026-07-04"
-    t_end = climate_day_end(datetime.fromisoformat(climate_date).date())
     close_dt = parse_iso_utc("2026-07-05T05:00:00Z")
     assert close_dt is not None
     end_ts = int(close_dt.timestamp()) - 2 * 3600
@@ -215,13 +296,7 @@ def test_turnover_writes_csv_and_pngs(tmp_path: Path) -> None:
                     "yes_bid": {"close_dollars": "0.40"},
                     "yes_ask": {"close_dollars": "0.50"},
                     "volume_fp": "12.00",
-                },
-                {
-                    "end_period_ts": int((t_end - timedelta(hours=1)).timestamp()),
-                    "yes_bid": {"close_dollars": "0.40"},
-                    "yes_ask": {"close_dollars": "0.50"},
-                    "volume_fp": "3.00",
-                },
+                }
             ],
         },
     )
@@ -244,22 +319,23 @@ def test_turnover_writes_csv_and_pngs(tmp_path: Path) -> None:
         "era",
         "season",
         "band",
-        "median_premium_climate_day",
-        "climate_day_premium_median",
-        "mean_share_vol_last_1h",
+        "median_contracts_market_day",
+        "zero_volume_market_day_frac",
+        "median_brackets_with_volume",
+        "median_top_bracket_share",
     ):
         assert column in summary.columns
 
-    assert (out_dir / "turnover_census_monthly.csv").exists()
+    assert not (out_dir / "turnover_census_monthly.csv").exists()
     for name in (
-        "turnover_census_premium_dist.png",
-        "turnover_census_monthly_trend.png",
-        "turnover_census_vol_concentration.png",
+        "turnover_census_volume_by_season.png",
+        "turnover_census_volume_vs_time_to_close.png",
+        "turnover_census_volume_by_price_region.png",
     ):
         assert (out_dir / name).exists()
 
 
-def test_build_market_day_table_emits_both_bands(tmp_path: Path) -> None:
+def test_build_market_day_table_emits_all_bands(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     writer = RawJsonlWriter(raw_dir)
     ticker = "KXHIGHNY-26JUL04-T90"
@@ -304,11 +380,58 @@ def test_build_market_day_table_emits_both_bands(tmp_path: Path) -> None:
     writer.close()
 
     from analysis.spread_census import load_markets
-    from analysis.turnover_census import load_raw_candles_by_ticker
 
     markets = load_markets(raw_dir)
-    candles = load_raw_candles_by_ticker(raw_dir)
-    table = build_market_day_table(markets, candles)
-    bands = set(table["band"])
-    assert bands == {"10_90", "all"}
-    assert len(table) == 2
+    table, _buckets = build_market_day_table(raw_dir, markets)
+    assert set(table["band"]) == {"10_90", "tails", "all"}
+    assert len(table) == 3
+
+
+def test_load_candles_for_ticker_reads_fixture(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    writer = RawJsonlWriter(raw_dir)
+    ticker = "KXHIGHNY-26JUL04-T90"
+    writer.write(
+        ts_utc=utc_now_iso(),
+        endpoint="/candlesticks",
+        category="candlesticks",
+        key=ticker,
+        http_status=200,
+        latency_ms=1,
+        payload={
+            "ticker": ticker,
+            "candlesticks": [{"end_period_ts": 1, "volume_fp": "1.00"}],
+        },
+    )
+    writer.close()
+    candles = load_candles_for_ticker(raw_dir, ticker)
+    assert len(candles) == 1
+
+
+def test_iter_market_candles_loads_one_market_at_a_time(tmp_path: Path) -> None:
+    from analysis.turnover_census import iter_market_candles
+
+    raw_dir = tmp_path / "raw"
+    writer = RawJsonlWriter(raw_dir)
+    for ticker in ("TICKER-A", "TICKER-B"):
+        writer.write(
+            ts_utc=utc_now_iso(),
+            endpoint="/candlesticks",
+            category="candlesticks",
+            key=ticker,
+            http_status=200,
+            latency_ms=1,
+            payload={"ticker": ticker, "candlesticks": [{"end_period_ts": 1, "volume_fp": "1.00"}]},
+        )
+    writer.close()
+    markets = [{"ticker": "TICKER-A"}, {"ticker": "TICKER-B"}]
+    calls: list[str] = []
+
+    def fake_loader(raw_dir: Path, ticker: str) -> list[dict]:
+        calls.append(ticker)
+        return [{"end_period_ts": 1, "volume_fp": "1.00"}]
+
+    with patch("analysis.turnover_census.load_candles_for_ticker", side_effect=fake_loader):
+        loaded = list(iter_market_candles(raw_dir, markets))
+    assert calls == ["TICKER-A", "TICKER-B"]
+    assert len(loaded) == 2
