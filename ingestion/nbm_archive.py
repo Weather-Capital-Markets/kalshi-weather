@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 import sys
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -51,6 +53,71 @@ GRIDPOINT_POLICY = (
     "nearest_grid_cell: haversine distance to configured station lat/lon on the "
     "decoded CONUS qmd lattice (closes data-sources.md O8)."
 )
+
+DEFAULT_PERCENTILE_LEVELS: tuple[int, ...] = (10, 20, 30, 40, 50, 60, 70, 80, 90)
+SEASON_MONTHS: dict[str, set[int]] = {
+    "DJF": {12, 1, 2},
+    "MAM": {3, 4, 5},
+    "JJA": {6, 7, 8},
+    "SON": {9, 10, 11},
+}
+V4_SUB_ERAS: tuple[str, ...] = ("early", "late")
+
+
+def season_of_date(climate_date: date) -> str:
+    month = climate_date.month
+    for season, months in SEASON_MONTHS.items():
+        if month in months:
+            return season
+    raise ValueError(f"invalid month for climate date: {climate_date.isoformat()}")
+
+
+def v4_sub_era(climate_date: date, *, split: date) -> str:
+    return "early" if climate_date < split else "late"
+
+
+def stratified_sample_climate_dates(
+    start: date,
+    end: date,
+    *,
+    target_n: int,
+    sub_era_split: date,
+    seed: int,
+) -> list[date]:
+    """Sample climate dates across season × v4 sub-era strata (deterministic)."""
+    pool: dict[tuple[str, str], list[date]] = defaultdict(list)
+    for climate_date in climate_date_range(start, end):
+        if climate_date >= date(2026, 5, 4):
+            continue
+        pool[(season_of_date(climate_date), v4_sub_era(climate_date, split=sub_era_split))].append(
+            climate_date
+        )
+    if not pool:
+        return []
+    strata = sorted(pool)
+    base = target_n // len(strata)
+    remainder = target_n % len(strata)
+    rng = random.Random(seed)
+    sampled: list[date] = []
+    for index, key in enumerate(strata):
+        quota = base + (1 if index < remainder else 0)
+        candidates = pool[key]
+        if quota >= len(candidates):
+            sampled.extend(candidates)
+        else:
+            sampled.extend(rng.sample(candidates, quota))
+    return sorted(sampled)
+
+
+def summarize_sample_strata(
+    dates: list[date],
+    *,
+    sub_era_split: date,
+) -> dict[tuple[str, str], int]:
+    counts: dict[tuple[str, str], int] = defaultdict(int)
+    for climate_date in dates:
+        counts[(season_of_date(climate_date), v4_sub_era(climate_date, split=sub_era_split))] += 1
+    return dict(sorted(counts.items()))
 
 
 def climate_date_range(start: date, end: date) -> list[date]:
@@ -121,6 +188,14 @@ class NbmArchiveBackfill:
         self.end_date = date.fromisoformat(str(nbm.get("end_date") or "2026-05-03"))
         self.horizon_h = int(nbm.get("snapshot_horizon_h") or 24)
         self.decoded_dir = Path(str(nbm.get("decoded_dir") or "data/nbm/decoded"))
+        raw_levels = nbm.get("percentile_levels") or list(DEFAULT_PERCENTILE_LEVELS)
+        self.percentile_levels = tuple(int(level) for level in raw_levels)
+        self.percentile_level_set = set(self.percentile_levels)
+        self.sample_size = int(nbm.get("sample_size") or 300)
+        self.sample_seed = int(nbm.get("sample_seed") or 42)
+        self.sub_era_split = date.fromisoformat(
+            str(nbm.get("sub_era_split") or "2024-05-15"),
+        )
         self.writer = RawJsonlWriter(storage["raw_dir"])
         self.conn = connect(storage["backfill_db"])
         init_schema(self.conn)
@@ -129,6 +204,40 @@ class NbmArchiveBackfill:
         self.http = NbmArchiveClient(self.base_url)
         self._grid_row_col: tuple[int, int] | None = None
         self._grid_meta: tuple[float, float, float] | None = None
+
+    def sampled_climate_dates(self) -> list[date]:
+        return stratified_sample_climate_dates(
+            self.start_date,
+            self.end_date,
+            target_n=self.sample_size,
+            sub_era_split=self.sub_era_split,
+            seed=self.sample_seed,
+        )
+
+    def _expected_ladder_levels(self) -> int:
+        return len(self.percentile_levels)
+
+    def estimate_day_grib_bytes_from_idx(self, climate_date: date) -> tuple[int, int]:
+        """Return (grib_range_bytes, idx_bytes) for one climate date; idx fetch only."""
+        vintage = self.vintage_cycle_for_climate_date(climate_date)
+        if vintage is None:
+            return 0, 0
+        forecast_hour = forecast_hour_for_climate_max_window(vintage, climate_date)
+        if forecast_hour is None:
+            return 0, 0
+        idx_url = qmd_idx_url(self.base_url, vintage, forecast_hour)
+        status, idx_text = self.http.fetch_text(idx_url)
+        idx_bytes = len(idx_text.encode("utf-8")) if idx_text else 0
+        if status != 200:
+            return 0, idx_bytes
+        all_lines = parse_idx_text(idx_text)
+        pct_lines = select_max_window_percentile_lines(
+            all_lines,
+            forecast_hour=forecast_hour,
+            percentile_levels=self.percentile_level_set,
+        )
+        ranges = byte_ranges_for_selected_lines(all_lines, pct_lines)
+        return sum(item.size for item in ranges), idx_bytes
 
     def close(self) -> None:
         self.writer.close()
@@ -162,7 +271,11 @@ class NbmArchiveBackfill:
             logger.warning("idx fetch failed %s status=%s", idx_url, status)
             return [], [], 0
         all_lines = parse_idx_text(idx_text)
-        pct_lines = select_max_window_percentile_lines(all_lines, forecast_hour=forecast_hour)
+        pct_lines = select_max_window_percentile_lines(
+            all_lines,
+            forecast_hour=forecast_hour,
+            percentile_levels=self.percentile_level_set,
+        )
         if not pct_lines:
             return [], [], 0
         ranges = byte_ranges_for_selected_lines(all_lines, pct_lines)
@@ -240,7 +353,7 @@ class NbmArchiveBackfill:
             result["grid_lat"] = grid_lat
             result["grid_lon"] = grid_lon
             result["grid_distance_km"] = distance_km
-        expected_levels = era_level_count_for_date(climate_date)
+        expected_levels = self._expected_ladder_levels()
         if ladder and len(ladder) < expected_levels:
             result["status"] = "partial_ladder"
             result["ladder_count"] = len(ladder)
@@ -328,18 +441,59 @@ class NbmArchiveBackfill:
         return 0 if ladder else 1
 
     def dry_run(self) -> int:
-        days = climate_date_range(self.start_date, self.end_date)
-        requests_per_day = len(select_forecast_hours(12)) or 1
-        est_bytes_per_day = 99 * 5000  # conservative ~5KB per percentile message
-        print(f"climate_dates={len(days)}")
-        print(f"from={self.start_date.isoformat()} to={self.end_date.isoformat()}")
-        print(f"requests_per_day~={requests_per_day} (one vintage cycle, max-window f-hour)")
-        print(f"estimated_bytes~={len(days) * est_bytes_per_day:,} (upper bound, range-only)")
-        print("dry-run: no downloads performed")
+        dates = self.sampled_climate_dates()
+        strata = summarize_sample_strata(dates, sub_era_split=self.sub_era_split)
+        print("scope=sampled v4 retrospective leg (no bulk grib downloads)")
+        print(
+            f"eligible_span={self.start_date.isoformat()}..{self.end_date.isoformat()} "
+            f"sub_era_split={self.sub_era_split.isoformat()}"
+        )
+        print(f"percentile_levels={list(self.percentile_levels)} (n={len(self.percentile_levels)})")
+        print(f"sample_size={len(dates)} target={self.sample_size} seed={self.sample_seed}")
+        print("sample_strata (season, sub_era) -> count:")
+        for key, count in strata.items():
+            print(f"  {key[0]}/{key[1]} -> {count}")
+
+        reps: dict[tuple[str, str], date] = {}
+        for climate_date in dates:
+            key = (
+                season_of_date(climate_date),
+                v4_sub_era(climate_date, split=self.sub_era_split),
+            )
+            reps.setdefault(key, climate_date)
+
+        grib_per_day: list[int] = []
+        idx_per_day: list[int] = []
+        print("\nidx-calibrated bytes per stratum representative day:")
+        for key in sorted(reps):
+            rep = reps[key]
+            grib_bytes, idx_bytes = self.estimate_day_grib_bytes_from_idx(rep)
+            grib_per_day.append(grib_bytes)
+            idx_per_day.append(idx_bytes)
+            print(
+                f"  {key[0]}/{key[1]} rep={rep.isoformat()} "
+                f"grib_range_bytes={grib_bytes:,} idx_bytes={idx_bytes:,}"
+            )
+
+        if not grib_per_day:
+            print("estimated_total_bytes=0 (no idx calibration succeeded)")
+            return 1
+
+        avg_grib = sum(grib_per_day) / len(grib_per_day)
+        avg_idx = sum(idx_per_day) / len(idx_per_day)
+        total_grib = int(avg_grib * len(dates))
+        total_idx = int(avg_idx * len(dates))
+        total_bytes = total_grib + total_idx
+        print(f"\nbytes_per_day~={int(avg_grib + avg_idx):,} "
+              f"(avg {len(self.percentile_levels)} grib ranges + idx)")
+        print(f"estimated_grib_bytes~={total_grib:,}")
+        print(f"estimated_idx_bytes~={total_idx:,}")
+        print(f"estimated_total_bytes~={total_bytes:,} ({total_bytes / 1e9:.2f} GB)")
+        print("dry-run: idx fetched for calibration only; no grib byte-range downloads")
         return 0
 
     def backfill(self) -> int:
-        for climate_date in climate_date_range(self.start_date, self.end_date):
+        for climate_date in self.sampled_climate_dates():
             key = climate_date.isoformat()
             if nbm_day_complete(self.conn, key):
                 continue

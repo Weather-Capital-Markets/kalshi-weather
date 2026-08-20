@@ -151,16 +151,22 @@ def select_max_window_percentile_lines(
     lines: list[IdxLine],
     *,
     forecast_hour: int | None = None,
+    percentile_levels: set[int] | None = None,
 ) -> list[IdxLine]:
     selected = [line for line in lines if line.is_max_window_percentile]
-    if forecast_hour is None:
-        return selected
-    matched: list[IdxLine] = []
-    for line in selected:
-        hours = line.window_hours
-        if hours is not None and hours[1] == forecast_hour:
-            matched.append(line)
-    return matched
+    if forecast_hour is not None:
+        selected = [
+            line
+            for line in selected
+            if line.window_hours is not None and line.window_hours[1] == forecast_hour
+        ]
+    if percentile_levels is not None:
+        selected = [
+            line
+            for line in selected
+            if line.percentile_level is not None and line.percentile_level in percentile_levels
+        ]
+    return selected
 
 
 def era_level_count_for_date(climate_date: date) -> int:

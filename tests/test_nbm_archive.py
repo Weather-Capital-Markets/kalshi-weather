@@ -12,8 +12,16 @@ from ingestion.nbm_archive import (
     NbmArchiveBackfill,
     NbmArchiveClient,
     snapshot_utc_for_climate_date,
+    stratified_sample_climate_dates,
+    summarize_sample_strata,
 )
-from ingestion.nbm_idx import ByteRange, IdxLine, vintage_select_cycle
+from ingestion.nbm_idx import (
+    ByteRange,
+    IdxLine,
+    parse_idx_text,
+    select_max_window_percentile_lines,
+    vintage_select_cycle,
+)
 from ingestion.state import nbm_day_complete, set_nbm_day_complete
 
 
@@ -46,6 +54,8 @@ def nbm_config(tmp_path: Path) -> dict:
             "decoded_dir": str(tmp_path / "decoded"),
             "start_date": "2022-07-04",
             "end_date": "2022-07-04",
+            "percentile_levels": [1, 2, 50, 99],
+            "sample_size": 1,
         },
     }
 
@@ -150,10 +160,58 @@ def test_backfill_skips_completed_days(nbm_config: dict) -> None:
     app.close()
 
 
-def test_dry_run_prints_bounds(nbm_config: dict) -> None:
+def test_dry_run_prints_bounds(nbm_config: dict, monkeypatch) -> None:
     app = NbmArchiveBackfill(nbm_config)
+
+    def fake_estimate(_climate_date: date) -> tuple[int, int]:
+        return 48_600_000, 50_000
+
+    monkeypatch.setattr(app, "estimate_day_grib_bytes_from_idx", fake_estimate)
     assert app.dry_run() == 0
     app.close()
+
+
+def test_stratified_sample_is_deterministic_and_balanced() -> None:
+    start = date(2021, 8, 5)
+    end = date(2026, 5, 3)
+    split = date(2024, 5, 15)
+    first = stratified_sample_climate_dates(
+        start,
+        end,
+        target_n=300,
+        sub_era_split=split,
+        seed=42,
+    )
+    second = stratified_sample_climate_dates(
+        start,
+        end,
+        target_n=300,
+        sub_era_split=split,
+        seed=42,
+    )
+    assert first == second
+    assert len(first) == 300
+    strata = summarize_sample_strata(first, sub_era_split=split)
+    assert len(strata) == 8
+    assert min(strata.values()) >= 37
+    assert max(strata.values()) <= 38
+
+
+def test_percentile_level_filter_on_fixture() -> None:
+    text = Path("tests/fixtures/nbm_idx_v4_sample.txt").read_text(encoding="utf-8")
+    lines = parse_idx_text(text)
+    pct = select_max_window_percentile_lines(
+        lines,
+        forecast_hour=18,
+        percentile_levels={10, 20, 30},
+    )
+    assert pct == []
+    pct_subset = select_max_window_percentile_lines(
+        lines,
+        forecast_hour=18,
+        percentile_levels={1, 50, 99},
+    )
+    assert [line.percentile_level for line in pct_subset] == [1, 50, 99]
 
 
 def test_nbm_archive_client_range_header() -> None:
