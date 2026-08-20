@@ -294,9 +294,9 @@ def upsert_history_market(
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ticker) DO UPDATE SET
             series_ticker = excluded.series_ticker,
-            open_time = excluded.open_time,
-            close_time = excluded.close_time,
-            settlement_ts = excluded.settlement_ts,
+            open_time = COALESCE(excluded.open_time, history_markets.open_time),
+            close_time = COALESCE(excluded.close_time, history_markets.close_time),
+            settlement_ts = COALESCE(excluded.settlement_ts, history_markets.settlement_ts),
             status = excluded.status,
             enumerated_utc = excluded.enumerated_utc
         """,

@@ -114,6 +114,10 @@ def test_process_climate_date_writes_parquet_and_raw(nbm_config: dict, monkeypat
         "ingestion.nbm_archive.decode_message_at_gridpoint",
         fake_decode,
     )
+    monkeypatch.setattr(
+        "ingestion.nbm_archive.era_level_count_for_date",
+        lambda _day: 4,
+    )
     app.http.fetch_text = fake_fetch_text
     app.http.fetch_range = fake_fetch_range
     app._ensure_grid = MagicMock(return_value=(0, 0))

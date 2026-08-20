@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from ingestion.nbm_grid import nearest_gridpoint, nearest_on_mesh
 
 
@@ -32,3 +34,11 @@ def test_nearest_on_2d_coordinates() -> None:
 def test_nearest_gridpoint_alias() -> None:
     point = nearest_gridpoint([40.0], [-73.0], target_lat=40.0, target_lon=-73.0)
     assert point.distance_km == 0.0
+
+
+def test_haversine_normalizes_360_degree_longitudes() -> None:
+    from ingestion.nbm_grid import haversine_km
+
+    direct = haversine_km(40.779, -73.969, 40.780, -73.970)
+    wrapped = haversine_km(40.779, -73.969, 40.780, 286.030)
+    assert direct == pytest.approx(wrapped, rel=1e-9)

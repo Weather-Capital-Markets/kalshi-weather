@@ -110,6 +110,30 @@ def byte_ranges_for_messages(
     return ranges
 
 
+def byte_ranges_for_selected_lines(
+    all_lines: list[IdxLine],
+    selected_lines: list[IdxLine],
+    *,
+    file_size: int | None = None,
+) -> list[ByteRange]:
+    """Byte ranges for a subset of idx lines using full-file boundaries.
+
+    Filtering to percentile lines before range construction yields wrong ends
+    whenever non-selected messages sit between selected ones (typical in NBM
+    qmd idx files).
+    """
+    if not selected_lines:
+        return []
+    all_ranges = byte_ranges_for_messages(all_lines, file_size=file_size)
+    by_offset = {item.idx_line.byte_offset: item for item in all_ranges}
+    ranges: list[ByteRange] = []
+    for line in selected_lines:
+        found = by_offset.get(line.byte_offset)
+        if found is not None:
+            ranges.append(found)
+    return ranges
+
+
 def select_max_window_percentile_lines(lines: list[IdxLine]) -> list[IdxLine]:
     return [line for line in lines if line.is_max_window_percentile]
 

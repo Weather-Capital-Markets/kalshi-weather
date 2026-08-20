@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ingestion.nbm_idx import (
     byte_ranges_for_messages,
+    byte_ranges_for_selected_lines,
     era_band_for_date,
     era_level_count_for_date,
     max_product_for_cycle_hour,
@@ -44,6 +45,18 @@ def test_byte_range_construction() -> None:
     assert ranges[0].end == 12344
     assert ranges[0].header_value() == "bytes=0-12344"
     assert ranges[-1].end == 99999
+
+
+def test_selected_percentile_ranges_use_full_idx_boundaries() -> None:
+    text = Path("tests/fixtures/nbm_idx_v4_sample.txt").read_text(encoding="utf-8")
+    all_lines = parse_idx_text(text)
+    pct_lines = select_max_window_percentile_lines(all_lines)
+    wrong = byte_ranges_for_messages(pct_lines)
+    right = byte_ranges_for_selected_lines(all_lines, pct_lines)
+    assert wrong[-1].size == 1
+    assert right[-1].start == 37035
+    assert right[-1].end == 49379
+    assert right[-1].size == 12345
 
 
 def test_era_detection_at_2026_05_04_boundary() -> None:

@@ -16,8 +16,15 @@ class GridPoint:
     distance_km: float
 
 
+def _normalize_lon(lon: float) -> float:
+    """Map longitude to [-180, 180) for consistent GRIB 0–360 vs -180–180 grids."""
+    return ((lon + 180.0) % 360.0) - 180.0
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     radius_km = 6371.0
+    lon1 = _normalize_lon(lon1)
+    lon2 = _normalize_lon(lon2)
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)

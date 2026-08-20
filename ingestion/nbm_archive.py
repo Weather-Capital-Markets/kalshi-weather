@@ -21,15 +21,11 @@ import pandas as pd
 from ingestion.climate_day import climate_day_end
 from ingestion.config_loader import load_config
 from ingestion.heartbeat import connect, init_schema
-from ingestion.nbm_decode import (
-    decode_message_at_gridpoint,
-    decode_percentile_value_f,
-    nearest_gridpoint_from_grib,
-)
+from ingestion.nbm_decode import decode_message_at_gridpoint, nearest_gridpoint_from_grib
 from ingestion.nbm_idx import (
     QMD_WINDOW_FORECAST_HOURS,
     ByteRange,
-    byte_ranges_for_messages,
+    byte_ranges_for_selected_lines,
     candidate_cycles_for_snapshot,
     era_band_for_date,
     era_level_count_for_date,
@@ -168,7 +164,7 @@ class NbmArchiveBackfill:
         pct_lines = select_max_window_percentile_lines(all_lines)
         if not pct_lines:
             return [], [], 0
-        ranges = byte_ranges_for_messages(pct_lines)
+        ranges = byte_ranges_for_selected_lines(all_lines, pct_lines)
         ladder: list[dict[str, Any]] = []
         bytes_before = self.http.bytes_transferred
         row_col: tuple[int, int] | None = None
@@ -181,8 +177,12 @@ class NbmArchiveBackfill:
             row, col = row_col
             value_f = decode_message_at_gridpoint(grib_bytes, row=row, col=col)
             if value_f is None:
-                value_f = decode_percentile_value_f(grib_bytes)
-            if value_f is None:
+                logger.warning(
+                    "decode failed at gridpoint row=%s col=%s offset=%s",
+                    row,
+                    col,
+                    byte_range.start,
+                )
                 continue
             ladder.append(
                 {
@@ -201,7 +201,7 @@ class NbmArchiveBackfill:
         candidates = candidate_cycles_for_snapshot(snapshot)
         return vintage_select_cycle(snapshot, candidates, latency_min=self.latency_min)
 
-    def process_climate_date(self, climate_date: date) -> dict[str, Any]:
+    def process_climate_date(self, climate_date: date, *, persist: bool = True) -> dict[str, Any]:
         snapshot = snapshot_utc_for_climate_date(climate_date, self.horizon_h)
         vintage = self.vintage_cycle_for_climate_date(climate_date)
         result: dict[str, Any] = {
@@ -235,28 +235,38 @@ class NbmArchiveBackfill:
             result["grid_lat"] = grid_lat
             result["grid_lon"] = grid_lon
             result["grid_distance_km"] = distance_km
-        grib_url = qmd_grib_url(self.base_url, vintage, forecast_hour)
-        idx_url = qmd_idx_url(self.base_url, vintage, forecast_hour)
-        for entry in ladder:
-            self.writer.write(
-                ts_utc=utc_now_iso(),
-                endpoint=idx_url,
-                category="nbm_qmd",
-                key=f"{climate_date.isoformat()}_{vintage:%Y%m%d%H}_f{forecast_hour:03d}_p{entry['percentile_level']}",
-                http_status=206,
-                latency_ms=0,
-                payload={
-                    "climate_date": climate_date.isoformat(),
-                    "vintage_cycle_utc": vintage.isoformat(),
-                    "forecast_hour": forecast_hour,
-                    "percentile_level": entry["percentile_level"],
-                    "value_f": entry["value_f"],
-                    "byte_offset": entry["byte_offset"],
-                    "byte_size": entry["byte_size"],
-                    "grib_url": grib_url,
-                },
-            )
-        if ladder:
+        expected_levels = era_level_count_for_date(climate_date)
+        if ladder and len(ladder) < expected_levels:
+            result["status"] = "partial_ladder"
+            result["ladder_count"] = len(ladder)
+            result["expected_levels"] = expected_levels
+            return result
+
+        if ladder and persist:
+            grib_url = qmd_grib_url(self.base_url, vintage, forecast_hour)
+            idx_url = qmd_idx_url(self.base_url, vintage, forecast_hour)
+            for entry in ladder:
+                self.writer.write(
+                    ts_utc=utc_now_iso(),
+                    endpoint=idx_url,
+                    category="nbm_qmd",
+                    key=(
+                        f"{climate_date.isoformat()}_{vintage:%Y%m%d%H}_f{forecast_hour:03d}_"
+                        f"p{entry['percentile_level']}"
+                    ),
+                    http_status=206,
+                    latency_ms=0,
+                    payload={
+                        "climate_date": climate_date.isoformat(),
+                        "vintage_cycle_utc": vintage.isoformat(),
+                        "forecast_hour": forecast_hour,
+                        "percentile_level": entry["percentile_level"],
+                        "value_f": entry["value_f"],
+                        "byte_offset": entry["byte_offset"],
+                        "byte_size": entry["byte_size"],
+                        "grib_url": grib_url,
+                    },
+                )
             self.decoded_dir.mkdir(parents=True, exist_ok=True)
             frame = pd.DataFrame(ladder)
             for col in (
@@ -278,6 +288,8 @@ class NbmArchiveBackfill:
             frame.to_parquet(out_path, index=False)
             result["decoded_path"] = str(out_path)
             result["status"] = "ok"
+        elif ladder:
+            result["status"] = "ok"
         else:
             result["status"] = "empty_ladder"
         return result
@@ -287,7 +299,7 @@ class NbmArchiveBackfill:
         print(f"=== NBM archive probe climate_date={when.isoformat()} ===")
         print(f"publication_latency_min={self.latency_min}")
         print(f"gridpoint_policy={GRIDPOINT_POLICY}")
-        result = self.process_climate_date(when)
+        result = self.process_climate_date(when, persist=False)
         print(f"vintage_cycle_utc={result.get('vintage_cycle_utc')}")
         print(f"publication_utc={result.get('publication_utc')}")
         print(f"forecast_hour={result.get('forecast_hour')}")

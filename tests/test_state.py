@@ -85,6 +85,36 @@ def test_settlement_ts_column_is_added_to_a_preexisting_database(tmp_path: Path)
     db.close()
 
 
+def test_upsert_history_market_does_not_clobber_with_nulls(tmp_path: Path) -> None:
+    db = connect(tmp_path / "backfill.sqlite")
+    init_backfill_schema(db)
+    upsert_history_market(
+        db,
+        ticker="HIGHNY-24AUG15-T83",
+        series_ticker="HIGHNY",
+        open_time="2024-08-14T14:00:00Z",
+        close_time="2024-08-16T03:59:00Z",
+        status="settled",
+        enumerated_utc="2026-08-14T12:00:00.000Z",
+        settlement_ts="2024-08-16T04:02:00Z",
+    )
+    upsert_history_market(
+        db,
+        ticker="HIGHNY-24AUG15-T83",
+        series_ticker="HIGHNY",
+        open_time=None,
+        close_time=None,
+        status="settled",
+        enumerated_utc="2026-08-14T13:00:00.000Z",
+        settlement_ts=None,
+    )
+    row = list_history_markets(db)[0]
+    assert row["open_time"] == "2024-08-14T14:00:00Z"
+    assert row["close_time"] == "2024-08-16T03:59:00Z"
+    assert row["settlement_ts"] == "2024-08-16T04:02:00Z"
+    db.close()
+
+
 def test_settlement_queue(conn) -> None:
     queue_dropped_markets(
         conn,
