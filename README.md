@@ -374,3 +374,9 @@ python -m ingestion.nbm_archive
 NBM ingestion uses HTTP byte-range requests via `.idx` sidecars only — never downloads
 whole 283 MB grib2 files. Requires `requirements-analysis.txt` (cfgrib, pyarrow).
 
+```bash
+# Session 6b — K2 blocking prerequisites (measurement only; 6c gated)
+python -m analysis.bracket_enumeration
+python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > 60 min
+```
+

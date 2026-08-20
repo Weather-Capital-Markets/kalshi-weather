@@ -74,6 +74,15 @@ turnover_census:
 window_mismatch:
   out_dir: "analysis/out"
 
+bracket_enumeration:
+  out_dir: "analysis/out"
+  start_date: "2021-08-05"
+
+nbm_latency_check:
+  out_dir: "analysis/out"
+  assumed_latency_min: 60
+  min_cycles: 20
+
 nbm_archive:
   base_url: "https://noaa-nbm-grib2-pds.s3.amazonaws.com"
   publication_latency_min: 60
