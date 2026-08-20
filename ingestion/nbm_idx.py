@@ -20,10 +20,12 @@ IDX_LINE_RE = re.compile(
 )
 
 PERCENTILE_TAIL_RE = re.compile(r"^P?(\d+)% level$")
-MAX_WINDOW_STAT = "0-18 hour max fcst"
+WINDOW_STAT_RE = re.compile(r"^(?P<start>\d+)-(?P<end>\d+) hour max fcst$")
 
 # f018, f030, … f270 — multiples of 6 with f ≡ 6 (mod 12).
 QMD_WINDOW_FORECAST_HOURS: tuple[int, ...] = tuple(range(18, 271, 12))
+# Window max/min qmd products exist on 00Z and 12Z cycles only (§3.2).
+MAX_PRODUCT_CYCLE_HOURS: tuple[int, ...] = (0, 12)
 
 
 @dataclass(frozen=True)
@@ -36,8 +38,19 @@ class IdxLine:
     raw_line: str
 
     @property
+    def window_hours(self) -> tuple[int, int] | None:
+        match = WINDOW_STAT_RE.match(self.window_stat)
+        if not match:
+            return None
+        return int(match.group("start")), int(match.group("end"))
+
+    @property
     def is_max_window_percentile(self) -> bool:
-        return self.window_stat == MAX_WINDOW_STAT and self.percentile_level is not None
+        hours = self.window_hours
+        if hours is None:
+            return False
+        start_h, end_h = hours
+        return (end_h - start_h) == 18 and self.percentile_level is not None
 
     @property
     def percentile_level(self) -> int | None:
@@ -134,8 +147,20 @@ def byte_ranges_for_selected_lines(
     return ranges
 
 
-def select_max_window_percentile_lines(lines: list[IdxLine]) -> list[IdxLine]:
-    return [line for line in lines if line.is_max_window_percentile]
+def select_max_window_percentile_lines(
+    lines: list[IdxLine],
+    *,
+    forecast_hour: int | None = None,
+) -> list[IdxLine]:
+    selected = [line for line in lines if line.is_max_window_percentile]
+    if forecast_hour is None:
+        return selected
+    matched: list[IdxLine] = []
+    for line in selected:
+        hours = line.window_hours
+        if hours is not None and hours[1] == forecast_hour:
+            matched.append(line)
+    return matched
 
 
 def era_level_count_for_date(climate_date: date) -> int:
@@ -229,6 +254,42 @@ def candidate_cycles_for_snapshot(snapshot_utc: datetime) -> list[datetime]:
     for hour_offset in range(48):
         candidates.append(day_start + timedelta(hours=hour_offset))
     return [c for c in candidates if c < snapshot_utc]
+
+
+def candidate_max_cycles_for_snapshot(snapshot_utc: datetime) -> list[datetime]:
+    """00Z/12Z cycles only — qmd 18-h max/min is not on off-hour blends."""
+    return [
+        cycle
+        for cycle in candidate_cycles_for_snapshot(snapshot_utc)
+        if cycle.hour in MAX_PRODUCT_CYCLE_HOURS
+    ]
+
+
+def max_window_end_utc(cycle_dt: datetime, forecast_hour: int) -> datetime:
+    """Valid time of a 0–18h window product: cycle + forecast hour."""
+    return cycle_dt + timedelta(hours=forecast_hour)
+
+
+def forecast_hour_for_climate_max_window(
+    cycle_dt: datetime,
+    climate_date: date,
+) -> int | None:
+    """Return the f-hour whose 18-h max window is 12Z climate_date → 06Z next day."""
+    window_end = datetime(
+        climate_date.year,
+        climate_date.month,
+        climate_date.day,
+        12,
+        tzinfo=timezone.utc,
+    ) + timedelta(hours=18)
+    if cycle_dt.hour not in MAX_PRODUCT_CYCLE_HOURS:
+        return None
+    for forecast_hour in QMD_WINDOW_FORECAST_HOURS:
+        if not max_product_for_cycle_hour(cycle_dt.hour, forecast_hour):
+            continue
+        if max_window_end_utc(cycle_dt, forecast_hour) == window_end:
+            return forecast_hour
+    return None
 
 
 def kelvin_to_fahrenheit(value: float) -> float:

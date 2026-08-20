@@ -23,10 +23,22 @@ def test_parse_v4_idx_fixture_matches_data_sources_format() -> None:
     text = Path("tests/fixtures/nbm_idx_v4_sample.txt").read_text(encoding="utf-8")
     lines = parse_idx_text(text)
     assert len(lines) >= 4
-    pct = select_max_window_percentile_lines(lines)
+    pct = select_max_window_percentile_lines(lines, forecast_hour=18)
     levels = sorted(line.percentile_level for line in pct)
     assert levels == [1, 2, 50, 99]
-    assert all(line.window_stat == "0-18 hour max fcst" for line in pct)
+    assert all(line.window_hours == (0, 18) for line in pct)
+
+
+def test_f030_12_30_hour_max_window_is_selected() -> None:
+    text = (
+        "325:453890124:d=2022070400:TMP:2 m above ground:12-30 hour max fcst:1% level\n"
+        "326:459291540:d=2022070400:TMP:2 m above ground:12-30 hour max fcst:2% level\n"
+        "327:464693853:d=2022070400:TMP:2 m above ground:12-30 hour StdDev fcst:\n"
+    )
+    lines = parse_idx_text(text)
+    pct = select_max_window_percentile_lines(lines, forecast_hour=30)
+    assert [line.percentile_level for line in pct] == [1, 2]
+    assert pct[0].window_hours == (12, 30)
 
 
 def test_parse_v5_idx_fixture_21_level_format() -> None:
@@ -50,7 +62,7 @@ def test_byte_range_construction() -> None:
 def test_selected_percentile_ranges_use_full_idx_boundaries() -> None:
     text = Path("tests/fixtures/nbm_idx_v4_sample.txt").read_text(encoding="utf-8")
     all_lines = parse_idx_text(text)
-    pct_lines = select_max_window_percentile_lines(all_lines)
+    pct_lines = select_max_window_percentile_lines(all_lines, forecast_hour=18)
     wrong = byte_ranges_for_messages(pct_lines)
     right = byte_ranges_for_selected_lines(all_lines, pct_lines)
     assert wrong[-1].size == 1
@@ -94,3 +106,24 @@ def test_max_product_alternation_12z_f018_is_max() -> None:
     assert max_product_for_cycle_hour(0, 18) is False
     assert max_product_for_cycle_hour(0, 30) is True
     assert max_product_for_cycle_hour(12, 30) is False
+
+
+def test_t24h_vintage_is_00z_not_off_hour_cycle() -> None:
+    from ingestion.nbm_archive import snapshot_utc_for_climate_date
+    from ingestion.nbm_idx import (
+        candidate_max_cycles_for_snapshot,
+        forecast_hour_for_climate_max_window,
+        vintage_select_cycle,
+    )
+
+    climate = date(2022, 7, 4)
+    snapshot = snapshot_utc_for_climate_date(climate, 24)
+    assert snapshot == datetime(2022, 7, 4, 5, 0, tzinfo=timezone.utc)
+    covering = [
+        cycle
+        for cycle in candidate_max_cycles_for_snapshot(snapshot)
+        if forecast_hour_for_climate_max_window(cycle, climate) is not None
+    ]
+    selected = vintage_select_cycle(snapshot, covering, latency_min=60)
+    assert selected == datetime(2022, 7, 4, 0, 0, tzinfo=timezone.utc)
+    assert forecast_hour_for_climate_max_window(selected, climate) == 30
