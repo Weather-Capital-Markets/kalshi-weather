@@ -153,6 +153,16 @@ window_mismatch (K2 CSV) → nbm_archive --probe (paste output before bulk)
 nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded)
 ```
 
-NBM retrospective dates `2021-08-05` → `2026-05-03` (hard cut 2026-05-04). cfgrib +
+NBM retrospective scope: **300 stratified climate days** (season × v4 early/late sub-era)
+with **9 percentile levels** (P10–P90 by 10) of the 18-h max-window ladder — not the full
+~1,700-day × 99-level corpus. `nbm_archive --dry-run` calibrates bytes from `.idx` sidecars
+only; bulk backfill waits on a sane estimate.
+
+```text
+window_mismatch (K2 CSV) → nbm_archive --probe (paste output before bulk)
+nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded)
+```
+
+Eligible span `2021-08-05` → `2026-05-03` (hard cut 2026-05-04). cfgrib +
 pyarrow in `requirements-analysis.txt`. Raw `nbm_qmd` JSONL per percentile message.
 
