@@ -199,6 +199,11 @@ CREATE TABLE IF NOT EXISTS asos_month_progress (
   updated_utc TEXT NOT NULL,
   PRIMARY KEY (station, month)
 );
+CREATE TABLE IF NOT EXISTS nbm_climate_day_progress (
+  climate_date TEXT PRIMARY KEY,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
 """
 
 
@@ -245,6 +250,28 @@ def init_backfill_schema(conn: sqlite3.Connection) -> None:
         existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()
+
+
+def nbm_day_complete(conn: sqlite3.Connection, climate_date: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM nbm_climate_day_progress WHERE climate_date = ?",
+        (climate_date,),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_nbm_day_complete(conn: sqlite3.Connection, climate_date: str, updated_utc: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO nbm_climate_day_progress (climate_date, complete, updated_utc)
+        VALUES (?, 1, ?)
+        ON CONFLICT(climate_date) DO UPDATE SET
+            complete = 1,
+            updated_utc = excluded.updated_utc
+        """,
+        (climate_date, updated_utc),
+    )
     conn.commit()
 
 
