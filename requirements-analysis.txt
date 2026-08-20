@@ -4,3 +4,4 @@ matplotlib==3.9.4
 pyarrow==17.0.0
 cfgrib==0.9.14.1
 eccodes==1.6.1
+xarray==2024.11.0
