@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -68,13 +69,22 @@ def summarize_by_season(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def _parse_cli_high_f(row: Any) -> float | None:
+    """Return a finite CLI high, or None for missing/MM/NaN CSV cells."""
     raw = getattr(row, "high_F", None)
     if raw is None or (isinstance(raw, str) and not raw.strip()):
         return None
     try:
-        return float(raw)
+        if bool(pd.isna(raw)):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        value = float(raw)
     except (TypeError, ValueError):
         return None
+    if not math.isfinite(value):
+        return None
+    return value
 
 
 def build_k2_day_rows(labels: pd.DataFrame, raw_dir: Path) -> pd.DataFrame:
@@ -93,7 +103,7 @@ def build_k2_day_rows(labels: pd.DataFrame, raw_dir: Path) -> pd.DataFrame:
             continue
         day_obs = obs_by_day.get(climate_date, [])
         asos_max_f, asos_max_ts = asos_max_for_climate_day(day_obs, climate_date)
-        if asos_max_ts is None:
+        if asos_max_ts is None or asos_max_f is None or not math.isfinite(asos_max_f):
             continue
         window_start, window_end = nbm_max_window_utc(climate_date)
         asos_outside = not time_in_window(asos_max_ts, window_start, window_end)
