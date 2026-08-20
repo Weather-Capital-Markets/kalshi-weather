@@ -94,3 +94,24 @@ def test_max_product_alternation_12z_f018_is_max() -> None:
     assert max_product_for_cycle_hour(0, 18) is False
     assert max_product_for_cycle_hour(0, 30) is True
     assert max_product_for_cycle_hour(12, 30) is False
+
+
+def test_t24h_vintage_is_00z_not_off_hour_cycle() -> None:
+    from ingestion.nbm_archive import snapshot_utc_for_climate_date
+    from ingestion.nbm_idx import (
+        candidate_max_cycles_for_snapshot,
+        forecast_hour_for_climate_max_window,
+        vintage_select_cycle,
+    )
+
+    climate = date(2022, 7, 4)
+    snapshot = snapshot_utc_for_climate_date(climate, 24)
+    assert snapshot == datetime(2022, 7, 4, 5, 0, tzinfo=timezone.utc)
+    covering = [
+        cycle
+        for cycle in candidate_max_cycles_for_snapshot(snapshot)
+        if forecast_hour_for_climate_max_window(cycle, climate) is not None
+    ]
+    selected = vintage_select_cycle(snapshot, covering, latency_min=60)
+    assert selected == datetime(2022, 7, 4, 0, 0, tzinfo=timezone.utc)
+    assert forecast_hour_for_climate_max_window(selected, climate) == 30

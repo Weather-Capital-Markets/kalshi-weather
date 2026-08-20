@@ -26,9 +26,10 @@ from ingestion.nbm_idx import (
     QMD_WINDOW_FORECAST_HOURS,
     ByteRange,
     byte_ranges_for_selected_lines,
-    candidate_cycles_for_snapshot,
+    candidate_max_cycles_for_snapshot,
     era_band_for_date,
     era_level_count_for_date,
+    forecast_hour_for_climate_max_window,
     max_product_for_cycle_hour,
     nbm_version_for_date,
     parse_idx_text,
@@ -198,8 +199,13 @@ class NbmArchiveBackfill:
 
     def vintage_cycle_for_climate_date(self, climate_date: date) -> datetime | None:
         snapshot = snapshot_utc_for_climate_date(climate_date, self.horizon_h)
-        candidates = candidate_cycles_for_snapshot(snapshot)
-        return vintage_select_cycle(snapshot, candidates, latency_min=self.latency_min)
+        candidates = candidate_max_cycles_for_snapshot(snapshot)
+        covering = [
+            cycle
+            for cycle in candidates
+            if forecast_hour_for_climate_max_window(cycle, climate_date) is not None
+        ]
+        return vintage_select_cycle(snapshot, covering, latency_min=self.latency_min)
 
     def process_climate_date(self, climate_date: date, *, persist: bool = True) -> dict[str, Any]:
         snapshot = snapshot_utc_for_climate_date(climate_date, self.horizon_h)
@@ -220,11 +226,10 @@ class NbmArchiveBackfill:
             return result
         result["vintage_cycle_utc"] = vintage.isoformat()
         result["publication_utc"] = publication_utc(vintage, self.latency_min).isoformat()
-        forecast_hours = select_forecast_hours(vintage.hour)
-        if not forecast_hours:
+        forecast_hour = forecast_hour_for_climate_max_window(vintage, climate_date)
+        if forecast_hour is None:
             result["status"] = "no_max_forecast_hour"
             return result
-        forecast_hour = forecast_hours[0]
         ladder, ranges, bytes_used = self.fetch_percentile_ladder(vintage, forecast_hour)
         result["forecast_hour"] = forecast_hour
         result["percentile_ladder"] = ladder
