@@ -138,3 +138,21 @@ capture (fill share is K4). No Gate 0 arithmetic in code. Headlines: market-day 
 fraction. Outputs: `turnover_census.csv` + three PNGs (volume by season, vs time-to-close,
 by price region). Streams one market at a time to avoid loading the full corpus into RAM.
 
+## 9. Session 6a — K2 prerequisites (window mismatch K2 + NBM archive)
+
+**Status:** IN PROGRESS — laptop only; byte-range NBM qmd archive + extended window mismatch.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Window mismatch K2 | `analysis/window_mismatch.py` | `window_mismatch_k2.csv` + PNG: CLI lst/ldt + ASOS KNYC outside 12Z–06Z; conditional `delta_f`; bracket disagreement (`whole_f`); both clock hypotheses, no pick |
+| B NBM idx parser | `ingestion/nbm_idx.py` | `.idx` line parse, byte ranges, vintage T−24h (60 min latency), era/version tags |
+| C NBM archive | `ingestion/nbm_archive.py` | AWS `noaa-nbm-grib2-pds`; range-only via `.idx`; `--probe` / `--dry-run` / resumable backfill; nearest gridpoint for O8 |
+
+```text
+window_mismatch (K2 CSV) → nbm_archive --probe (paste output before bulk)
+nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded)
+```
+
+NBM retrospective dates `2021-08-05` → `2026-05-03` (hard cut 2026-05-04). cfgrib +
+pyarrow in `requirements-analysis.txt`. Raw `nbm_qmd` JSONL per percentile message.
+

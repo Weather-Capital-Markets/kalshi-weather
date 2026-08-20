@@ -199,6 +199,11 @@ CREATE TABLE IF NOT EXISTS asos_month_progress (
   updated_utc TEXT NOT NULL,
   PRIMARY KEY (station, month)
 );
+CREATE TABLE IF NOT EXISTS nbm_climate_day_progress (
+  climate_date TEXT PRIMARY KEY,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
 """
 
 
@@ -248,6 +253,28 @@ def init_backfill_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def nbm_day_complete(conn: sqlite3.Connection, climate_date: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM nbm_climate_day_progress WHERE climate_date = ?",
+        (climate_date,),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_nbm_day_complete(conn: sqlite3.Connection, climate_date: str, updated_utc: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO nbm_climate_day_progress (climate_date, complete, updated_utc)
+        VALUES (?, 1, ?)
+        ON CONFLICT(climate_date) DO UPDATE SET
+            complete = 1,
+            updated_utc = excluded.updated_utc
+        """,
+        (climate_date, updated_utc),
+    )
+    conn.commit()
+
+
 def upsert_history_market(
     conn: sqlite3.Connection,
     *,
@@ -267,9 +294,9 @@ def upsert_history_market(
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ticker) DO UPDATE SET
             series_ticker = excluded.series_ticker,
-            open_time = excluded.open_time,
-            close_time = excluded.close_time,
-            settlement_ts = excluded.settlement_ts,
+            open_time = COALESCE(excluded.open_time, history_markets.open_time),
+            close_time = COALESCE(excluded.close_time, history_markets.close_time),
+            settlement_ts = COALESCE(excluded.settlement_ts, history_markets.settlement_ts),
             status = excluded.status,
             enumerated_utc = excluded.enumerated_utc
         """,
