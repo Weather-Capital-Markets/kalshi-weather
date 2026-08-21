@@ -12,19 +12,25 @@ Do not re-run nbm_archive until this settles the vintage rule (Session 6b-fix).
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Literal
 
 import httpx
 import pandas as pd
 
+from analysis.nbm_latency_check import (
+    METHOD_DESCRIPTION as LATENCY_METHOD_DESCRIPTION,
+)
+from analysis.nbm_latency_check import (
+    mirror_lag_minutes,
+    parse_last_modified_header,
+    percentile,
+)
 from ingestion.config_loader import load_config
 from ingestion.nbm_archive import (
     qmd_idx_url,
@@ -34,14 +40,7 @@ from ingestion.nbm_archive import (
 from ingestion.nbm_idx import (
     candidate_max_cycles_for_snapshot,
     forecast_hour_for_climate_max_window,
-    publication_utc,
     vintage_select_cycle,
-)
-from analysis.nbm_latency_check import (
-    METHOD_DESCRIPTION as LATENCY_METHOD_DESCRIPTION,
-    mirror_lag_minutes,
-    parse_last_modified_header,
-    percentile,
 )
 
 logger = logging.getLogger(__name__)
@@ -730,9 +729,10 @@ def audit_sample_scope() -> list[str]:
         seed=seed,
     )
     before = [d for d in sample if d < STABLE_BRACKET_CUTOFF]
+    eligible = len(sample) - len(before)
     return [
         f"nbm_sample_n={len(sample)} before_{STABLE_BRACKET_CUTOFF.isoformat()}={len(before)}",
-        f"eligible_after_cutoff={len(sample) - len(before)} (need re-sample or drop {len(before)} days for K2)",
+        f"eligible_after_cutoff={eligible} (need re-sample or drop {len(before)} days for K2)",
     ]
 
 

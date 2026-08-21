@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock
 
 import pandas as pd
 
 from analysis.nbm_availability_watch import (
+    NbmAvailabilityWatcher,
+    WatchRow,
     availability_delta_minutes,
     enumerate_upcoming_cycles,
     last_modified_gap_minutes,
     load_watch_rows,
-    NbmAvailabilityWatcher,
     nomads_idx_url,
     save_watch_rows,
     select_watch_cycles,
-    WatchRow,
 )
 
 
