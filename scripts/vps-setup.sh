@@ -26,12 +26,18 @@ python -m ingestion.polymarket_logger --once
 echo "==> install user systemd units"
 UNIT_DIR="${HOME}/.config/systemd/user"
 mkdir -p "$UNIT_DIR"
-for unit in kalshi-logger polymarket-logger; do
+for unit in kalshi-logger polymarket-logger nbm-availability-watch; do
   sed "s|%h/kalshi-weather|${REPO_DIR}|g" "deploy/${unit}.service" > "${UNIT_DIR}/${unit}.service"
 done
+if [[ -f deploy/nbm-availability-watch.timer ]]; then
+  sed "s|%h/kalshi-weather|${REPO_DIR}|g" deploy/nbm-availability-watch.timer > "${UNIT_DIR}/nbm-availability-watch.timer"
+fi
 systemctl --user daemon-reload
 systemctl --user enable kalshi-logger polymarket-logger
 systemctl --user restart kalshi-logger polymarket-logger
+if [[ -f "${UNIT_DIR}/nbm-availability-watch.timer" ]]; then
+  systemctl --user enable --now nbm-availability-watch.timer
+fi
 
 echo "==> enable linger (run once; may prompt for sudo password)"
 if command -v loginctl >/dev/null 2>&1; then

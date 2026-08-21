@@ -135,7 +135,19 @@ cd kalshi-weather
 ```
 
 `vps-setup.sh` creates the venv, installs deps, runs `--once` smoke tests, installs user
-systemd units from `deploy/`, enables lingering, and starts both services.
+systemd units from `deploy/`, enables lingering, and starts both services plus the
+NBM availability-watch timer (Session 6b-fix).
+
+**NBM first-availability watch (blocking K2):** after `git pull`, confirm the timer is active:
+
+```bash
+systemctl --user status nbm-availability-watch.timer
+journalctl --user -u nbm-availability-watch -f
+python -m analysis.nbm_availability_watch --mode report
+```
+
+Output CSV: `analysis/out/nbm_availability_watch.csv` (polls every 5 min until 6 cycles
+per source witness 404→200). Do not re-run `nbm_archive` until this report settles.
 
 ### Manual equivalent
 
@@ -378,5 +390,7 @@ whole 283 MB grib2 files. Requires `requirements-analysis.txt` (cfgrib, pyarrow)
 # Session 6b — K2 blocking prerequisites (measurement only; 6c gated)
 python -m analysis.bracket_enumeration
 python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > 60 min
+python -m analysis.nbm_availability_watch --mode tick   # VPS timer: first-availability poll
+python -m analysis.nbm_availability_watch --mode report   # summarize CSV
 ```
 

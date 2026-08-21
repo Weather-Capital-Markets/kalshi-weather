@@ -83,6 +83,14 @@ nbm_latency_check:
   assumed_latency_min: 60
   min_cycles: 20
 
+nbm_availability_watch:
+  out_dir: "analysis/out"
+  poll_interval_sec: 300
+  min_cycles: 6
+  max_watch_age_hours: 12
+  assumed_latency_min: 60
+  sources: ["aws", "nomads"]
+
 nbm_archive:
   base_url: "https://noaa-nbm-grib2-pds.s3.amazonaws.com"
   publication_latency_min: 60

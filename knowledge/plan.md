@@ -174,11 +174,13 @@ pyarrow in `requirements-analysis.txt`. Raw `nbm_qmd` JSONL per percentile messa
 |---|---|---|
 | A Bracket enumeration | `analysis/bracket_enumeration.py` | Frozen `markets_history` only; derive width, alignment, contiguity, tails; `bracket_structure.csv` |
 | B NBM latency check | `analysis/nbm_latency_check.py` | HEAD on AWS qmd `.idx`; mirror lag vs 60 min assumption; **hard stop if p90 > 60** |
+| B-fix Availability watch | `analysis/nbm_availability_watch.py` | Prospective first-HTTP-200 poll AWS + NOMADS; resolves Last-Modified vs real lag (**blocking K2**) |
 
 ```text
-bracket_enumeration → nbm_latency_check → (6c gated)
+bracket_enumeration → nbm_latency_check → nbm_availability_watch → (6c gated)
 ```
 
 Do **not** build forecast-vs-market comparison until A and B pass. If B hard-stops,
-re-run `nbm_archive` with corrected latency before 6c.
+re-run `nbm_archive` with corrected latency before 6c. **Do not re-run backfill**
+until B-fix settles first-availability vs Last-Modified.
 
