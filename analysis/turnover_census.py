@@ -30,6 +30,7 @@ from analysis.spread_census import (
     ticker_climate_date,
 )
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_frame
 from ingestion.writer import read_jsonl_gz
 
 plt.switch_backend("Agg")
@@ -415,6 +416,7 @@ def _collect_time_to_close_volumes(
 def write_outputs(summary: pd.DataFrame, out_dir: Path) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "turnover_census.csv"
+    assert_non_empty_frame(summary, what="turnover_census.csv")
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         handle.write(f"# {NOTE_UPPER_BOUND}\n")
         handle.write(f"# {NOTE_PREMIUM_ONCE}\n")

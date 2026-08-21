@@ -34,6 +34,7 @@ from ingestion.climate_time import (
     time_in_window,
 )
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_frame
 
 plt.switch_backend("Agg")
 logger = logging.getLogger(__name__)
@@ -242,6 +243,7 @@ def run_k2(config: dict[str, Any], labels: pd.DataFrame, out_dir: Path) -> int:
     summary = summarize_k2_by_season(day_rows)
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "window_mismatch_k2.csv"
+    assert_non_empty_frame(summary, what="window_mismatch_k2.csv")
     summary.to_csv(csv_path, index=False)
     png_path = out_dir / "window_mismatch_k2.png"
     _write_k2_figure(summary, png_path)
@@ -270,6 +272,7 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
         summary = summarize_by_season(pd.concat([lst, ldt], ignore_index=True))
         print(summary.to_string(index=False))
         csv_path = out_dir / "window_mismatch.csv"
+        assert_non_empty_frame(summary, what="window_mismatch.csv")
         summary.to_csv(csv_path, index=False)
         _write_figure(summary, out_dir / "window_mismatch.png")
         print(f"wrote {csv_path}")
@@ -280,6 +283,7 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
         print(f"convention={convention} overall mismatch rate: {overall:.4%}")
         print(summary.to_string(index=False))
         csv_path = out_dir / "window_mismatch.csv"
+        assert_non_empty_frame(summary, what="window_mismatch.csv")
         summary.to_csv(csv_path, index=False)
         _write_figure(summary, out_dir / "window_mismatch.png")
         print(f"wrote {csv_path}")

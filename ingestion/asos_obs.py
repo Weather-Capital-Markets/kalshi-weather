@@ -24,6 +24,7 @@ from ingestion.state import (
     init_state_schema,
     set_asos_month_complete,
 )
+from ingestion.validate_units import csv_has_data_rows
 from ingestion.writer import RawJsonlWriter, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,13 @@ class AsosObsBackfill:
         if not text.strip():
             logger.warning(
                 "IEM ASOS month %s station=%s returned empty body; not marking complete",
+                month,
+                station,
+            )
+            return
+        if not csv_has_data_rows(text):
+            logger.warning(
+                "IEM ASOS month %s station=%s returned header-only CSV; not marking complete",
                 month,
                 station,
             )
