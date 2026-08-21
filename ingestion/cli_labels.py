@@ -28,6 +28,10 @@ from ingestion.state import (
     month_complete,
     set_month_complete,
 )
+from ingestion.validate_units import (
+    assert_non_empty_rows,
+    validate_temperature_f,
+)
 from ingestion.writer import RawJsonlWriter, read_jsonl_gz, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -121,7 +125,7 @@ def parse_modern_product(product: str, *, source_month: str) -> dict[str, Any] |
     if not high_raw or high_raw.upper() == "MM":
         high_f = None
     else:
-        high_f = int(high_raw)
+        high_f = int(validate_temperature_f(float(high_raw), label="high_F"))
     time_raw = (max_match.group(2) or "").strip() if max_match else ""
     intermediate = bool(re.search(r"VALID TODAY AS OF", product, re.IGNORECASE))
     if re.search(r"TEMPERATURE \(F\).*?\n\s*TODAY\b", product, re.IGNORECASE | re.DOTALL):
@@ -232,7 +236,19 @@ class CliLabelBackfill:
             logger.warning("IEM month %s failed status=%s", month, result.status_code)
             return
         text = result.text_body or ""
+        if not text.strip():
+            logger.warning(
+                "IEM month %s returned empty body; not marking complete",
+                month,
+            )
+            return
         n_products = len(split_products(text))
+        if n_products <= 0:
+            logger.warning(
+                "IEM month %s returned no parseable products; not marking complete",
+                month,
+            )
+            return
         if n_products >= IEM_MAX_LIMIT:
             logger.warning(
                 "IEM month %s returned %s products, at the %s cap; the month may be truncated",
@@ -256,7 +272,11 @@ class CliLabelBackfill:
     def rebuild_csv(self) -> None:
         rows: list[dict[str, Any]] = []
         skipped = 0
-        for path in sorted(self.raw_dir.glob("*/cli_labels/*.jsonl.gz")):
+        raw_paths = sorted(self.raw_dir.glob("*/cli_labels/*.jsonl.gz"))
+        if not raw_paths:
+            logger.info("no cli_labels raw captures; skipping clinyc.csv rebuild")
+            return
+        for path in raw_paths:
             for record in read_jsonl_gz(path):
                 payload = record.get("payload") or {}
                 text = payload.get("text") if isinstance(payload, dict) else ""
@@ -269,6 +289,7 @@ class CliLabelBackfill:
                         skipped += 1
                         continue
                     rows.append(parsed)
+        assert_non_empty_rows(len(rows), what="clinyc.csv label rows")
         self.labels_csv.parent.mkdir(parents=True, exist_ok=True)
         with self.labels_csv.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)

@@ -24,6 +24,7 @@ import pandas as pd
 from analysis.spread_census import load_markets, ticker_climate_date
 from analysis.venue_eras import change_points
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_frame
 
 logger = logging.getLogger(__name__)
 
@@ -370,6 +371,7 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "bracket_structure.csv"
+    assert_non_empty_frame(regimes, what="bracket_structure.csv")
     regimes.to_csv(csv_path, index=False)
 
     print(f"climate_days={len(daily)} markets={len(markets)} start={start_date.isoformat()}")

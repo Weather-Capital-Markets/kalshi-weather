@@ -1,0 +1,28 @@
+{
+  "sources": {
+    "clinyc_july_4_2026": "tests/fixtures/clinyc_cdus41.txt — final issuance parsed by test_cli_labels",
+    "nbm_v4_idx_levels": "tests/fixtures/nbm_idx_v4_sample.txt — data-sources.md §3.2 window max fcst",
+    "modern_bracket_count": "knowledge/data-sources.md §5.1 — ~6 brackets/day from 2022 on",
+    "volume_reconcile": "knowledge/venue-facts.md §1.11 — 9,317/9,364 exact, 0.0052% residual (full corpus only)"
+  },
+  "clinyc": {
+    "climate_date": "2026-07-04",
+    "final_high_F": 94,
+    "final_time_of_high_raw": "455 PM",
+    "intermediate_time_of_high_raw": "105 PM"
+  },
+  "nbm_idx_v4": {
+    "forecast_hour": 18,
+    "percentile_levels": [1, 2, 50, 99],
+    "window_hours": [0, 18]
+  },
+  "bracket_structure": {
+    "modern_n_brackets": 6,
+    "modern_interior_width_f": 2
+  },
+  "venue_facts": {
+    "total_markets": 9364,
+    "volume_reconcile_exact": 9317,
+    "volume_reconcile_residual_pct": 0.0052
+  }
+}

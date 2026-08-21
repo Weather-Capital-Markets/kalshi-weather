@@ -45,6 +45,7 @@ from ingestion.state import (
     nbm_day_complete,
     set_nbm_day_complete,
 )
+from ingestion.validate_units import assert_non_empty_frame
 from ingestion.writer import RawJsonlWriter, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -403,6 +404,10 @@ class NbmArchiveBackfill:
             ):
                 frame[col] = result.get(col)
             out_path = self.decoded_dir / f"{climate_date.isoformat()}.parquet"
+            assert_non_empty_frame(
+                frame,
+                what=f"NBM parquet ladder for {climate_date.isoformat()}",
+            )
             frame.to_parquet(out_path, index=False)
             result["decoded_path"] = str(out_path)
             result["status"] = "ok"

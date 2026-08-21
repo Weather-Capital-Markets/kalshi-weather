@@ -12,6 +12,7 @@ from typing import Any
 
 from ingestion.nbm_grid import nearest_on_mesh
 from ingestion.nbm_idx import kelvin_to_fahrenheit
+from ingestion.validate_units import validate_temperature_f
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def decode_percentile_value_f(grib_bytes: bytes) -> float | None:
                 return None
             var = data_vars[0]
         value = float(ds[var].values.flatten()[0])
-        return kelvin_to_fahrenheit(value)
+        return validate_temperature_f(kelvin_to_fahrenheit(value), label="NBM TMP")
 
 
 def _coord_names(ds: Any) -> tuple[str, str] | None:
@@ -136,5 +137,11 @@ def decode_message_at_gridpoint(
         var = next(iter(ds.data_vars))
         values = ds[var].values
         if values.ndim == 2:
-            return kelvin_to_fahrenheit(float(values[row, col]))
-        return kelvin_to_fahrenheit(float(values.flatten()[0]))
+            return validate_temperature_f(
+                kelvin_to_fahrenheit(float(values[row, col])),
+                label="NBM TMP",
+            )
+        return validate_temperature_f(
+            kelvin_to_fahrenheit(float(values.flatten()[0])),
+            label="NBM TMP",
+        )
