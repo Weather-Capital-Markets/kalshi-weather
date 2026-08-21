@@ -166,3 +166,21 @@ nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded)
 Eligible span `2021-08-05` → `2026-05-03` (hard cut 2026-05-04). cfgrib +
 pyarrow in `requirements-analysis.txt`. Raw `nbm_qmd` JSONL per percentile message.
 
+## 10. Session 6b — K2 blocking prerequisites (bracket structure + NBM latency)
+
+**Status:** IN PROGRESS — measurement only; Session 6c comparison gated on these outputs.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Bracket enumeration | `analysis/bracket_enumeration.py` | Frozen `markets_history` only; derive width, alignment, contiguity, tails; `bracket_structure.csv` |
+| B NBM latency check | `analysis/nbm_latency_check.py` | HEAD on AWS qmd `.idx`; mirror lag vs 60 min assumption; **hard stop if p90 > 60** |
+| B-fix Availability watch | `analysis/nbm_availability_watch.py` | Prospective first-HTTP-200 poll AWS + NOMADS; resolves Last-Modified vs real lag (**blocking K2**) |
+
+```text
+bracket_enumeration → nbm_latency_check → nbm_availability_watch → (6c gated)
+```
+
+Do **not** build forecast-vs-market comparison until A and B pass. If B hard-stops,
+re-run `nbm_archive` with corrected latency before 6c. **Do not re-run backfill**
+until B-fix settles first-availability vs Last-Modified.
+

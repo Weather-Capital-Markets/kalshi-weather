@@ -1,0 +1,15 @@
+[Unit]
+Description=NBM qmd idx first-availability watch (single tick)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kalshi-weather
+EnvironmentFile=-%h/kalshi-weather/.env
+ExecStart=%h/kalshi-weather/.venv/bin/python -m analysis.nbm_availability_watch --mode tick
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
