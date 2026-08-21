@@ -28,6 +28,7 @@ from analysis.spread_census import (
 )
 from ingestion.climate_day import climate_day_end
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_frame
 from ingestion.writer import read_jsonl_gz
 
 plt.switch_backend("Agg")
@@ -271,6 +272,7 @@ def run(config: dict[str, Any], data_dir: Path, out_dir: Path) -> int:
         return 0
 
     csv_path = out_dir / "depth_census.csv"
+    assert_non_empty_frame(table, what="depth_census.csv")
     table.to_csv(csv_path, index=False)
     print(f"wrote {csv_path} rows={len(table)}")
 

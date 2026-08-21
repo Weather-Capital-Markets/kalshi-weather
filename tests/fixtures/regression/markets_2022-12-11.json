@@ -1,0 +1,74 @@
+{
+  "markets": [
+    {
+      "ticker": "KXHIGHNY-22DEC11-T83",
+      "event_ticker": "KXHIGHNY-22DEC11",
+      "status": "settled",
+      "open_time": "2022-12-09T14:00:00Z",
+      "close_time": "2022-12-12T04:59:00Z",
+      "strike_type": "less",
+      "cap_strike": 83,
+      "yes_sub_title": "82° or below",
+      "volume_fp": "120.00"
+    },
+    {
+      "ticker": "KXHIGHNY-22DEC11-B83.5",
+      "event_ticker": "KXHIGHNY-22DEC11",
+      "status": "settled",
+      "open_time": "2022-12-09T14:00:00Z",
+      "close_time": "2022-12-12T04:59:00Z",
+      "strike_type": "between",
+      "floor_strike": 83,
+      "cap_strike": 84,
+      "yes_sub_title": "83° to 84°",
+      "volume_fp": "80.00"
+    },
+    {
+      "ticker": "KXHIGHNY-22DEC11-B85.5",
+      "event_ticker": "KXHIGHNY-22DEC11",
+      "status": "settled",
+      "open_time": "2022-12-09T14:00:00Z",
+      "close_time": "2022-12-12T04:59:00Z",
+      "strike_type": "between",
+      "floor_strike": 85,
+      "cap_strike": 86,
+      "yes_sub_title": "85° to 86°",
+      "volume_fp": "60.00"
+    },
+    {
+      "ticker": "KXHIGHNY-22DEC11-B87.5",
+      "event_ticker": "KXHIGHNY-22DEC11",
+      "status": "settled",
+      "open_time": "2022-12-09T14:00:00Z",
+      "close_time": "2022-12-12T04:59:00Z",
+      "strike_type": "between",
+      "floor_strike": 87,
+      "cap_strike": 88,
+      "yes_sub_title": "87° to 88°",
+      "volume_fp": "40.00"
+    },
+    {
+      "ticker": "KXHIGHNY-22DEC11-B89.5",
+      "event_ticker": "KXHIGHNY-22DEC11",
+      "status": "settled",
+      "open_time": "2022-12-09T14:00:00Z",
+      "close_time": "2022-12-12T04:59:00Z",
+      "strike_type": "between",
+      "floor_strike": 89,
+      "cap_strike": 90,
+      "yes_sub_title": "89° to 90°",
+      "volume_fp": "30.00"
+    },
+    {
+      "ticker": "KXHIGHNY-22DEC11-T90",
+      "event_ticker": "KXHIGHNY-22DEC11",
+      "status": "settled",
+      "open_time": "2022-12-09T14:00:00Z",
+      "close_time": "2022-12-12T04:59:00Z",
+      "strike_type": "greater",
+      "floor_strike": 90,
+      "yes_sub_title": "91° or above",
+      "volume_fp": "50.00"
+    }
+  ]
+}
