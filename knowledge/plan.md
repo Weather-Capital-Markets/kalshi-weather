@@ -184,7 +184,7 @@ empirical D−1 12Z / f042 vintage + idx-confirmed max window. **Do not delete**
 
 ## 11. Session 7e — NBM vintage correction + backfill re-run
 
-**Status:** IN PROGRESS — empirical vintage at 441/453 min; probe + dry-run before bulk.
+**Status:** DONE — 300/300 climate days backfilled to `data/nbm/decoded_v441/` (seed 43, start 2022-12-11). All days use D−1 12Z / f042 at 441 min latency; 0 skips.
 
 | Item | Module | Notes |
 |---|---|---|
@@ -194,6 +194,6 @@ empirical D−1 12Z / f042 vintage + idx-confirmed max window. **Do not delete**
 | D Config | `ingestion/config.yaml` | `publication_latency_min: 441`, `start_date: 2022-12-11`, `sample_seed: 43` |
 
 ```text
-nbm_archive --vintage-calibrate → nbm_archive --probe → nbm_archive --dry-run → (approval) nbm_archive
+nbm_archive --vintage-calibrate → nbm_archive --probe → nbm_archive --dry-run → nbm_archive (done 2026-08-24)
 ```
 
