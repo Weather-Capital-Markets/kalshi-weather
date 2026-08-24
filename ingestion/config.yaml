@@ -78,6 +78,11 @@ bracket_enumeration:
   out_dir: "analysis/out"
   start_date: "2021-08-05"
 
+forecast_vs_market:
+  out_dir: "analysis/out"
+  horizon_h: 24
+  primary_band: [0.10, 0.90]
+
 nbm_latency_check:
   out_dir: "analysis/out"
   assumed_latency_min: 441

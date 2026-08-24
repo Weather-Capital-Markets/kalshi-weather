@@ -197,3 +197,19 @@ empirical D−1 12Z / f042 vintage + idx-confirmed max window. **Do not delete**
 nbm_archive --vintage-calibrate → nbm_archive --probe → nbm_archive --dry-run → nbm_archive (done 2026-08-24)
 ```
 
+## 12. Session 6c — NBM forecast vs market at T-24h
+
+**Status:** IN PROGRESS — measurement only on 300-day NBM sample.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Forecast vs market | `analysis/forecast_vs_market.py` | NBM bracket probs vs Kalshi carry-forward mid at T-24h; Brier + edge distributions |
+| B Bracket structure | `analysis/bracket_enumeration.py` | Prerequisite metadata (`bracket_structure.csv`) |
+
+```text
+bracket_enumeration → forecast_vs_market
+```
+
+Uses `decoded_v441/` only (void `decoded/` excluded). Primary band 10–90¢ matches K1.
+Measurement only — no pass/fail verdict on forecast skill vs market.
+
