@@ -23,7 +23,42 @@ def test_require_latency_refuses_unset() -> None:
     assert require_latency(240) == 240
 
 
+def test_fetch_retries_http_503(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GefsArchiveClient()
+    client.max_retries = 3
+    calls = {"n": 0}
+
+    class FakeResponse:
+        def __init__(self, status_code: int) -> None:
+            self.status_code = status_code
+            self.content = b"ok"
+            self.text = "ok"
+            self.headers: dict[str, str] = {}
+
+    def fake_get(url: str, headers: dict[str, str] | None = None) -> FakeResponse:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return FakeResponse(503)
+        return FakeResponse(200)
+
+    monkeypatch.setattr(client.client, "get", fake_get)
+    monkeypatch.setattr("ingestion.gefs_archive.time.sleep", lambda _s: None)
+    try:
+        status, text = client.fetch_text("https://example.invalid/file.idx")
+        assert status == 200
+        assert text == "ok"
+        assert calls["n"] == 3
+    finally:
+        client.close()
+
+
 def test_fetch_range_rejects_idx_url() -> None:
+    client = GefsArchiveClient()
+    try:
+        with pytest.raises(ValueError, match="idx url"):
+            client.fetch_range("https://example.invalid/file.idx", "bytes=0-10")
+    finally:
+        client.close()
     client = GefsArchiveClient()
     try:
         with pytest.raises(ValueError, match="idx url"):

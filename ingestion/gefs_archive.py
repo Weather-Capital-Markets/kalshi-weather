@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 GEFS_CYCLE_PLAN: tuple[tuple[int, int], ...] = ((0, 6), (6, 6), (12, 6), (18, 6))
 BYTE_CAP_GB = 30.0
+RETRY_STATUS_CODES = {429, 500, 502, 503, 504}
 GRIDPOINT_POLICY = (
     "nearest_grid_cell: haversine to configured station lat/lon on the GEFS "
     "0.5 deg pgrb2a lattice. Instantaneous 2 m TMP at 3-hourly valid times; "
@@ -69,7 +70,7 @@ class GefsArchiveClient:
     def __init__(self, timeout_sec: float = 120.0) -> None:
         self.client = httpx.Client(timeout=timeout_sec, follow_redirects=True)
         self.bytes_transferred = 0
-        self.max_retries = 4
+        self.max_retries = 8
 
     def close(self) -> None:
         self.client.close()
@@ -90,12 +91,21 @@ class GefsArchiveClient:
 
     def _get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
         last_exc: Exception | None = None
+        last_response: httpx.Response | None = None
         for attempt in range(self.max_retries):
             try:
-                return self.client.get(url, headers=headers)
+                response = self.client.get(url, headers=headers)
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 last_exc = exc
-                time.sleep(2.0 * (attempt + 1))
+                time.sleep(min(30.0, 2.0 ** (attempt + 1)))
+                continue
+            if response.status_code in RETRY_STATUS_CODES:
+                last_response = response
+                time.sleep(min(30.0, 2.0 ** (attempt + 1)))
+                continue
+            return response
+        if last_response is not None:
+            return last_response
         assert last_exc is not None
         raise last_exc
 
