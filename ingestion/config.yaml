@@ -113,6 +113,28 @@ nbm_archive:
   # v4.2 boundary splits early (v4.0/v4.1) vs late (v4.2/v4.3) within the market span.
   sub_era_split: "2024-05-15"
 
+gefs_archive:
+  base_url: "https://noaa-gefs-pds.s3.amazonaws.com"
+  # Pin after --latency-probe (≥4 witnessed first-HTTP-200 cycles). Null refuses vintage.
+  publication_latency_min: null
+  publication_latency_max_min: null
+  station_lat: 40.779
+  station_lon: -73.969
+  snapshot_horizon_h: 24
+  decoded_dir: "data/gefs/decoded"
+  backfill_db: "data/backfill_gefs.sqlite"
+  nbm_sample_dir: "data/nbm/decoded_v441"
+  product: "pgrb2ap5"
+  resolution: "0p50"
+  sentinel_forecast_hour: 6
+
+gefs_availability_watch:
+  out_dir: "analysis/out"
+  poll_interval_sec: 300
+  min_cycles: 4
+  max_watch_age_hours: 12
+  sources: ["aws"]
+
 depth_census:
   horizons_h: [24, 12, 6, 3, 1]
   out_dir: "analysis/out"
