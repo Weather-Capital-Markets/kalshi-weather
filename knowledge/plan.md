@@ -366,11 +366,10 @@ Measurement only — no pass/fail verdict on forecast skill vs market.
 
 ## 14. Session 9 — GEFS ensemble resolution test
 
-**Status:** IN PROGRESS — last untested fair-value avenue after K2 (resolution
-deficit) and S2 (DEAD). Pre-reg: [`knowledge/k2-gefs-prereg-v1.md`](k2-gefs-prereg-v1.md)
-dated 2026-08-30, before GEFS magnitudes. Latency coverage amended 2026-08-31:
-four-cycle first-HTTP-200 p90 not obtained; `publication_latency_min=300` so
-T−24h vintage is D−1 18Z. User approved proceeding. Bulk still under the 30 GB cap.
+**Status:** MEASUREMENT RAN 2026-08-31 — 300/300 GEFS days decoded (D−1 18Z vintage,
+`publication_latency_min=300`). Distributions in `analysis/out/gefs_murphy_brier.csv`
+and `analysis/out/gefs_resolution_test.csv`. No verdict in this file; reading is in
+the root chat against [`knowledge/k2-gefs-prereg-v1.md`](k2-gefs-prereg-v1.md).
 
 | Item | Module | Notes |
 |---|---|---|
