@@ -70,3 +70,14 @@ day-clustered.
 Coverage of GEFS publication latency may be written in after the latency probe
 and before magnitudes, the way S2 amended V4 after complete-book rates. Murphy
 numbers must not exist when thresholds (if any) are dated.
+
+### Latency coverage (2026-08-31, before magnitudes)
+
+User approved proceeding. Four-cycle first-HTTP-200 p90 was **not** obtained:
+the 2026-08-31 00Z `gec00` f006 idx was still HTTP 404 at 02:03 UTC (T+123 min).
+`publication_latency_min` is pinned to **300 min** (max 360) so D 00Z publication
+is not strictly before the 05:00Z snapshot. T−24h vintage is D−1 18Z.
+
+This is a conservative older cycle, not a measured p90. Do not treat 300 as
+Last-Modified or as a four-cycle percentile. If a later first-HTTP-200 p90
+exceeds 11 h, D−1 18Z is also illegal at 05:00Z and this extract is void.

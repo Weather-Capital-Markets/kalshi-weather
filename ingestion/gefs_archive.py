@@ -537,22 +537,32 @@ class GefsArchiveBackfill:
         if gb > BYTE_CAP_GB:
             print(f"STOP: estimate {gb:.2f} GiB exceeds {BYTE_CAP_GB:.0f} GiB cap")
             return 2
-        print("under byte cap; bulk still waits on pinned p90 + root-chat OK")
+        print("under byte cap")
         return 0
 
     def backfill(self) -> int:
         require_latency(self.latency_min)
+        n_ok = 0
+        n_fail = 0
         for climate_date in self.sampled_climate_dates():
             key = climate_date.isoformat()
             if gefs_day_complete(self.conn, key):
                 continue
-            result = self.process_climate_date(climate_date)
+            try:
+                result = self.process_climate_date(climate_date)
+            except (VintageAvailabilityError, RuntimeError, httpx.HTTPError, OSError) as exc:
+                n_fail += 1
+                logger.warning("gefs fail %s: %s", key, exc)
+                continue
             if result.get("status") == "ok":
                 set_gefs_day_complete(self.conn, key, utc_now_iso())
+                n_ok += 1
                 logger.info("gefs complete %s bytes=%s", key, result.get("bytes_transferred"))
             else:
+                n_fail += 1
                 logger.warning("gefs skip %s status=%s", key, result.get("status"))
-        return 0
+        logger.info("gefs backfill done ok=%s fail=%s", n_ok, n_fail)
+        return 0 if n_fail == 0 else 1
 
 
 def print_latency_report(rows: list[WatchRow]) -> None:
@@ -672,6 +682,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     config = apply_archive_overrides(load_config(args.config), args)
     if args.latency_probe:
         return run_latency_probe(config, tick_only=args.tick, max_wait_hours=args.max_wait_hours)

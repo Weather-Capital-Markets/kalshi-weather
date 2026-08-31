@@ -115,9 +115,12 @@ nbm_archive:
 
 gefs_archive:
   base_url: "https://noaa-gefs-pds.s3.amazonaws.com"
-  # Pin after --latency-probe (≥4 witnessed first-HTTP-200 cycles). Null refuses vintage.
-  publication_latency_min: null
-  publication_latency_max_min: null
+  # Conservative pin 2026-08-31: 4-cycle first-HTTP-200 p90 not yet obtained.
+  # 00Z 2026-08-31 still HTTP 404 at T+123 min. User approved proceeding.
+  # 300 min makes D 00Z illegal at the 05:00Z snapshot (strictly before).
+  # T-24h vintage is therefore D-1 18Z. Not a measured p90.
+  publication_latency_min: 300
+  publication_latency_max_min: 360
   station_lat: 40.779
   station_lon: -73.969
   snapshot_horizon_h: 24
