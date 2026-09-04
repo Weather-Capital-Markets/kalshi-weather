@@ -11,9 +11,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from wxmm.backtest.harness import build_market_view
 from wxmm.core.errors import LeakageError, MissingDataError
 from wxmm.core.types import AsOfRecord, ClockBoundStore, FrozenClock, InMemoryAsOfStore
+from wxmm.core.view import build_market_view
 from wxmm.strategy.view import BookView, FillView, MarketView, PositionView, ProposedOrder
 
 UTC = timezone.utc

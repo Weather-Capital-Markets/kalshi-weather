@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Literal, Protocol, runtime_checkable
 
-from wxmm.core.errors import LeakageError, MissingDataError, UnverifiedFactError
+from wxmm.core.errors import LeakageError, MissingDataError, StaleBookError, UnverifiedFactError
 from wxmm.core.utc import UTC, require_utc
 
 
@@ -119,8 +119,37 @@ class AsOfRecord:
     def __post_init__(self) -> None:
         object.__setattr__(self, "valid_at", require_utc(self.valid_at))
         object.__setattr__(self, "available_at", require_utc(self.available_at))
-        if self.availability not in {"known", "unknown"}:
-            raise ValueError(f"availability must be known|unknown, not {self.availability!r}")
+        if self.availability not in {"known", "unknown", "stale"}:
+            raise ValueError(
+                f"availability must be known|unknown|stale, not {self.availability!r}"
+            )
+
+
+def received_record(
+    *,
+    key: str,
+    payload: object,
+    valid_at: datetime,
+    received_at: datetime,
+    source: str,
+    ingest_run_id: str,
+    availability: str = "known",
+) -> AsOfRecord:
+    """Public door for live / tape records.
+
+    ``available_at`` is receipt time (push) or request-completion (poll),
+    never ingest wall-clock invented later. Replay consumes these timestamps
+    as recorded so live and replay ``MarketView`` objects match.
+    """
+    return AsOfRecord(
+        key=key,
+        payload=payload,
+        valid_at=valid_at,
+        available_at=received_at,
+        source=source,
+        ingest_run_id=ingest_run_id,
+        availability=availability,
+    )
 
 
 def published_record(
@@ -157,6 +186,8 @@ def assert_available(record: AsOfRecord, as_of: datetime, *, key: str | None = N
     ``AVAILABILITY_UNKNOWN`` is not readable at any as_of (not assumed published).
     """
     label = key if key is not None else record.key
+    if record.availability == "stale":
+        raise StaleBookError(f"record {label!r} is STALE and is not readable")
     if record.availability != "known":
         raise LeakageError(
             f"record {label!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
@@ -196,6 +227,15 @@ class FrozenClock:
 
 
 @runtime_checkable
+class BookSource(Protocol):
+    """Readable books at an as-of. Implemented by ``ClockBoundStore`` and ``LiveState``."""
+
+    def get(self, key: str, as_of: datetime) -> AsOfRecord:
+        """Latest record with ``available_at <= as_of``. STALE raises ``StaleBookError``."""
+        ...
+
+
+@runtime_checkable
 class AsOfStore(Protocol):
     def get(self, key: str, as_of: datetime) -> AsOfRecord:
         """Latest record with ``available_at <= as_of``. No 'latest' without as_of."""
@@ -221,10 +261,10 @@ class InMemoryAsOfStore:
     def get(self, key: str, as_of: datetime) -> AsOfRecord:
         as_of_utc = require_utc(as_of)
         rows = self._rows.get(key, [])
-        unknown = [row for row in rows if row.availability != "known"]
-        known = [row for row in rows if row.availability == "known"]
-        readable = [row for row in known if row.available_at <= as_of_utc]
+        readable = [row for row in rows if row.available_at <= as_of_utc]
         if not readable:
+            unknown = [row for row in rows if row.availability == "unknown"]
+            known = [row for row in rows if row.availability == "known"]
             if unknown and not known:
                 raise LeakageError(
                     f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
@@ -235,7 +275,17 @@ class InMemoryAsOfStore:
                     f"available_at <= {as_of_utc.isoformat()}"
                 )
             raise MissingDataError(f"key {key!r} has no records")
-        return max(readable, key=lambda row: (row.available_at, row.valid_at))
+        latest = max(
+            enumerate(readable),
+            key=lambda pair: (pair[1].available_at, pair[1].valid_at, pair[0]),
+        )[1]
+        if latest.availability == "stale":
+            raise StaleBookError(f"key {key!r} is STALE and is not readable")
+        if latest.availability == "unknown":
+            raise LeakageError(
+                f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
+            )
+        return latest
 
     def get_record(self, record: AsOfRecord, as_of: datetime) -> AsOfRecord:
         """Read this exact record, or ``LeakageError`` — never skip it."""
@@ -253,8 +303,24 @@ def require_clock_bound_store(store: object) -> ClockBoundStore:
     return store
 
 
+def require_clock_bound_book_source(store: object) -> BookSource:
+    """``MarketView`` construction accepts ``ClockBoundStore`` or ``LiveState`` only."""
+    if isinstance(store, ClockBoundStore):
+        return store
+    if getattr(type(store), "is_clock_bound_book_source", False) and callable(
+        getattr(store, "get", None)
+    ):
+        return store  # type: ignore[return-value]
+    raise TypeError(
+        f"unbound store refused: {type(store).__name__}; "
+        "replay and MarketView construction require ClockBoundStore"
+    )
+
+
 class ClockBoundStore:
     """Store that refuses as_of after the bound clock. Backtest default."""
+
+    is_clock_bound_book_source: bool = True
 
     def __init__(self, inner: AsOfStore, clock: Clock) -> None:
         self._inner = inner

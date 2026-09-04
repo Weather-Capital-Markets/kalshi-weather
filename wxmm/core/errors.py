@@ -28,6 +28,42 @@ class MissingDataError(WxmmError):
     """No record was available at the requested as-of. Distinct from zero."""
 
 
+class StaleBookError(WxmmError):
+    """A book is marked STALE and is not readable.
+
+    Staleness is a first-class state. Callers must not be trusted to check a
+    timestamp; ``get`` raises rather than returning the last known book.
+    """
+
+
+class CredentialsUnavailable(WxmmError):
+    """Credential loading is disabled or no key is present. Fail closed."""
+
+
+class InvalidTransition(WxmmError):
+    """Lifecycle transition is not in the declared one-way graph."""
+
+
+class SendTokenError(WxmmError):
+    """Confirmation token missing, expired, reused, or bound to a different hash."""
+
+
+class FeeMismatch(WxmmError):
+    """Predicted fee disagrees with the fee actually charged on a verified schedule."""
+
+
+class UnreconciledBreak(WxmmError):
+    """Venue vs journal break. System must HALT until a human records a resolution."""
+
+
+class RateLimited(WxmmError):
+    """Venue returned 429. ``retry_after`` is seconds, or None if the header was absent."""
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        self.retry_after = retry_after
+        super().__init__(message)
+
+
 class UnverifiedFeeSchedule(WxmmError):
     """Cost model refused to price a fill because the fee schedule is unverified."""
 

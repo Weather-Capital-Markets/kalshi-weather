@@ -2,7 +2,7 @@
 
 Allowed to assume
     Humans send orders. The system proposes. Both venues may be shown at once
-    but never netted.
+    but never netted. Canonical journal is ``wxmm.execute.journal``.
 
 Must never
     Route an order. Hide unverified-fact blockers. Report residual basis as
