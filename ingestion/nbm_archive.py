@@ -27,18 +27,22 @@ from ingestion.nbm_decode import decode_message_at_gridpoint, nearest_gridpoint_
 from ingestion.nbm_idx import (
     QMD_WINDOW_FORECAST_HOURS,
     ByteRange,
+    VintageSelection,
+    assert_vintage_available,
+    available_max_cycles,
     byte_ranges_for_selected_lines,
-    candidate_max_cycles_for_snapshot,
+    empirical_vintage_for_climate_date,
     era_band_for_date,
     era_level_count_for_date,
-    forecast_hour_for_climate_max_window,
     max_product_for_cycle_hour,
     nbm_version_for_date,
     parse_idx_text,
     publication_utc,
     select_max_window_percentile_lines,
-    vintage_select_cycle,
+    target_max_window_end_utc,
+    target_max_window_start_utc,
 )
+from ingestion.nbm_ladder import apply_isotonic_to_ladder, dedupe_ladder_by_percentile
 from ingestion.state import (
     init_backfill_schema,
     init_state_schema,
@@ -182,7 +186,10 @@ class NbmArchiveBackfill:
         storage = config["storage"]
         nbm = config.get("nbm_archive") or {}
         self.base_url = str(nbm.get("base_url") or "https://noaa-nbm-grib2-pds.s3.amazonaws.com")
-        self.latency_min = int(nbm.get("publication_latency_min") or 60)
+        self.latency_min = int(nbm.get("publication_latency_min") or 441)
+        self.latency_max_min = int(
+            nbm.get("publication_latency_max_min") or max(self.latency_min, 453)
+        )
         self.station_lat = float(nbm.get("station_lat") or 40.779)
         self.station_lon = float(nbm.get("station_lon") or -73.969)
         self.start_date = date.fromisoformat(str(nbm.get("start_date") or "2021-08-05"))
@@ -220,12 +227,11 @@ class NbmArchiveBackfill:
 
     def estimate_day_grib_bytes_from_idx(self, climate_date: date) -> tuple[int, int]:
         """Return (grib_range_bytes, idx_bytes) for one climate date; idx fetch only."""
-        vintage = self.vintage_cycle_for_climate_date(climate_date)
-        if vintage is None:
+        selection = self.empirical_vintage_for_climate_date(climate_date)
+        if selection is None:
             return 0, 0
-        forecast_hour = forecast_hour_for_climate_max_window(vintage, climate_date)
-        if forecast_hour is None:
-            return 0, 0
+        vintage = selection.cycle
+        forecast_hour = selection.forecast_hour
         idx_url = qmd_idx_url(self.base_url, vintage, forecast_hour)
         status, idx_text = self.http.fetch_text(idx_url)
         idx_bytes = len(idx_text.encode("utf-8")) if idx_text else 0
@@ -239,6 +245,48 @@ class NbmArchiveBackfill:
         )
         ranges = byte_ranges_for_selected_lines(all_lines, pct_lines)
         return sum(item.size for item in ranges), idx_bytes
+
+    def _default_probe_date(self) -> date:
+        dates = self.sampled_climate_dates()
+        if dates:
+            return dates[0]
+        return date(2022, 12, 11)
+
+    def vintage_calibrate(self, climate_date: date) -> int:
+        snapshot = snapshot_utc_for_climate_date(climate_date, self.horizon_h)
+        print(f"=== NBM vintage calibration climate_date={climate_date.isoformat()} ===")
+        print(f"snapshot_utc={snapshot.isoformat()}")
+        print(f"window_start_utc={target_max_window_start_utc(climate_date).isoformat()}")
+        print(f"window_end_utc={target_max_window_end_utc(climate_date).isoformat()}")
+        print(
+            f"publication_latency_min={self.latency_min} "
+            f"publication_latency_max_min={self.latency_max_min}"
+        )
+        print("\n=== candidate 00Z/12Z cycles (pub at max latency strictly before snapshot) ===")
+        for cycle in available_max_cycles(snapshot, latency_max_min=self.latency_max_min):
+            pub_max = publication_utc(cycle, self.latency_max_min)
+            pub_p90 = publication_utc(cycle, self.latency_min)
+            print(
+                f"  {cycle.isoformat()} pub_p90={pub_p90.isoformat()} "
+                f"pub_max={pub_max.isoformat()} margin_p90_min="
+                f"{(snapshot - pub_p90).total_seconds() / 60.0:.1f}"
+            )
+        selection = self.empirical_vintage_for_climate_date(climate_date)
+        if selection is None:
+            print("\nFINDING: no empirical vintage with idx-confirmed climate max window")
+            return 1
+        print("\n=== selected vintage ===")
+        print(f"vintage_cycle_utc={selection.cycle.isoformat()}")
+        print(f"forecast_hour=f{selection.forecast_hour:03d}")
+        print(f"forecast_lead_h={selection.forecast_lead_h:.1f}")
+        print(f"publication_utc_p90={selection.publication_utc_p90.isoformat()}")
+        print(f"publication_utc_max={selection.publication_utc_max.isoformat()}")
+        print(f"snapshot_margin_min_p90={selection.snapshot_margin_min_p90:.1f}")
+        print(f"snapshot_margin_min_max={selection.snapshot_margin_min_max:.1f}")
+        print(f"\n=== matched idx lines ({len(selection.matched_lines)}) ===")
+        for line in selection.matched_lines:
+            print(line.raw_line)
+        return self.probe(climate_date)
 
     def close(self) -> None:
         self.writer.close()
@@ -311,23 +359,39 @@ class NbmArchiveBackfill:
         bytes_used = self.http.bytes_transferred - bytes_before
         return ladder, ranges, bytes_used
 
-    def vintage_cycle_for_climate_date(self, climate_date: date) -> datetime | None:
+    def _fetch_idx_text(self, cycle_dt: datetime, forecast_hour: int) -> str | None:
+        idx_url = qmd_idx_url(self.base_url, cycle_dt, forecast_hour)
+        status, idx_text = self.http.fetch_text(idx_url)
+        if status != 200 or not idx_text:
+            return None
+        return idx_text
+
+    def empirical_vintage_for_climate_date(
+        self,
+        climate_date: date,
+    ) -> VintageSelection | None:
         snapshot = snapshot_utc_for_climate_date(climate_date, self.horizon_h)
-        candidates = candidate_max_cycles_for_snapshot(snapshot)
-        covering = [
-            cycle
-            for cycle in candidates
-            if forecast_hour_for_climate_max_window(cycle, climate_date) is not None
-        ]
-        return vintage_select_cycle(snapshot, covering, latency_min=self.latency_min)
+        return empirical_vintage_for_climate_date(
+            climate_date,
+            snapshot,
+            fetch_idx=self._fetch_idx_text,
+            latency_p90_min=self.latency_min,
+            latency_max_min=self.latency_max_min,
+            percentile_levels=self.percentile_level_set,
+        )
+
+    def vintage_cycle_for_climate_date(self, climate_date: date) -> datetime | None:
+        selection = self.empirical_vintage_for_climate_date(climate_date)
+        return selection.cycle if selection is not None else None
 
     def process_climate_date(self, climate_date: date, *, persist: bool = True) -> dict[str, Any]:
         snapshot = snapshot_utc_for_climate_date(climate_date, self.horizon_h)
-        vintage = self.vintage_cycle_for_climate_date(climate_date)
+        selection = self.empirical_vintage_for_climate_date(climate_date)
         result: dict[str, Any] = {
             "climate_date": climate_date.isoformat(),
             "snapshot_utc": snapshot.isoformat(),
             "publication_latency_min": self.latency_min,
+            "publication_latency_max_min": self.latency_max_min,
             "nbm_version": nbm_version_for_date(climate_date),
             "era_band": era_band_for_date(climate_date),
             "level_count": era_level_count_for_date(climate_date),
@@ -335,16 +399,26 @@ class NbmArchiveBackfill:
             "station_lat": self.station_lat,
             "station_lon": self.station_lon,
         }
-        if vintage is None:
+        if selection is None:
             result["status"] = "no_vintage_cycle"
             return result
+        vintage = selection.cycle
+        forecast_hour = selection.forecast_hour
         result["vintage_cycle_utc"] = vintage.isoformat()
-        result["publication_utc"] = publication_utc(vintage, self.latency_min).isoformat()
-        forecast_hour = forecast_hour_for_climate_max_window(vintage, climate_date)
-        if forecast_hour is None:
-            result["status"] = "no_max_forecast_hour"
-            return result
+        result["publication_utc"] = selection.publication_utc_p90.isoformat()
+        result["publication_utc_max"] = selection.publication_utc_max.isoformat()
+        result["snapshot_margin_min_p90"] = selection.snapshot_margin_min_p90
+        result["snapshot_margin_min_max"] = selection.snapshot_margin_min_max
+        result["forecast_lead_h"] = selection.forecast_lead_h
+        result["matched_idx_lines"] = [line.raw_line for line in selection.matched_lines]
+        assert_vintage_available(vintage, snapshot, latency_p90_min=self.latency_min)
         ladder, ranges, bytes_used = self.fetch_percentile_ladder(vintage, forecast_hour)
+        ladder, dedupe_dropped = dedupe_ladder_by_percentile(ladder)
+        if dedupe_dropped:
+            result["dedupe_dropped_n"] = dedupe_dropped
+        ladder, isotonic_changed = apply_isotonic_to_ladder(ladder)
+        if isotonic_changed:
+            result["isotonic_adjusted"] = True
         result["forecast_hour"] = forecast_hour
         result["percentile_ladder"] = ladder
         result["idx_ranges"] = [r.header_value() for r in ranges]
@@ -393,11 +467,16 @@ class NbmArchiveBackfill:
                 "snapshot_utc",
                 "vintage_cycle_utc",
                 "publication_utc",
+                "publication_utc_max",
+                "publication_latency_min",
+                "publication_latency_max_min",
+                "snapshot_margin_min_p90",
+                "snapshot_margin_min_max",
                 "forecast_hour",
+                "forecast_lead_h",
                 "nbm_version",
                 "era_band",
                 "level_count",
-                "publication_latency_min",
                 "grid_lat",
                 "grid_lon",
                 "grid_distance_km",
@@ -418,25 +497,46 @@ class NbmArchiveBackfill:
         return result
 
     def probe(self, probe_date: date | None = None) -> int:
-        when = probe_date or date(2022, 7, 4)
+        when = probe_date or self._default_probe_date()
         print(f"=== NBM archive probe climate_date={when.isoformat()} ===")
-        print(f"publication_latency_min={self.latency_min}")
+        print(
+            f"publication_latency_min={self.latency_min} "
+            f"publication_latency_max_min={self.latency_max_min}"
+        )
         print(f"gridpoint_policy={GRIDPOINT_POLICY}")
+        snapshot = snapshot_utc_for_climate_date(when, self.horizon_h)
+        print(f"snapshot_utc={snapshot.isoformat()}")
         result = self.process_climate_date(when, persist=False)
         print(f"vintage_cycle_utc={result.get('vintage_cycle_utc')}")
         print(f"publication_utc={result.get('publication_utc')}")
-        print(f"forecast_hour={result.get('forecast_hour')}")
+        print(f"publication_utc_max={result.get('publication_utc_max')}")
+        print(f"snapshot_margin_min_p90={result.get('snapshot_margin_min_p90')}")
+        print(f"snapshot_margin_min_max={result.get('snapshot_margin_min_max')}")
+        forecast_hour = result.get("forecast_hour")
+        if forecast_hour is not None:
+            print(f"forecast_hour=f{int(forecast_hour):03d}")
+        else:
+            print("forecast_hour=None")
+        print(f"forecast_lead_h={result.get('forecast_lead_h')}")
         print(f"nbm_version={result.get('nbm_version')} level_count={result.get('level_count')}")
+        matched_lines = result.get("matched_idx_lines") or []
+        print(f"\n=== matched idx lines ({len(matched_lines)}) ===")
+        for line in matched_lines:
+            print(line)
         ladder = result.get("percentile_ladder") or []
-        print(f"\n=== matched idx lines ({len(ladder)}) ===")
-        for entry in ladder:
-            print(entry.get("idx_line"))
         print("\n=== byte ranges ===")
         for header in result.get("idx_ranges") or []:
             print(header)
         print("\n=== decoded percentile ladder (°F) at KNYC gridpoint ===")
         for entry in ladder:
-            print(f"P{entry['percentile_level']:>3}%  {entry['value_f']:.2f} F")
+            raw = entry.get("value_f_raw")
+            if raw is not None and abs(float(raw) - float(entry["value_f"])) > 1e-9:
+                print(
+                    f"P{entry['percentile_level']:>3}%  {entry['value_f']:.2f} F "
+                    f"(raw={float(raw):.2f})"
+                )
+            else:
+                print(f"P{entry['percentile_level']:>3}%  {entry['value_f']:.2f} F")
         if result.get("grid_lat") is not None:
             print(
                 f"\ngrid_lat={result['grid_lat']:.4f} grid_lon={result['grid_lon']:.4f} "
@@ -516,6 +616,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--probe", action="store_true")
     parser.add_argument("--probe-date", type=str, default=None)
+    parser.add_argument("--vintage-calibrate", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -527,8 +628,11 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     app = NbmArchiveBackfill(config)
     try:
+        probe_date = date.fromisoformat(args.probe_date) if args.probe_date else None
+        if args.vintage_calibrate:
+            when = probe_date or app._default_probe_date()
+            return app.vintage_calibrate(when)
         if args.probe:
-            probe_date = date.fromisoformat(args.probe_date) if args.probe_date else None
             return app.probe(probe_date)
         if args.dry_run:
             return app.dry_run()
