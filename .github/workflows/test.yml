@@ -22,5 +22,8 @@ jobs:
       - name: Ruff
         run: ruff check .
 
+      - name: Mypy (wxmm, strict)
+        run: mypy --strict wxmm
+
       - name: Pytest
         run: pytest -q

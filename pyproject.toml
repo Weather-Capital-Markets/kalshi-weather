@@ -12,3 +12,15 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["wxmm"]
+warn_unused_ignores = true
+show_error_codes = true
+# ingestion/ and analysis/ are pandas-era code and are not under mypy --strict.
+
+[[tool.mypy.overrides]]
+module = ["polars", "polars.*", "duckdb"]
+ignore_missing_imports = true
