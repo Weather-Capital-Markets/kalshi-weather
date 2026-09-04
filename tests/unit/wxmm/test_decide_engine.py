@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from wxmm.core.types import FrozenClock
 from wxmm.decide.engine import propose
 from wxmm.decide.fairvalue import NullFairValue
@@ -53,6 +55,22 @@ def test_rate_blocked_when_bucket_empty() -> None:
     out = propose(_view(), buckets={"kalshi": bucket})
     assert out
     assert all(p.rate_blocked for p in out)
+
+
+def test_one_order_budget_blocks_second_ranked_quote_without_consuming() -> None:
+    clock = FrozenClock(datetime(2026, 7, 4, 16, 0, tzinfo=UTC))
+    bucket = kalshi_write_bucket(clock)
+    for _ in range(9):
+        assert bucket.consume(10.0)
+    assert bucket.remaining() == pytest.approx(10.0)
+    out = propose(_view(), buckets={"kalshi": bucket})
+    sendable = [p for p in out if not p.rate_blocked]
+    blocked = [p for p in out if p.rate_blocked]
+    assert len(sendable) == 1
+    assert sendable[0].side == "buy"
+    assert blocked
+    assert all("; RATE_BLOCKED" in p.rationale for p in blocked)
+    assert bucket.remaining() == pytest.approx(10.0)
 
 
 def test_degraded_stamps_proposals() -> None:

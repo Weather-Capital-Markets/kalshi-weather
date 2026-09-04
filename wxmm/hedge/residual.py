@@ -51,12 +51,13 @@ def residual_for(
         quantity=unhedged_quantity,
         avg_price_cents=position.avg_price_cents,
     )
+    plan_cap = max_basis_risk_pct if unhedged_quantity != 0 else Decimal("Infinity")
     plan = plan_hedge(
         HedgeRequest(
             position=scaled,
             toward=toward,
             book_size=book_size,
-            max_basis_risk_pct=max_basis_risk_pct,
+            max_basis_risk_pct=plan_cap,
             basis=basis,
             season=season,
             knyc_max_band=knyc_max_band,
@@ -70,7 +71,7 @@ def residual_for(
         # Fully hedged on size still carries measured disagreement; never 0.
         if pct == Decimal("0"):
             pct = Decimal("0.0000001")
-    if pct > max_basis_risk_pct:
+    if unhedged_quantity != 0 and pct > max_basis_risk_pct:
         label = f" leg={failed_leg}" if failed_leg is not None else ""
         raise ResidualBasisRejected(
             f"residual basis {pct}% > max_basis_risk_pct {max_basis_risk_pct}%{label}"

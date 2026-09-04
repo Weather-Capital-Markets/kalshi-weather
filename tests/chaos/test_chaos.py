@@ -13,7 +13,7 @@ from wxmm.core.types import FrozenClock, InMemoryAsOfStore, Order
 from wxmm.core.underlying import KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH
 from wxmm.core.view import build_market_view
 from wxmm.decide.proposal import Proposal
-from wxmm.execute.journal import Journal
+from wxmm.execute.journal import Journal, replay_journal
 from wxmm.execute.lifecycle import OrderState
 from wxmm.execute.send_gate import SendGate
 from wxmm.hedge.executor import HedgeExecutor, HedgeState
@@ -209,6 +209,24 @@ def test_settlement_then_revision() -> None:
     assert "settlement" in kinds
 
 
+def test_settlement_revision_replay_does_not_double_append() -> None:
+    j = Journal()
+    j.propose("i1", _order(), TS, underlying=KALSHI_NYC_DAILY_HIGH)
+    j.transition("i1", OrderState.APPROVED, at_utc=TS, actor="human", evidence="e")
+    j.transition("i1", OrderState.SENT, at_utc=TS, actor="human", evidence="e")
+    j.transition("i1", OrderState.ACKED, at_utc=TS, actor="venue", evidence="ack")
+    j.apply_fill("i1", fill_qty=2, venue_fill_id="v1", at_utc=TS, evidence="f")
+    j.record_settlement("i1", at_utc=TS, high_f=91, revision=False, evidence="first")
+    j.record_settlement("i1", at_utc=TS, high_f=90, revision=True, evidence="accept_until_next")
+    rebuilt = replay_journal(j.records)
+    assert rebuilt.positions_fingerprint() == j.positions_fingerprint()
+    assert rebuilt.lifecycle.state_of("i1") is OrderState.SETTLED
+    kinds = [r.kind for r in rebuilt.records]
+    assert kinds.count("settlement") == 1
+    assert kinds.count("settlement_revision") == 1
+    assert kinds.count("settlement_revised_after_settled") == 1
+
+
 def test_partial_hedge_leg2_rejected() -> None:
     pos = Position("kalshi", "A", KALSHI_NYC_DAILY_HIGH, 10, 50)
     model = BasisModel(KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH)
@@ -228,3 +246,23 @@ def test_partial_hedge_leg2_rejected() -> None:
     ex.note_leg_reject(1)
     assert ex.state is HedgeState.PARTIAL
     assert ex.stopped_at_leg == 1
+
+
+def test_completed_cross_underlying_hedge_stays_complete() -> None:
+    pos = Position("kalshi", "A", KALSHI_NYC_DAILY_HIGH, 10, 50)
+    model = BasisModel(KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH)
+    ex = HedgeExecutor(
+        position=pos,
+        toward=POLYMARKET_NYC_DAILY_HIGH,
+        book_size=Money.cents(100000),
+        max_basis_risk_pct=Decimal("10"),
+        basis=model,
+        season="JJA",
+    )
+    assert ex.can_propose_next_leg() is True
+    ex.note_leg_fill(0, filled_qty=10)
+    assert ex.state is HedgeState.COMPLETE
+    assert ex.open_exposure == 0
+    assert ex.last_residual is not None
+    assert ex.last_residual.residual_basis_risk_pct == Decimal("61.5")
+    assert ex.can_propose_next_leg() is False

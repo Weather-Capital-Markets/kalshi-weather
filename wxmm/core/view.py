@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Sequence
 
-from wxmm.core.errors import LeakageError
+from wxmm.core.errors import LeakageError, StaleBookError
 from wxmm.core.types import (
     AsOfRecord,
     BookSnapshot,
@@ -82,6 +82,8 @@ def build_market_view(
     books: list[BookView] = []
     for venue, key in book_keys:
         rec = bound.get(key, as_of=now)
+        if rec.availability == "stale":
+            raise StaleBookError(f"STALE book cannot enter MarketView key={key!r}")
         if rec.availability != "known":
             raise LeakageError(f"AVAILABILITY_UNKNOWN cannot enter MarketView key={key!r}")
         if rec.available_at > now:

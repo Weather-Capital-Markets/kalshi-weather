@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 from pathlib import Path
@@ -12,6 +13,19 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _run(cmd: list[str]) -> int:
     return subprocess.run(cmd, cwd=ROOT).returncode
+
+
+def _purge_pyc(path: Path) -> None:
+    cache = path.parent / "__pycache__"
+    if cache.is_dir():
+        for pyc in cache.glob(f"{path.stem}*.pyc"):
+            pyc.unlink(missing_ok=True)
+    importlib.invalidate_caches()
+
+
+def _write(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+    _purge_pyc(path)
 
 
 def _expect_fail(cmd: list[str], name: str) -> None:
@@ -28,13 +42,13 @@ def main() -> None:
     if "fills: tuple[FillView, ...]\n" not in orig_view:
         print("cannot locate MarketView.fills field to mutate", file=sys.stderr)
         sys.exit(2)
-    view.write_text(
+    _write(
+        view,
         orig_view.replace(
             "fills: tuple[FillView, ...]\n",
             "fills: tuple[FillView, ...]\n    store: object | None = None\n",
             1,
         ),
-        encoding="utf-8",
     )
     try:
         _expect_fail(
@@ -47,15 +61,15 @@ def main() -> None:
             "MarketView.store field",
         )
     finally:
-        view.write_text(orig_view, encoding="utf-8")
+        _write(view, orig_view)
 
     idle = ROOT / "strategies" / "idle.py"
     orig_idle = idle.read_text(encoding="utf-8")
-    idle.write_text("from wxmm.data import store\n" + orig_idle, encoding="utf-8")
+    _write(idle, "from wxmm.data import store\n" + orig_idle)
     try:
         _expect_fail(["lint-imports"], "strategies import wxmm.data.store")
     finally:
-        idle.write_text(orig_idle, encoding="utf-8")
+        _write(idle, orig_idle)
 
     eras = ROOT / "wxmm" / "settlement" / "eras.py"
     orig_eras = eras.read_text(encoding="utf-8")
@@ -67,14 +81,14 @@ def main() -> None:
     if mutated == orig_eras:
         print("cannot locate era effective_from to mutate", file=sys.stderr)
         sys.exit(2)
-    eras.write_text(mutated, encoding="utf-8")
+    _write(eras, mutated)
     try:
         _expect_fail(
             ["pytest", "-q", "tests/golden/wxmm/test_era_dates.py"],
             "settlement era effective_from +1 day",
         )
     finally:
-        eras.write_text(orig_eras, encoding="utf-8")
+        _write(eras, orig_eras)
 
 
 if __name__ == "__main__":

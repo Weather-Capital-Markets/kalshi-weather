@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from wxmm.live import feed as feed_mod
 from wxmm.live.feed import (
     KalshiRestPollTransport,
     KalshiWsTransport,
@@ -52,3 +54,33 @@ def test_backoff_doubles_and_caps() -> None:
     assert next_backoff(0) == 1.0
     assert next_backoff(1) == 2.0
     assert next_backoff(10, cap=60.0) == 60.0
+
+
+def test_dollar_prices_convert_via_decimal() -> None:
+    received = datetime(2026, 7, 4, 16, 0, 1, tzinfo=UTC)
+    via_str = parse_kalshi_ticker(
+        {
+            "market_ticker": "M",
+            "yes_bid_dollars": "0.29",
+            "yes_ask_dollars": "0.31",
+        },
+        received_at=received,
+    )
+    payload = via_str.payload
+    assert isinstance(payload, dict)
+    assert payload["yes_bid_cents"] == 29
+    assert payload["yes_ask_cents"] == 31
+    via_float = parse_kalshi_ticker(
+        {
+            "market_ticker": "M",
+            "yes_bid_dollars": 0.40,
+            "yes_ask_dollars": 0.42,
+        },
+        received_at=received,
+    )
+    payload_f = via_float.payload
+    assert isinstance(payload_f, dict)
+    assert payload_f["yes_bid_cents"] == 40
+    assert "float(" not in inspect.getsource(feed_mod._cents)
+    assert "float(" not in inspect.getsource(feed_mod._best_level)
+    assert "float(" not in inspect.getsource(feed_mod._dollars_to_cents)

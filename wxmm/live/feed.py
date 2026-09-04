@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Mapping, Sequence
 from datetime import datetime
+from decimal import ROUND_HALF_EVEN, Decimal, InvalidOperation
 from typing import Protocol
 
 from wxmm.core.types import Clock
@@ -219,43 +220,53 @@ def _ts(raw: object, fallback: datetime) -> datetime:
     return fallback
 
 
+def _dollars_to_cents(raw: object) -> int | None:
+    """Convert a dollar price to integer cents via Decimal. Never float."""
+    if raw is None or raw == "":
+        return None
+    cents = (Decimal(str(raw)) * Decimal(100)).to_integral_value(rounding=ROUND_HALF_EVEN)
+    return int(cents)
+
+
 def _cents(dollars: object, cents: object) -> int | None:
-    if isinstance(cents, int):
-        return cents
-    if isinstance(dollars, (int, float, str)):
-        return int(round(float(dollars) * 100))
-    return None
+    if cents is not None and cents != "":
+        if isinstance(cents, bool):
+            raise TypeError("cents must not be bool")
+        if isinstance(cents, int):
+            return cents
+        return int(Decimal(str(cents)))
+    return _dollars_to_cents(dollars)
 
 
 def _int(raw: object) -> int | None:
+    if raw is None or raw == "" or isinstance(raw, bool):
+        return None
     if isinstance(raw, int):
         return raw
-    if isinstance(raw, str) and raw.isdigit():
-        return int(raw)
-    return None
+    try:
+        parsed = Decimal(str(raw))
+    except InvalidOperation:
+        return None
+    if parsed != parsed.to_integral_value():
+        return None
+    return int(parsed)
 
 
 def _best_level(levels: object) -> tuple[int | None, int | None]:
     if not isinstance(levels, (list, tuple)) or not levels:
         return None, None
     first = levels[0]
-    if isinstance(first, Mapping):
-        price = first.get("price")
-        size = first.get("size")
-        cents: int | None
-        if isinstance(price, str) and "." in price:
-            cents = int(round(float(price) * 100))
-        elif isinstance(price, (int, float)):
-            cents = int(round(float(price) * 100)) if float(price) <= 1 else int(price)
-        else:
-            cents = None
-        qty = None
-        if isinstance(size, int):
-            qty = size
-        elif isinstance(size, str):
-            try:
-                qty = int(float(size))
-            except ValueError:
-                qty = None
-        return cents, qty
-    return None, None
+    if not isinstance(first, Mapping):
+        return None, None
+    price = first.get("price")
+    size = first.get("size")
+    cents: int | None
+    if price is None or price == "":
+        cents = None
+    elif isinstance(price, bool):
+        cents = None
+    elif isinstance(price, int):
+        cents = price
+    else:
+        cents = _dollars_to_cents(price)
+    return cents, _int(size)

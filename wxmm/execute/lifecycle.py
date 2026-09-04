@@ -104,8 +104,7 @@ class Lifecycle:
         if to in HUMAN_STATES and actor != "human":
             raise InvalidTransition(f"{to} requires actor=human")
         if to in {OrderState.ACKED, OrderState.PARTIAL, OrderState.FILLED} and actor != "venue":
-            if to is not OrderState.CANCELLED:
-                raise InvalidTransition(f"{to} requires actor=venue")
+            raise InvalidTransition(f"{to} requires actor=venue")
         tr = Transition(
             intent_id=intent_id,
             frm=frm,

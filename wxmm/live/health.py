@@ -47,5 +47,5 @@ class FeedHealth:
     def stale_beyond(self, now: datetime, threshold: timedelta) -> bool:
         age = self.last_update_age(now)
         if age is None:
-            return True
+            return False
         return age > threshold

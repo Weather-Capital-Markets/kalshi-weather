@@ -12,6 +12,7 @@ Must never
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Mapping
 
@@ -24,6 +25,17 @@ from wxmm.live.ratelimit import TokenBucket, proposal_cost
 from wxmm.risk.limits import Limits
 from wxmm.strategy.view import BookView, MarketView
 from wxmm.venues.base import modelled_fee
+
+
+def _rank_key(p: Proposal) -> tuple[object, ...]:
+    return (
+        p.rate_blocked,
+        0 if p.edge is not None else 1,
+        -(p.edge or Decimal("0")),
+        p.venue,
+        p.market,
+        p.side,
+    )
 
 
 def propose(
@@ -50,20 +62,29 @@ def propose(
                 book,
                 fv=fv,
                 degradation=degr,
-                buckets=buckets,
                 limits=limits,
             )
         )
-    out.sort(
-        key=lambda p: (
-            p.rate_blocked,
-            0 if p.edge is not None else 1,
-            -(p.edge or Decimal("0")),
-            p.venue,
-            p.market,
-            p.side,
-        )
-    )
+    out.sort(key=_rank_key)
+    if buckets:
+        remaining = {venue: bucket.remaining() for venue, bucket in buckets.items()}
+        allocated: list[Proposal] = []
+        for proposal in out:
+            left = remaining.get(proposal.venue)
+            blocked = proposal.rate_blocked
+            if left is not None:
+                if left + 1e-12 < proposal.rate_limit_cost:
+                    blocked = True
+                elif not blocked:
+                    remaining[proposal.venue] = left - proposal.rate_limit_cost
+            if blocked and not proposal.rate_blocked:
+                rationale = proposal.rationale
+                if "; RATE_BLOCKED" not in rationale:
+                    rationale = rationale + "; RATE_BLOCKED"
+                proposal = replace(proposal, rate_blocked=True, rationale=rationale)
+            allocated.append(proposal)
+        allocated.sort(key=_rank_key)
+        return allocated
     return out
 
 
@@ -72,7 +93,6 @@ def _from_book(
     *,
     fv: Mapping[str, str] | None,
     degradation: tuple[str, ...],
-    buckets: dict[str, TokenBucket] | None,
     limits: Limits | None,
 ) -> list[Proposal]:
     if not book.two_sided or book.bid_cents is None or book.ask_cents is None:
@@ -125,11 +145,6 @@ def _from_book(
             except LimitBreach:
                 continue
         cost = proposal_cost(book.venue)
-        blocked = False
-        if buckets is not None and book.venue in buckets:
-            blocked = not buckets[book.venue].can_afford(cost)
-        if blocked:
-            rationale = rationale + "; RATE_BLOCKED"
         proposals.append(
             Proposal(
                 venue=book.venue,
@@ -143,7 +158,7 @@ def _from_book(
                 limit_checks_passed=tuple(passed),
                 rate_limit_cost=cost,
                 rationale=rationale,
-                rate_blocked=blocked,
+                rate_blocked=False,
                 degradation=degradation,
                 fee_unverified=fee_unverified,
             )

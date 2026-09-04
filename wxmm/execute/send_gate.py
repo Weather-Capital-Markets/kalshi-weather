@@ -85,7 +85,6 @@ class SendGate:
     ) -> SendResult:
         now = self.clock.now()
         self._validate(proposal, token, now)
-        self._used.add(token.token_id)
         state = self.journal.lifecycle.state_of(intent_id)
         if state is OrderState.PROPOSED:
             self.journal.transition(
@@ -97,6 +96,7 @@ class SendGate:
             )
         elif state is not OrderState.APPROVED:
             raise InvalidTransition(f"send requires PROPOSED or APPROVED, not {state}")
+        self._used.add(token.token_id)
         order = Order(
             venue=proposal.venue,
             market_id=proposal.market,

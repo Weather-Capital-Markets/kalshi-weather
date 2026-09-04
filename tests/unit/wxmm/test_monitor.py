@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from wxmm.core.errors import UnreconciledBreak
+from wxmm.core.money import Money
 from wxmm.core.types import FrozenClock
 from wxmm.decide.engine import propose
 from wxmm.execute.journal import Journal
@@ -58,5 +59,36 @@ def test_stale_feed_halts() -> None:
     machine = StatusMachine(journal, stale_after=timedelta(seconds=5))
     health = FeedHealth("kalshi")
     clock = FrozenClock(TS)
+    health.note_update(clock.now())
+    clock.set(TS + timedelta(seconds=6))
     machine.note_feeds((health,), now=clock.now())
     assert machine.status is SystemStatus.HALT
+    assert machine.reason is not None and machine.reason.startswith("feed_stale:")
+
+
+def test_unseen_feed_is_degraded_not_halt() -> None:
+    journal = Journal()
+    machine = StatusMachine(journal, stale_after=timedelta(seconds=5))
+    health = FeedHealth("kalshi")
+    machine.note_feeds((health,), now=TS)
+    assert machine.status is SystemStatus.DEGRADED
+    assert machine.degradation == ("feed_unseen:kalshi",)
+
+
+def test_resume_from_ok_raises_and_does_not_journal() -> None:
+    journal = Journal()
+    machine = StatusMachine(journal)
+    with pytest.raises(ValueError, match="HALT"):
+        machine.resume("oops", at_utc=TS)
+    assert machine.status is SystemStatus.OK
+    assert journal.latest_resolution_reason() is None
+
+
+def test_daily_loss_halts() -> None:
+    journal = Journal()
+    machine = StatusMachine(journal, daily_loss_limit=Money.cents(50))
+    machine.note_daily_loss(Money.cents(40), at_utc=TS)
+    assert machine.status is SystemStatus.OK
+    machine.note_daily_loss(Money.cents(51), at_utc=TS)
+    assert machine.status is SystemStatus.HALT
+    assert machine.reason == "daily_loss"

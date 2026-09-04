@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from wxmm.core.errors import SendTokenError
+from wxmm.core.errors import InvalidTransition, SendTokenError
 from wxmm.core.money import Money
 from wxmm.core.types import FrozenClock, InMemoryAsOfStore, Order
 from wxmm.core.underlying import KALSHI_NYC_DAILY_HIGH
@@ -151,3 +151,15 @@ def test_no_force_flag_and_no_token_default_in_execute_source() -> None:
                 if "force" in names:
                     hits.append(f"{path.name}:{node.lineno} force param")
     assert hits == []
+
+
+def test_invalid_state_does_not_consume_token() -> None:
+    gate, _venue, clock = _gate()
+    proposal = _proposal()
+    token = gate.issue_token(proposal)
+    with pytest.raises(InvalidTransition, match="PROPOSED or APPROVED"):
+        gate.send(proposal, token, intent_id="i1")
+    _proposed(gate, proposal, clock.now())
+    result = gate.send(proposal, token, intent_id="i1")
+    assert result.accepted is True
+    assert gate.journal.lifecycle.state_of("i1") is OrderState.ACKED

@@ -62,6 +62,7 @@ class Journal:
         self._orders: dict[str, Order] = {}
         self._fills: dict[str, dict[str, object]] = {}
         self._seen_fill_ids: set[str] = set()
+        self._fill_events: list[dict[str, object]] = []
         self._positions = PositionBook()
         self._underlyings: dict[tuple[str, str], Underlying] = {}
         self._resolutions: list[JournalRecord] = []
@@ -126,6 +127,11 @@ class Journal:
                 "side": order.side,
                 "price_cents": order.price_cents,
                 "quantity": order.quantity,
+                "is_taker": order.is_taker,
+                "underlying_station": underlying.station,
+                "underlying_product": underlying.product,
+                "underlying_day_convention": underlying.day_convention,
+                "underlying_revision_rule": underlying.revision_rule,
             },
             at_utc=at_utc,
             actor="human",
@@ -182,7 +188,33 @@ class Journal:
         price_cents: int | None = None,
     ) -> JournalRecord | None:
         state = self.lifecycle.state_of(intent_id)
-        if state not in {OrderState.ACKED, OrderState.PARTIAL, OrderState.FILLED}:
+        terminal = {
+            OrderState.FILLED,
+            OrderState.CANCELLED,
+            OrderState.REJECTED,
+            OrderState.SETTLED,
+        }
+        if state in terminal:
+            if venue_fill_id in self._seen_fill_ids:
+                return self._append(
+                    "fill_duplicate_ignored",
+                    {"intent_id": intent_id, "venue_fill_id": venue_fill_id},
+                    at_utc=at_utc,
+                    actor="venue",
+                    evidence="duplicate fill",
+                )
+            return self._append(
+                "fill_after_terminal_ignored",
+                {
+                    "intent_id": intent_id,
+                    "venue_fill_id": venue_fill_id,
+                    "fill_qty": fill_qty,
+                },
+                at_utc=at_utc,
+                actor="venue",
+                evidence="fill after terminal state ignored",
+            )
+        if state not in {OrderState.ACKED, OrderState.PARTIAL}:
             self.lifecycle.buffer_fill(
                 intent_id,
                 {
@@ -197,6 +229,7 @@ class Journal:
                     "intent_id": intent_id,
                     "venue_fill_id": venue_fill_id,
                     "fill_qty": fill_qty,
+                    "price_cents": price_cents if price_cents is not None else 0,
                 },
                 at_utc=at_utc,
                 actor="venue",
@@ -224,22 +257,21 @@ class Journal:
                 avg_price_cents=px,
             )
         )
-        prev_qty = _as_int(self._fills.get(intent_id, {}).get("fill_qty") or 0)
+        prev_qty = _as_int(self._fills.get(intent_id, {}).get("total_qty") or 0)
         total = prev_qty + fill_qty
-        self._fills[intent_id] = {
-            "fill_qty": total,
+        event: dict[str, object] = {
+            "intent_id": intent_id,
             "venue_fill_id": venue_fill_id,
+            "fill_qty": fill_qty,
+            "total_qty": total,
             "price_cents": px,
+            "market_id": order.market_id,
         }
+        self._fill_events.append(event)
+        self._fills[intent_id] = event
         rec = self._append(
             "fill",
-            {
-                "intent_id": intent_id,
-                "venue_fill_id": venue_fill_id,
-                "fill_qty": fill_qty,
-                "total_qty": total,
-                "price_cents": px,
-            },
+            event,
             at_utc=at_utc,
             actor="venue",
             evidence=evidence,
@@ -320,6 +352,9 @@ class Journal:
     def fills_by_intent(self) -> dict[str, dict[str, object]]:
         return dict(self._fills)
 
+    def fill_events(self) -> tuple[dict[str, object], ...]:
+        return tuple(self._fill_events)
+
     def order(self, intent_id: str) -> Order:
         return self._orders[intent_id]
 
@@ -340,8 +375,64 @@ class Journal:
             )
         )
 
-def replay_journal(records: list[JournalRecord], *, seed: Journal) -> Journal:
-    """Replay from empty. ``seed`` supplies Order and Underlying objects."""
+
+def _payload_int(payload: Mapping[str, object], key: str, default: int = 0) -> int:
+    raw = payload.get(key, default)
+    if raw is None:
+        return default
+    return _as_int(raw)
+
+
+def _order_and_underlying_from_propose(
+    payload: Mapping[str, object],
+    *,
+    seed: Journal | None,
+) -> tuple[Order, Underlying]:
+    intent = str(payload["intent_id"])
+    has_fields = all(
+        key in payload
+        for key in (
+            "venue",
+            "market_id",
+            "side",
+            "price_cents",
+            "quantity",
+            "underlying_station",
+            "underlying_product",
+            "underlying_day_convention",
+            "underlying_revision_rule",
+        )
+    )
+    if has_fields:
+        side = str(payload["side"])
+        if side not in {"buy", "sell"}:
+            raise ValueError(f"invalid side {side!r}")
+        order = Order(
+            venue=str(payload["venue"]),
+            market_id=str(payload["market_id"]),
+            side=side,  # type: ignore[arg-type]
+            price_cents=_as_int(payload["price_cents"]),
+            quantity=_as_int(payload["quantity"]),
+            is_taker=bool(payload.get("is_taker", False)),
+            client_intent_id=intent,
+        )
+        underlying = Underlying(
+            station=str(payload["underlying_station"]),
+            product=str(payload["underlying_product"]),
+            day_convention=str(payload["underlying_day_convention"]),
+            revision_rule=str(payload["underlying_revision_rule"]),
+        )
+        return order, underlying
+    if seed is None:
+        raise ValueError(
+            "propose payload missing order/underlying fields; pass seed= to reconstruct"
+        )
+    order = seed.order(intent)
+    return order, seed._underlyings[(order.venue, order.market_id)]
+
+
+def replay_journal(records: list[JournalRecord], *, seed: Journal | None = None) -> Journal:
+    """Replay from empty records. Reconstructs positions without requiring ``seed``."""
     from wxmm.execute.lifecycle import allowed as transition_allowed
 
     out = Journal()
@@ -354,8 +445,7 @@ def replay_journal(records: list[JournalRecord], *, seed: Journal) -> Journal:
         p = rec.payload
         if kind == "proposed":
             intent = str(p["intent_id"])
-            order = seed.order(intent)
-            underlying = seed._underlyings[(order.venue, order.market_id)]
+            order, underlying = _order_and_underlying_from_propose(p, seed=seed)
             out.propose(
                 intent, order, rec.at_utc, underlying=underlying, evidence=rec.evidence
             )
@@ -382,29 +472,39 @@ def replay_journal(records: list[JournalRecord], *, seed: Journal) -> Journal:
                 venue_fill_id=vid,
                 at_utc=rec.at_utc,
                 evidence=rec.evidence,
-                price_cents=_as_int(p.get("price_cents") or 0),
+                price_cents=_payload_int(p, "price_cents"),
             )
         elif kind == "fill_buffered":
-            out.lifecycle.buffer_fill(
+            out.apply_fill(
                 str(p["intent_id"]),
-                {
-                    "fill_qty": p["fill_qty"],
-                    "venue_fill_id": p["venue_fill_id"],
-                    "price_cents": 0,
-                },
+                fill_qty=_as_int(p["fill_qty"]),
+                venue_fill_id=str(p["venue_fill_id"]),
+                at_utc=rec.at_utc,
+                evidence=rec.evidence,
+                price_cents=_payload_int(p, "price_cents"),
             )
-        elif kind == "fill_duplicate_ignored":
-            continue
+        elif kind in {"fill_duplicate_ignored", "fill_after_terminal_ignored"}:
+            out.apply_fill(
+                str(p["intent_id"]),
+                fill_qty=_payload_int(p, "fill_qty"),
+                venue_fill_id=str(p["venue_fill_id"]),
+                at_utc=rec.at_utc,
+                evidence=rec.evidence,
+                price_cents=_payload_int(p, "price_cents"),
+            )
         elif kind == "halt_resolution":
             out.record_resolution(str(p["reason"]), at_utc=rec.at_utc)
-        elif kind in {"settlement", "settlement_revision", "settlement_revised_after_settled"}:
+        elif kind in {"settlement", "settlement_revision"}:
             intent = str(p["intent_id"])
             high = p.get("high_f")
             out.record_settlement(
                 intent,
                 at_utc=rec.at_utc,
                 high_f=high if isinstance(high, int) else None,
-                revision=bool(p.get("revision")),
+                revision=kind == "settlement_revision" or bool(p.get("revision")),
                 evidence=rec.evidence,
             )
+        elif kind == "settlement_revised_after_settled":
+            # Side-effect of record_settlement(revision=True) while already SETTLED.
+            continue
     return out

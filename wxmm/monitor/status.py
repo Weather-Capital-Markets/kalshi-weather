@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 
 from wxmm.core.errors import FeeMismatch, UnreconciledBreak
+from wxmm.core.money import Money
 from wxmm.core.utc import require_utc
 from wxmm.execute.journal import Journal
 from wxmm.execute.reconcile import BreakReport
@@ -35,7 +36,7 @@ class StatusMachine:
     reason: str | None = None
     degradation: tuple[str, ...] = ()
     alerts: list[Alert] = field(default_factory=list)
-    daily_loss_limit: object | None = None
+    daily_loss_limit: Money | None = None
     stale_after: timedelta = field(default_factory=lambda: timedelta(seconds=30))
 
     def halt(self, reason: str, *, at_utc: datetime, actor: str = "human") -> None:
@@ -58,12 +59,19 @@ class StatusMachine:
     def note_feeds(self, feeds: tuple[FeedHealth, ...], *, now: datetime) -> None:
         if self.status is SystemStatus.HALT:
             return
-        stale = [f.name for f in feeds if f.stale_beyond(now, self.stale_after)]
+        stale = [
+            f.name
+            for f in feeds
+            if f.last_update_at is not None and f.stale_beyond(now, self.stale_after)
+        ]
+        unseen = [f.name for f in feeds if f.last_update_at is None]
         down = [f.name for f in feeds if not f.heartbeat_ok]
         if stale:
             self.halt(f"feed_stale:{','.join(stale)}", at_utc=now, actor="human")
             return
         reasons: list[str] = []
+        if unseen:
+            reasons.append(f"feed_unseen:{','.join(unseen)}")
         if down:
             reasons.append(f"feed_down:{','.join(down)}")
         if reasons:
@@ -72,6 +80,14 @@ class StatusMachine:
         elif self.status is SystemStatus.DEGRADED:
             self.status = SystemStatus.OK
             self.degradation = ()
+
+    def note_daily_loss(self, loss: Money, *, at_utc: datetime) -> None:
+        if self.status is SystemStatus.HALT:
+            return
+        if self.daily_loss_limit is None:
+            return
+        if self.daily_loss_limit < loss:
+            self.halt("daily_loss", at_utc=at_utc, actor="human")
 
     def note_rate_budget_low(self, *, at_utc: datetime) -> None:
         if self.status is SystemStatus.HALT:
@@ -89,6 +105,8 @@ class StatusMachine:
         _ = at_utc
 
     def resume(self, reason: str, *, at_utc: datetime) -> None:
+        if self.status is not SystemStatus.HALT:
+            raise ValueError("resume requires current status HALT")
         if not reason.strip():
             raise ValueError("leaving HALT requires a reason")
         self.journal.record_resolution(reason, at_utc=at_utc)

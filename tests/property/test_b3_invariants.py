@@ -50,6 +50,8 @@ def test_journal_replay_idempotent_positions() -> None:
     assert rebuilt.positions_fingerprint() == snap
     rebuilt2 = replay_journal(rebuilt.records, seed=j)
     assert rebuilt2.positions_fingerprint() == snap
+    from_empty = replay_journal(j.records)
+    assert from_empty.positions_fingerprint() == snap
 
 
 def test_lifecycle_graph_exhaustive_pairs() -> None:
@@ -97,6 +99,23 @@ def test_residual_zero_size_still_nonzero_pct() -> None:
         knyc_max_band="middle_39_85",
     )
     assert res.residual_basis_risk_pct > Decimal("0")
+
+
+def test_residual_zero_unhedged_does_not_raise_when_pct_exceeds_cap() -> None:
+    pos = Position("kalshi", "A", KALSHI_NYC_DAILY_HIGH, 10, 50)
+    model = BasisModel(KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH)
+    res = residual_for(
+        pos,
+        POLYMARKET_NYC_DAILY_HIGH,
+        unhedged_quantity=0,
+        book_size=Money.cents(100000),
+        max_basis_risk_pct=Decimal("10"),
+        basis=model,
+        season="JJA",
+    )
+    assert res.unhedged_quantity == 0
+    assert res.residual_basis_risk_pct == Decimal("61.5")
+    assert res.same_underlying is False
 
 
 def test_halt_emits_no_proposal() -> None:

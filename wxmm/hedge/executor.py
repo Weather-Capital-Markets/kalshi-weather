@@ -111,3 +111,15 @@ class HedgeExecutor:
 
     def abandon(self) -> None:
         self.state = HedgeState.ABANDONED
+
+    def can_propose_next_leg(self) -> bool:
+        if self.state in {HedgeState.COMPLETE, HedgeState.ABANDONED}:
+            return False
+        if self.stopped_at_leg is not None:
+            return False
+        if (
+            self.last_residual is not None
+            and self.last_residual.residual_basis_risk_pct > self.max_basis_risk_pct
+        ):
+            return False
+        return True

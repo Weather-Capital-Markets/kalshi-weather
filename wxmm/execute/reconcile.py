@@ -58,22 +58,22 @@ def reconcile(
     halt_on_break: bool = True,
 ) -> BreakReport:
     mismatches: list[Mismatch] = []
-    fills = journal.fills_by_intent()
-    by_venue_id: dict[str, tuple[str, dict[str, object]]] = {}
-    for intent_id, payload in fills.items():
+    events = journal.fill_events()
+    by_venue_id: dict[str, dict[str, object]] = {}
+    for payload in events:
         vid = payload.get("venue_fill_id")
         if isinstance(vid, str):
-            by_venue_id[vid] = (intent_id, payload)
+            by_venue_id[vid] = payload
     seen: set[str] = set()
     for vfill in venue_fills:
         seen.add(vfill.venue_fill_id)
-        hit = by_venue_id.get(vfill.venue_fill_id)
-        if hit is None:
+        payload = by_venue_id.get(vfill.venue_fill_id)
+        if payload is None:
             mismatches.append(
                 Mismatch("venue_fill_not_in_journal", None, f"venue_fill_id={vfill.venue_fill_id}")
             )
             continue
-        intent_id, payload = hit
+        intent_id = str(payload.get("intent_id") or "")
         if _as_int(payload["fill_qty"]) != vfill.quantity:
             mismatches.append(
                 Mismatch(
@@ -91,8 +91,9 @@ def reconcile(
                     f"journal={order.market_id} venue={vfill.market_id}",
                 )
             )
-    for intent_id, payload in fills.items():
+    for payload in events:
         vid = payload.get("venue_fill_id")
+        intent_id = str(payload.get("intent_id") or "")
         if isinstance(vid, str) and vid not in seen:
             mismatches.append(
                 Mismatch("journal_fill_not_at_venue", intent_id, f"venue_fill_id={vid}")
