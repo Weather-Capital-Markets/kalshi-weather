@@ -1,0 +1,35 @@
+{
+  "name": "kalshi_first_10am_era",
+  "venue": "kalshi",
+  "climate_day": "2023-07-04",
+  "as_of": "2023-07-06T16:00:00+00:00",
+  "observations": [
+    {
+      "station": "KNYC",
+      "climate_day": "2023-07-04",
+      "high_f": 88,
+      "valid_at": "2023-07-05T13:00:00+00:00",
+      "available_at": "2023-07-05T13:00:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": false
+    },
+    {
+      "station": "KNYC",
+      "climate_day": "2023-07-04",
+      "high_f": 90,
+      "valid_at": "2023-07-05T15:00:00+00:00",
+      "available_at": "2023-07-05T15:00:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": true
+    }
+  ],
+  "expected": {
+    "high_f": 88,
+    "pending": false,
+    "rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+    "tagged_assumption_contains": null
+  },
+  "notes": "D+1 10:00 AM EDT = 14:00Z. 13:00Z visible; 15:00Z revision ignored."
+}

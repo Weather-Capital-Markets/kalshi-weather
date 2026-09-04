@@ -1,0 +1,35 @@
+{
+  "name": "kalshi_unspecified_era_tagged_10am",
+  "venue": "kalshi",
+  "climate_day": "2021-09-15",
+  "as_of": "2021-09-17T16:00:00+00:00",
+  "observations": [
+    {
+      "station": "KNYC",
+      "climate_day": "2021-09-15",
+      "high_f": 82,
+      "valid_at": "2021-09-16T13:00:00+00:00",
+      "available_at": "2021-09-16T13:00:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": false
+    },
+    {
+      "station": "KNYC",
+      "climate_day": "2021-09-15",
+      "high_f": 83,
+      "valid_at": "2021-09-16T15:30:00+00:00",
+      "available_at": "2021-09-16T15:30:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": true
+    }
+  ],
+  "expected": {
+    "high_f": 82,
+    "pending": false,
+    "rule_id": "kalshi_unspecified_thru_2021-12-25",
+    "tagged_assumption_contains": "V1_rule_100_19"
+  },
+  "notes": "D+1 10:00 AM EDT = 14:00Z. Revision at 15:30Z is after snapshot and ignored. Unspecified era uses 10 AM as tagged assumption."
+}

@@ -1,0 +1,9 @@
+prereg_id: stage_b1_heldout
+seed: 1
+universe:
+  - KXHIGHNY
+snapshot_id: fixture
+held_out:
+  start: "2026-01-01"
+  end: "2026-12-31"
+  locked: true

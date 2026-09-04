@@ -394,3 +394,24 @@ python -m analysis.nbm_availability_watch --mode tick   # VPS timer: first-avail
 python -m analysis.nbm_availability_watch --mode report   # summarize CSV
 ```
 
+## Stage B1 — WXMM trading & backtest infrastructure
+
+`wxmm/` is the as-of trading/backtest stack. It does **not** replace `ingestion/` or
+`analysis/`, and it contains **no** fair-value models, production strategies, or
+order router.
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+mypy --strict wxmm
+pytest -q
+python -m wxmm.cli console   # propose-only skeleton; does not send orders
+```
+
+Design rules: one time authority (`wxmm.core.timeauth`), every read is
+`get(key, as_of)`, backtest clock is the only now, Kalshi NYC and Polymarket NYC
+are different underlyings, Polymarket fills cannot be priced until the fee
+schedule is verified, coverage reports are mandatory on backtest results,
+configs must be listed in `prereg/`.
+
+

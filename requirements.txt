@@ -1,2 +1,5 @@
 httpx==0.28.1
 PyYAML==6.0.2
+pydantic==2.10.6
+polars==1.21.0
+duckdb==1.2.1
