@@ -389,8 +389,11 @@ whole 283 MB grib2 files. Requires `requirements-analysis.txt` (cfgrib, pyarrow)
 ```bash
 # Session 6b — K2 blocking prerequisites (measurement only; 6c gated)
 python -m analysis.bracket_enumeration
-python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > 60 min
+python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > assumed (441 min)
 python -m analysis.nbm_availability_watch --mode tick   # VPS timer: first-availability poll
 python -m analysis.nbm_availability_watch --mode report   # summarize CSV
+
+# Session 6c — NBM forecast vs market at T-24h (300-day decoded_v441 sample)
+python -m analysis.forecast_vs_market
 ```
 
