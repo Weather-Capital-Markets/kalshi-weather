@@ -1,7 +1,9 @@
 .PHONY: test lint mutants
 
+PYTHON ?= python3
+
 test:
-	pytest -q
+	$(PYTHON) -m pytest -q
 
 lint:
 	ruff check .
@@ -9,4 +11,4 @@ lint:
 	lint-imports
 
 mutants:
-	python tests/mutants/run.py
+	$(PYTHON) tests/mutants/run.py
