@@ -67,19 +67,19 @@ def reconcile(
     seen: set[str] = set()
     for vfill in venue_fills:
         seen.add(vfill.venue_fill_id)
-        payload = by_venue_id.get(vfill.venue_fill_id)
-        if payload is None:
+        hit = by_venue_id.get(vfill.venue_fill_id)
+        if hit is None:
             mismatches.append(
                 Mismatch("venue_fill_not_in_journal", None, f"venue_fill_id={vfill.venue_fill_id}")
             )
             continue
-        intent_id = str(payload.get("intent_id") or "")
-        if _as_int(payload["fill_qty"]) != vfill.quantity:
+        intent_id = str(hit.get("intent_id") or "")
+        if _as_int(hit["fill_qty"]) != vfill.quantity:
             mismatches.append(
                 Mismatch(
                     "qty_mismatch",
                     intent_id,
-                    f"journal={payload['fill_qty']} venue={vfill.quantity}",
+                    f"journal={hit['fill_qty']} venue={vfill.quantity}",
                 )
             )
         order = journal.order(intent_id)
