@@ -1,0 +1,35 @@
+{
+  "name": "kalshi_first_7_or_8am_era",
+  "venue": "kalshi",
+  "climate_day": "2025-07-04",
+  "as_of": "2025-07-06T16:00:00+00:00",
+  "observations": [
+    {
+      "station": "KNYC",
+      "climate_day": "2025-07-04",
+      "high_f": 88,
+      "valid_at": "2025-07-05T11:30:00+00:00",
+      "available_at": "2025-07-05T11:30:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": false
+    },
+    {
+      "station": "KNYC",
+      "climate_day": "2025-07-04",
+      "high_f": 89,
+      "valid_at": "2025-07-05T13:30:00+00:00",
+      "available_at": "2025-07-05T13:30:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": true
+    }
+  ],
+  "expected": {
+    "high_f": 88,
+    "pending": false,
+    "rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+    "tagged_assumption_contains": "first_7am_if_full_day"
+  },
+  "notes": "07:30 AM EDT = 11:30Z is after 07:00 EDT (11:00Z) so snapshot is 08:00 EDT = 12:00Z. 11:30Z visible; 13:30Z revision ignored."
+}

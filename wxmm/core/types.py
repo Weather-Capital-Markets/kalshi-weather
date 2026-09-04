@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from wxmm.core.errors import LeakageError, MissingDataError, UnverifiedFactError
 from wxmm.core.utc import UTC, require_utc
@@ -281,6 +281,22 @@ class Trade:
     def __post_init__(self) -> None:
         object.__setattr__(self, "ts", require_utc(self.ts))
         object.__setattr__(self, "available_at", require_utc(self.available_at))
+
+
+Side = Literal["buy", "sell"]
+
+
+@dataclass(frozen=True, slots=True)
+class Order:
+    """A proposed or resting order. Not a venue send — no router in wxmm."""
+
+    venue: str
+    market_id: str
+    side: Side
+    price_cents: int
+    quantity: int
+    is_taker: bool
+    client_intent_id: str = ""
 
 
 @dataclass
