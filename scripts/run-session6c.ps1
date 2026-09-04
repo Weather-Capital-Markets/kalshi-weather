@@ -11,7 +11,7 @@ Set-Location $RepoRoot
 $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 
 if (-not (Test-Path (Join-Path $RepoRoot "analysis\forecast_vs_market.py"))) {
-    Write-Error "analysis\forecast_vs_market.py missing. Clone/pull kalshi-weather and checkout cursor/session6c-forecast-vs-market-1b11"
+    Write-Error "analysis\forecast_vs_market.py missing. Clone/pull kalshi-weather from Weather-Capital-Markets and checkout the branch that contains Session 6c."
 }
 
 if (-not (Test-Path $Python)) {
@@ -25,8 +25,13 @@ Virtualenv not found at $Python
 }
 
 function Test-DataPrereq {
-    param([string]$GlobPattern, [string]$Label)
-    $hits = @(Get-ChildItem -Path (Join-Path $RepoRoot "data\raw") -Recurse -Filter $GlobPattern -ErrorAction SilentlyContinue)
+    param([string]$Category, [string]$Label)
+    $rawRoot = Join-Path $RepoRoot "data\raw"
+    $hits = @()
+    if (Test-Path $rawRoot) {
+        $hits = @(Get-ChildItem -Path $rawRoot -Recurse -Filter "*.jsonl.gz" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq $Category })
+    }
     if ($hits.Count -eq 0) {
         Write-Warning "MISSING: no $Label under data\raw\ — Session 6c needs laptop bulk backfill (markets_history + candlesticks), not VPS orderbook logs."
         return $false
@@ -37,14 +42,14 @@ function Test-DataPrereq {
 
 $decoded = Join-Path $RepoRoot "data\nbm\decoded_v441"
 if (-not (Test-Path $decoded)) {
-    Write-Warning "MISSING: data\nbm\decoded_v441\ — run ingestion.nbm_archive on branch cursor/nbm-vintage-v441-7e-1b11 (PR #26) or rsync from cloud agent."
+    Write-Warning "MISSING: data\nbm\decoded_v441\ — run python -m ingestion.nbm_archive (7e vintage, 441/453 min) or copy decoded_v441 from the cloud workspace."
 } else {
     $n = @(Get-ChildItem -Path $decoded -Filter "*.parquet").Count
     Write-Host "OK: $n parquet files in decoded_v441\" -ForegroundColor Green
 }
 
-$hasMarkets = Test-DataPrereq "*.jsonl.gz" "markets_history"
-$hasCandles = Test-DataPrereq "*.jsonl.gz" "candlesticks"
+$hasMarkets = Test-DataPrereq "markets_history" "markets_history"
+$hasCandles = Test-DataPrereq "candlesticks" "candlesticks"
 if (-not $hasMarkets -or -not $hasCandles) {
     Write-Host @"
 

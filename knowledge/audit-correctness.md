@@ -1,6 +1,10 @@
 # Correctness audit — Session 7a
 
-**Status:** REPORT ONLY — findings document; fixes are Session 7b.  
+**Status:** REPORT ONLY — findings as of 2026-08-21 (`main` after PR #21).  
+**Remediations since audit (do not rewrite findings):**
+- **C1 (NBM vintage):** Session **7e** — empirical D−1 12Z / f042 at p90 441 / max 453 min; backfill in `data/nbm/decoded_v441/`. Finding retained as historical.
+- **C2 (CLINYC empty-200):** Session **7c** — `cli_labels` refuses to mark a month complete on empty body; regression test added.
+- **C3 (empty-lag hard-stop):** still open in `nbm_latency_check.evaluate_hard_stop`.
 **Scope:** All modules in `ingestion/` and `analysis/`.  
 **Lens:** `data-sources.md` §7 (instrument failure-modes log).  
 **Date:** 2026-08-21.

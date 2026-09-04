@@ -13,7 +13,7 @@ logger; analysis, models, and weather ingestion come in later sessions.
 ## Quick start (local)
 
 ```bash
-git clone https://github.com/YOUR_USER/kalshi-weather.git
+git clone https://github.com/Weather-Capital-Markets/kalshi-weather.git
 cd kalshi-weather
 
 python3.11 -m venv .venv
@@ -377,7 +377,8 @@ in `ingestion/config.yaml` so multi-level depth metrics are meaningful.
 # A. Extended window mismatch (CLI lst/ldt + ASOS KNYC; window_mismatch_k2.csv)
 python -m analysis.window_mismatch
 
-# B. NBM qmd archive probe (paste output before bulk backfill)
+# B. NBM qmd archive (empirical vintage; writes data/nbm/decoded_v441/)
+python -m ingestion.nbm_archive --vintage-calibrate
 python -m ingestion.nbm_archive --probe
 python -m ingestion.nbm_archive --dry-run
 python -m ingestion.nbm_archive

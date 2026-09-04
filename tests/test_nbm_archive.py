@@ -244,3 +244,30 @@ def test_nbm_archive_client_range_header() -> None:
     assert byte_range.header_value() == "bytes=100-199"
     client = NbmArchiveClient("https://example.com")
     client.close()
+
+
+def test_nbm_uses_dedicated_backfill_db_not_shared_storage(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    shared = tmp_path / "backfill.sqlite"
+    nbm_db = tmp_path / "backfill_v441.sqlite"
+    config = {
+        "storage": {
+            "raw_dir": str(raw_dir),
+            "backfill_db": str(shared),
+        },
+        "nbm_archive": {
+            "backfill_db": str(nbm_db),
+            "decoded_dir": str(tmp_path / "decoded"),
+            "start_date": "2022-07-04",
+            "end_date": "2022-07-04",
+            "sample_size": 1,
+        },
+    }
+    backfill = NbmArchiveBackfill(config)
+    try:
+        assert backfill.backfill_db_path == nbm_db
+        assert nbm_db.exists()
+        assert not shared.exists()
+    finally:
+        backfill.conn.close()
