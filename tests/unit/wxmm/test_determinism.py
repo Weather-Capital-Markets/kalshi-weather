@@ -8,7 +8,8 @@ from pathlib import Path
 import yaml
 
 from wxmm.backtest.replay import MarketEvent, run
-from wxmm.core.types import BookLevel, BookSnapshot, InMemoryAsOfStore, ReadContext
+from wxmm.core.types import BookLevel, BookSnapshot, InMemoryAsOfStore
+from wxmm.strategy.view import MarketView, ProposedOrder
 from wxmm.venues.base import get_venue
 
 UTC = timezone.utc
@@ -17,8 +18,8 @@ TS = datetime(2026, 7, 4, 16, 0, tzinfo=UTC)
 
 
 class IdleStrategy:
-    def on_event(self, ctx: ReadContext) -> list[object]:
-        _ = ctx.clock.now()
+    def on_snapshot(self, view: MarketView) -> list[ProposedOrder]:
+        _ = view.books
         return []
 
 

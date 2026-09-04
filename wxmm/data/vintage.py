@@ -86,6 +86,7 @@ class VintageStore:
         available_at: datetime,
         source: str,
         ingest_run_id: str,
+        availability: str = "known",
     ) -> AsOfRecord:
         record = AsOfRecord(
             key=key,
@@ -94,6 +95,7 @@ class VintageStore:
             available_at=available_at,
             source=source,
             ingest_run_id=ingest_run_id,
+            availability=availability,
         )
         self._inner.put(record)
         self._all.append(record)

@@ -47,6 +47,8 @@ def test_nbm_latency_is_measured_not_sixty() -> None:
     pointer = nbm_archive_pointer()
     assert pointer["access"] == "idx_byte_range_never_whole_file"
     assert pointer["decode_module"] == "ingestion.nbm_archive"
+    assert pointer["publication_p90_min_sample"] == 441
+    assert pointer["void_assumed_latency_min"] == 60
 
 
 def test_persist_parquet_roundtrip(tmp_path: Path) -> None:

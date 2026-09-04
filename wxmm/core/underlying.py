@@ -1,38 +1,46 @@
-"""Underlying identity. Fungible iff all four fields match.
+"""Underlying identity. Fungible iff all four fields match AND none is unverified.
 
 Allowed to assume
-    Kalshi NYC daily high settles on KNYC / CLINYC / ignore-after-snapshot.
-    Polymarket NYC daily high settles on KLGA / Weather Underground Daily
-    Observations / accept-until-next-first-datapoint.
-    (``knowledge/venue-facts.md`` §3.2.)
+    Kalshi NYC daily high settles on KNYC / CLINYC / ignore-after-snapshot /
+    NWS CLI LST. Polymarket NYC daily high settles on KLGA / Weather
+    Underground Daily Observations / accept-until-next-first-datapoint.
+    Polymarket **day convention is (verify)** — WU Daily Observations
+    presumably local civil day, which differs from CLI LST by 1 h during EDT.
 
 Must never
-    Treat Kalshi NYC and Polymarket NYC as the same underlying. Must never
-    net across non-fungible underlyings. Must never assume Weather Underground
-    day convention equals NWS CLI LST — the Polymarket day convention is a
-    distinct string (verify).
+    Treat Kalshi NYC and Polymarket NYC as the same underlying. Treat an
+    unverified field as equal to anything, including itself. Net across
+    non-fungible underlyings.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Day conventions. Do not collapse these; they are part of Underlying identity.
 DAY_CONVENTION_NWS_CLI_LST = "nws_cli_lst"
-DAY_CONVENTION_WU_DAILY_OBS = "wunderground_daily_observations"  # (verify) ≠ CLI LST
+# (verify) WU day convention is not known to be CLI LST. Unverified fields
+# are not equal to anything, including themselves — see fungible().
+DAY_CONVENTION_WU_UNVERIFIED = "UNVERIFIED:(verify)wunderground_daily_observations_civil_vs_lst"
 
 REVISION_IGNORE_AFTER_SNAPSHOT = "ignore_after_snapshot"
 REVISION_ACCEPT_UNTIL_NEXT_FIRST_DATAPOINT = "accept_until_next_first_datapoint"
 
 PRODUCT_DAILY_HIGH = "daily_high"
 
+UNVERIFIED_PREFIX = "UNVERIFIED:"
+
+
+def field_is_unverified(value: str) -> bool:
+    return value.startswith(UNVERIFIED_PREFIX)
+
 
 @dataclass(frozen=True, slots=True)
 class Underlying:
     """Settlement identity of an instrument.
 
-    Two instruments are fungible iff these four fields are equal. Anything
-    else is a basis position, never assumed hedgeable at 1:1.
+    Two instruments are fungible iff these four fields are equal AND no
+    field is tagged unverified. An unverified field is not equal to
+    anything, including itself.
     """
 
     station: str
@@ -41,7 +49,24 @@ class Underlying:
     revision_rule: str
 
     def fungible(self, other: Underlying) -> bool:
-        return self == other
+        for value in (
+            self.station,
+            self.product,
+            self.day_convention,
+            self.revision_rule,
+            other.station,
+            other.product,
+            other.day_convention,
+            other.revision_rule,
+        ):
+            if field_is_unverified(value):
+                return False
+        return (
+            self.station == other.station
+            and self.product == other.product
+            and self.day_convention == other.day_convention
+            and self.revision_rule == other.revision_rule
+        )
 
 
 KALSHI_NYC_DAILY_HIGH = Underlying(
@@ -54,7 +79,7 @@ KALSHI_NYC_DAILY_HIGH = Underlying(
 POLYMARKET_NYC_DAILY_HIGH = Underlying(
     station="KLGA",
     product=PRODUCT_DAILY_HIGH,
-    day_convention=DAY_CONVENTION_WU_DAILY_OBS,
+    day_convention=DAY_CONVENTION_WU_UNVERIFIED,
     revision_rule=REVISION_ACCEPT_UNTIL_NEXT_FIRST_DATAPOINT,
 )
 

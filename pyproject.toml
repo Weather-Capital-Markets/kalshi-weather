@@ -24,3 +24,12 @@ show_error_codes = true
 [[tool.mypy.overrides]]
 module = ["polars", "polars.*", "duckdb"]
 ignore_missing_imports = true
+
+[tool.importlinter]
+root_packages = ["wxmm", "strategies"]
+
+[[tool.importlinter.contracts]]
+name = "Strategy cannot reach store, venues, settlement, or backtest clock"
+type = "forbidden"
+source_modules = ["wxmm.strategy", "strategies"]
+forbidden_modules = ["wxmm.data", "wxmm.venues", "wxmm.settlement", "wxmm.backtest"]

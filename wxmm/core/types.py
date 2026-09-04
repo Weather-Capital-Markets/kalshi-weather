@@ -114,20 +114,28 @@ class AsOfRecord:
     available_at: datetime
     source: str
     ingest_run_id: str
+    availability: str = "known"
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "valid_at", require_utc(self.valid_at))
         object.__setattr__(self, "available_at", require_utc(self.available_at))
+        if self.availability not in {"known", "unknown"}:
+            raise ValueError(f"availability must be known|unknown, not {self.availability!r}")
 
 
 def assert_available(record: AsOfRecord, as_of: datetime, *, key: str | None = None) -> None:
     """Raise ``LeakageError`` if ``record`` is not readable at ``as_of``.
 
     Never warn. Never skip. Never return the record.
+    ``AVAILABILITY_UNKNOWN`` is not readable at any as_of (not assumed published).
     """
+    label = key if key is not None else record.key
+    if record.availability != "known":
+        raise LeakageError(
+            f"record {label!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
+        )
     as_of_utc = require_utc(as_of)
     if record.available_at > as_of_utc:
-        label = key if key is not None else record.key
         raise LeakageError(
             f"record {label!r} available_at={record.available_at.isoformat()} "
             f"> as_of={as_of_utc.isoformat()}"
@@ -143,7 +151,7 @@ class Clock(Protocol):
 
 @dataclass
 class FrozenClock:
-    """Deterministic clock. The only 'now' a strategy may see in tests."""
+    """Deterministic clock. Harness-only; strategies must not receive it."""
 
     _now: datetime
 
@@ -186,12 +194,15 @@ class InMemoryAsOfStore:
     def get(self, key: str, as_of: datetime) -> AsOfRecord:
         as_of_utc = require_utc(as_of)
         rows = self._rows.get(key, [])
-        readable = [row for row in rows if row.available_at <= as_of_utc]
+        unknown = [row for row in rows if row.availability != "known"]
+        known = [row for row in rows if row.availability == "known"]
+        readable = [row for row in known if row.available_at <= as_of_utc]
         if not readable:
+            if unknown and not known:
+                raise LeakageError(
+                    f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
+                )
             if rows:
-                # Data exists but only in the future relative to as_of.
-                # Honest as-of: missing at this clock. Cheat with a later
-                # as_of is caught by ClockBoundStore before reaching here.
                 raise MissingDataError(
                     f"key {key!r} has {len(rows)} record(s) but none with "
                     f"available_at <= {as_of_utc.isoformat()}"
@@ -301,7 +312,11 @@ class Order:
 
 @dataclass
 class ReadContext:
-    """What a strategy may use: the bound clock and as-of store."""
+    """Harness-only as-of handle. Strategies must not receive this.
+
+    Strategies see ``wxmm.strategy.view.MarketView`` only. A strategy that
+    can call ``store.get(..., as_of=...)`` makes the leakage canary decorative.
+    """
 
     clock: Clock
     store: ClockBoundStore

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
-from wxmm.core.errors import UnverifiedFactError
+from wxmm.core.errors import LimitBreach, UnverifiedFactError
 from wxmm.core.money import Money
 from wxmm.core.types import (
     KALSHI_WEATHER_MAKER_FEE,
@@ -16,7 +16,9 @@ from wxmm.core.types import (
 )
 from wxmm.core.underlying import KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH
 from wxmm.risk.hedge import HedgePlan
+from wxmm.risk.limits import Limits
 from wxmm.risk.position import Position
+from wxmm.strategy.view import ProposedOrder
 from wxmm.venues.kalshi.fees import FeeRounding, taker_fee
 
 
@@ -42,6 +44,11 @@ class ConsoleState:
     facts: tuple[VenueFact, ...] = field(
         default_factory=lambda: (KALSHI_WEATHER_MAKER_FEE, POLYMARKET_FEE_SCHEDULE)
     )
+    limits: Limits | None = None
+    proposals: tuple[ProposedOrder, ...] = ()
+    climate_day_notional: Money = field(default_factory=Money.zero)
+    collateral_committed: Money = field(default_factory=Money.zero)
+    residual_basis_pct: Decimal = Decimal("0")
 
 
 def implied_prob_cents(cents: int | None) -> Decimal | None:
@@ -96,6 +103,18 @@ def pretrade_blockers(state: ConsoleState) -> tuple[str, ...]:
     klga = POLYMARKET_NYC_DAILY_HIGH
     if knyc.fungible(klga):
         blockers.append("Kalshi NYC marked fungible with Polymarket NYC — forbidden")
+    if state.limits is not None:
+        for proposal in state.proposals:
+            try:
+                state.limits.check_proposal(
+                    proposal,
+                    climate_day_notional=state.climate_day_notional,
+                    collateral=state.collateral_committed,
+                    exposure=None,
+                    residual_basis_pct=state.residual_basis_pct,
+                )
+            except LimitBreach as exc:
+                blockers.append(str(exc))
     return tuple(blockers)
 
 

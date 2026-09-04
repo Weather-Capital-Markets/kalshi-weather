@@ -32,6 +32,27 @@ class UnverifiedFeeSchedule(WxmmError):
     """Cost model refused to price a fill because the fee schedule is unverified."""
 
 
+class UnverifiedSettlementFee(UnverifiedFeeSchedule):
+    """Kalshi fee on held-to-expiry / settled contracts is (verify)."""
+
+
+class SourceTimestampRequired(WxmmError):
+    """Ingest refused to invent ``available_at`` from wall-clock."""
+
+
+class LimitBreach(WxmmError):
+    """A pre-trade limit was exceeded. Message names the limit and the overrun."""
+
+    def __init__(self, limit_name: str, actual: str, allowed: str, *, overrun: str) -> None:
+        self.limit_name = limit_name
+        self.actual = actual
+        self.allowed = allowed
+        self.overrun = overrun
+        super().__init__(
+            f"limit {limit_name} breached: actual={actual} allowed={allowed} by {overrun}"
+        )
+
+
 class UnverifiedFactError(WxmmError):
     """An executable claim required a fact that is unverified or expired."""
 

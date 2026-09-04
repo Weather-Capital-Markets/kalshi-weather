@@ -22,6 +22,9 @@ jobs:
       - name: Ruff
         run: ruff check .
 
+      - name: Import linter (strategy boundary)
+        run: lint-imports
+
       - name: Mypy (wxmm, strict)
         run: mypy --strict wxmm
 
