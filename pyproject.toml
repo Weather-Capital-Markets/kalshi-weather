@@ -35,10 +35,10 @@ source_modules = ["wxmm.strategy", "strategies"]
 forbidden_modules = ["wxmm.data", "wxmm.venues", "wxmm.settlement", "wxmm.backtest"]
 
 [[tool.importlinter.contracts]]
-name = "Decide cannot reach execute"
+name = "Decide cannot reach execute, live, or backtest"
 type = "forbidden"
 source_modules = ["wxmm.decide"]
-forbidden_modules = ["wxmm.execute"]
+forbidden_modules = ["wxmm.execute", "wxmm.live", "wxmm.backtest"]
 
 [[tool.importlinter.contracts]]
 name = "Live cannot reach backtest"

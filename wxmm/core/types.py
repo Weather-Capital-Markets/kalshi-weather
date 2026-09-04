@@ -120,9 +120,7 @@ class AsOfRecord:
         object.__setattr__(self, "valid_at", require_utc(self.valid_at))
         object.__setattr__(self, "available_at", require_utc(self.available_at))
         if self.availability not in {"known", "unknown", "stale"}:
-            raise ValueError(
-                f"availability must be known|unknown|stale, not {self.availability!r}"
-            )
+            raise ValueError(f"availability must be known|unknown|stale, not {self.availability!r}")
 
 
 def received_record(
@@ -189,9 +187,7 @@ def assert_available(record: AsOfRecord, as_of: datetime, *, key: str | None = N
     if record.availability == "stale":
         raise StaleBookError(f"record {label!r} is STALE and is not readable")
     if record.availability != "known":
-        raise LeakageError(
-            f"record {label!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
-        )
+        raise LeakageError(f"record {label!r} AVAILABILITY_UNKNOWN: not readable at any as_of")
     as_of_utc = require_utc(as_of)
     if record.available_at > as_of_utc:
         raise LeakageError(
@@ -266,9 +262,7 @@ class InMemoryAsOfStore:
             unknown = [row for row in rows if row.availability == "unknown"]
             known = [row for row in rows if row.availability == "known"]
             if unknown and not known:
-                raise LeakageError(
-                    f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
-                )
+                raise LeakageError(f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of")
             if rows:
                 raise MissingDataError(
                     f"key {key!r} has {len(rows)} record(s) but none with "
@@ -282,9 +276,7 @@ class InMemoryAsOfStore:
         if latest.availability == "stale":
             raise StaleBookError(f"key {key!r} is STALE and is not readable")
         if latest.availability == "unknown":
-            raise LeakageError(
-                f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of"
-            )
+            raise LeakageError(f"key {key!r} AVAILABILITY_UNKNOWN: not readable at any as_of")
         return latest
 
     def get_record(self, record: AsOfRecord, as_of: datetime) -> AsOfRecord:
@@ -349,6 +341,19 @@ class ClockBoundStore:
             )
         assert_available(record, as_of_utc)
         return record
+
+
+def clip_extreme_touch(
+    bid_cents: int | None, ask_cents: int | None
+) -> tuple[int | None, int | None]:
+    """Per-side empty-book clip (venue-facts §1.4 / census two-sided rule).
+
+    Bid ≤ 0¢ or ask ≥ 100¢ is absence, not a tradable price. A 0/100 quote
+    is not a 99¢ spread. One remaining side stays one-sided.
+    """
+    bid = None if bid_cents is not None and bid_cents <= 0 else bid_cents
+    ask = None if ask_cents is not None and ask_cents >= 100 else ask_cents
+    return bid, ask
 
 
 @dataclass(frozen=True, slots=True)

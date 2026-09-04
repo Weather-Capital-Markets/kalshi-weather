@@ -46,6 +46,12 @@ class HedgePlan:
 
 
 def plan_hedge(request: HedgeRequest) -> HedgePlan:
+    """Plan a hedge. Same-underlying fully nets. Cross-underlying needs BasisModel.
+
+    Cross-underlying legs offset size on a *different* settlement identity.
+    Residual disagreement is never reported as 0. Positions are still not
+    aggregated across non-fungible underlyings.
+    """
     pos = request.position
     if pos.underlying.fungible(request.toward):
         qty = -pos.quantity

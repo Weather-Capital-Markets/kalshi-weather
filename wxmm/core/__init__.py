@@ -47,6 +47,7 @@ from wxmm.core.types import (
     FrozenClock,
     InMemoryAsOfStore,
     VenueFact,
+    clip_extreme_touch,
     published_record,
     received_record,
     require_clock_bound_book_source,
@@ -94,4 +95,5 @@ __all__ = [
     "require_clock_bound_book_source",
     "require_clock_bound_store",
     "require_utc",
+    "clip_extreme_touch",
 ]

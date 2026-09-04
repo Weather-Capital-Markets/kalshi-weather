@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from wxmm.core.timeauth import localize_civil
+from wxmm.core.timeauth import localize_civil, localize_lst
 from wxmm.core.underlying import KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH
 from wxmm.core.utc import require_utc
 from wxmm.settlement.rules import Observation, SettlementRule
@@ -24,9 +24,7 @@ REVISION_ACCEPT_UNTIL_NEXT_FIRST = "accept_until_next_first_datapoint"
 # (verify) 7 vs 8 AM: contract says "first 7:00 or 8:00 AM ET following the
 # release of the data". Implementation: 07:00 ET if a full-day report is
 # already available by then, else 08:00 ET. Not a ratified intra-hour fact.
-SEVEN_OR_EIGHT_INTERPRETATION = (
-    "first_7am_if_full_day_report_already_available_else_8am (verify)"
-)
+SEVEN_OR_EIGHT_INTERPRETATION = "first_7am_if_full_day_report_already_available_else_8am (verify)"
 
 KALSHI_UNSPECIFIED_ASSUMPTION = (
     "V1_rule_100_19_unspecified_defaults_to_first_10am_et (tagged assumption)"
@@ -77,6 +75,21 @@ POLYMARKET_RULES: tuple[SettlementRule, ...] = (
         tagged_assumption=None,
     ),
 )
+
+# venue-facts §1.8: last trading time, climate-day changeover 2026-03-17 → 18.
+# Trust close_time, not the contract prose ("11:59 PM ET" on post-change markets).
+KALSHI_LAST_TRADING_CIVIL_ET_THRU = date(2026, 3, 17)
+
+
+def kalshi_last_trading_close_utc(climate_day: date) -> datetime:
+    """Last trading instant for KXHIGHNY on ``climate_day``.
+
+    Through 2026-03-17: 11:59 PM civil ET. From 2026-03-18: 11:59 PM LST
+    (fixed 04:59Z). Pre-changeover EDT T−1h (04:00Z) falls after close.
+    """
+    if climate_day <= KALSHI_LAST_TRADING_CIVIL_ET_THRU:
+        return localize_civil("KNYC", climate_day, hour=23, minute=59)
+    return localize_lst("KNYC", climate_day, hour=23, minute=59)
 
 
 def kalshi_rule_for(climate_day: date) -> SettlementRule:

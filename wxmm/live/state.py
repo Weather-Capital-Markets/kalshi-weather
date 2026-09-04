@@ -24,6 +24,7 @@ from wxmm.core.types import (
     ClockBoundStore,
     FrozenClock,
     InMemoryAsOfStore,
+    clip_extreme_touch,
     received_record,
 )
 from wxmm.core.underlying import Underlying
@@ -142,9 +143,16 @@ def snapshot_payload(
     volume: int | None = None,
     two_sided: bool | None = None,
 ) -> dict[str, object]:
+    bid_cents, ask_cents = clip_extreme_touch(bid_cents, ask_cents)
+    if bid_cents is None:
+        bid_size = None
+    if ask_cents is None:
+        ask_size = None
     sided = two_sided
     if sided is None:
         sided = bid_cents is not None and ask_cents is not None
+    else:
+        sided = bool(sided) and bid_cents is not None and ask_cents is not None
     return {
         "market_id": market_id,
         "yes_bid_cents": bid_cents,

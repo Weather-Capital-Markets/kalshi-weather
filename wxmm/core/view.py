@@ -8,6 +8,7 @@ Must never
     Build a live-only view. Import ``wxmm.live`` or ``wxmm.backtest``.
     Put ``store`` / ``clock`` / venue handles onto ``MarketView``.
     Return a view when the book is STALE or AVAILABILITY_UNKNOWN.
+    Treat Kalshi 0/100 quotes as a two-sided book.
 """
 
 from __future__ import annotations
@@ -20,23 +21,29 @@ from wxmm.core.types import (
     AsOfRecord,
     BookSnapshot,
     Clock,
+    clip_extreme_touch,
     require_clock_bound_book_source,
 )
 from wxmm.strategy.view import BookView, FillView, MarketView, PositionView
 
 
 def book_view_from_snapshot(venue: str, snap: BookSnapshot) -> BookView:
-    bid = snap.bids[0] if snap.bids else None
-    ask = snap.asks[0] if snap.asks else None
+    bid_lvl = snap.bids[0] if snap.bids else None
+    ask_lvl = snap.asks[0] if snap.asks else None
+    bid_cents, ask_cents = clip_extreme_touch(
+        bid_lvl.price_cents if bid_lvl is not None else None,
+        ask_lvl.price_cents if ask_lvl is not None else None,
+    )
+    two_sided = bid_cents is not None and ask_cents is not None
     return BookView(
         venue=venue,
         market_id=snap.market_id,
-        two_sided=snap.two_sided,
-        bid_cents=bid.price_cents if bid is not None else None,
-        ask_cents=ask.price_cents if ask is not None else None,
-        bid_size=bid.size if bid is not None else None,
-        ask_size=ask.size if ask is not None else None,
-        ask_size_known=snap.ask_size_known,
+        two_sided=two_sided,
+        bid_cents=bid_cents,
+        ask_cents=ask_cents,
+        bid_size=bid_lvl.size if bid_lvl is not None and bid_cents is not None else None,
+        ask_size=ask_lvl.size if ask_lvl is not None and ask_cents is not None else None,
+        ask_size_known=snap.ask_size_known if ask_cents is not None else False,
         volume=snap.volume,
         reconstructed=snap.reconstructed,
         staleness=snap.staleness,
@@ -49,19 +56,29 @@ def book_view_from_record(venue: str, rec: AsOfRecord) -> BookView:
         return book_view_from_snapshot(venue, payload)
     if not isinstance(payload, dict):
         raise TypeError(f"cannot build BookView from {type(payload)}")
-    bid = payload.get("yes_bid_cents")
-    ask = payload.get("yes_ask_cents")
+    bid_raw = payload.get("yes_bid_cents")
+    ask_raw = payload.get("yes_ask_cents")
+    bid = bid_raw if isinstance(bid_raw, int) and not isinstance(bid_raw, bool) else None
+    ask = ask_raw if isinstance(ask_raw, int) and not isinstance(ask_raw, bool) else None
+    bid, ask = clip_extreme_touch(bid, ask)
+    two_sided = bid is not None and ask is not None
+    bid_size = payload.get("bid_size") if isinstance(payload.get("bid_size"), int) else None
+    ask_size = payload.get("ask_size") if isinstance(payload.get("ask_size"), int) else None
+    if bid is None:
+        bid_size = None
+    if ask is None:
+        ask_size = None
     staleness = payload.get("staleness")
     market_id = payload.get("market_id")
     return BookView(
         venue=venue,
         market_id=str(market_id) if market_id is not None else rec.key,
-        two_sided=bool(payload.get("two_sided", False)),
-        bid_cents=int(bid) if isinstance(bid, int) else None,
-        ask_cents=int(ask) if isinstance(ask, int) else None,
-        bid_size=payload.get("bid_size") if isinstance(payload.get("bid_size"), int) else None,
-        ask_size=payload.get("ask_size") if isinstance(payload.get("ask_size"), int) else None,
-        ask_size_known=payload.get("ask_size") is not None,
+        two_sided=two_sided,
+        bid_cents=bid,
+        ask_cents=ask,
+        bid_size=bid_size,
+        ask_size=ask_size,
+        ask_size_known=ask_size is not None,
         volume=payload.get("volume") if isinstance(payload.get("volume"), int) else None,
         reconstructed=bool(payload.get("reconstructed", False)),
         staleness=staleness if isinstance(staleness, timedelta) else timedelta(0),

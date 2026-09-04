@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, Decimal, InvalidOperation
 from typing import Protocol, cast
 
-from wxmm.core.types import Clock
+from wxmm.core.types import Clock, clip_extreme_touch
 from wxmm.live.health import FeedHealth
 from wxmm.live.state import (
     BookUpdate,
@@ -67,7 +67,7 @@ def parse_kalshi_ticker(
     )
     bid = _cents(body.get("yes_bid_dollars"), body.get("yes_bid_cents"))
     ask = _cents(body.get("yes_ask_dollars"), body.get("yes_ask_cents"))
-    bid, ask = _clip_kalshi_touch(bid, ask)
+    bid, ask = clip_extreme_touch(bid, ask)
     bid_size = _qty(body.get("yes_bid_size") or body.get("yes_bid_size_fp") or body.get("bid_size"))
     ask_size = _qty(body.get("yes_ask_size") or body.get("yes_ask_size_fp") or body.get("ask_size"))
     if bid is None:
@@ -106,7 +106,7 @@ def parse_kalshi_rest_book(
         if not market:
             raise ValueError("kalshi orderbook payload missing ticker")
         bid, bid_size, ask, ask_size = _kalshi_orderbook_top(cast(Mapping[str, object], book))
-        bid, ask = _clip_kalshi_touch(bid, ask)
+        bid, ask = clip_extreme_touch(bid, ask)
         if bid is None:
             bid_size = None
         if ask is None:
@@ -330,15 +330,6 @@ def _kalshi_market_id(body: Mapping[str, object], captured_market: str | None) -
         body.get("ticker") or body.get("market_ticker") or body.get("market_id") or captured_market
     )
     return str(raw) if raw else ""
-
-
-def _clip_kalshi_touch(bid: int | None, ask: int | None) -> tuple[int | None, int | None]:
-    """Per-side clip of venue-facts §1.4 empty-book extremes (bid 0 / ask 100)."""
-    if bid is not None and bid <= 0:
-        bid = None
-    if ask is not None and ask >= 100:
-        ask = None
-    return bid, ask
 
 
 def _kalshi_orderbook_top(

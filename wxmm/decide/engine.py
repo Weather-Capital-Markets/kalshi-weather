@@ -6,8 +6,8 @@ Allowed to assume
     Fair value may be None.
 
 Must never
-    Import ``wxmm.execute``. Emit a proposal under HALT. Assume FV exists.
-    Silently clip a size. Send anything.
+    Import ``wxmm.execute`` or ``wxmm.live``. Emit a proposal under HALT.
+    Assume FV exists. Silently clip a size. Send anything.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from typing import Mapping
 
 from wxmm.core.errors import LimitBreach, UnverifiedFeeSchedule
 from wxmm.core.money import Money
+from wxmm.core.ratelimit import TokenBucket, proposal_cost
 from wxmm.core.types import Order
 from wxmm.decide.fairvalue import FairValueProvider, NullFairValue
 from wxmm.decide.proposal import Proposal
-from wxmm.live.ratelimit import TokenBucket, proposal_cost
 from wxmm.risk.limits import Limits
 from wxmm.strategy.view import BookView, MarketView
 from wxmm.venues.base import modelled_fee
@@ -114,8 +114,7 @@ def _from_book(
             p = Decimal(price) / Decimal(100)
             edge = (fair_px - p) if side == "buy" else (p - fair_px)
         rationale = (
-            f"maker {side} at touch {price}c on {book.venue}:{book.market_id}; "
-            "no fair value"
+            f"maker {side} at touch {price}c on {book.venue}:{book.market_id}; " "no fair value"
             if fair_px is None
             else f"maker {side} at touch {price}c; modelled edge {edge}"
         )
