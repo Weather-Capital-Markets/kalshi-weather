@@ -13,13 +13,8 @@ import pytest
 
 from wxmm.backtest.harness import build_market_view
 from wxmm.core.errors import LeakageError, MissingDataError
-from wxmm.core.types import (
-    AsOfRecord,
-    ClockBoundStore,
-    FrozenClock,
-    InMemoryAsOfStore,
-)
-from wxmm.strategy.view import MarketView, ProposedOrder
+from wxmm.core.types import AsOfRecord, ClockBoundStore, FrozenClock, InMemoryAsOfStore
+from wxmm.strategy.view import BookView, FillView, MarketView, PositionView, ProposedOrder
 
 UTC = timezone.utc
 
@@ -73,10 +68,57 @@ class HonestStrategy:
         return []
 
 
-def test_market_view_has_no_store_clock_venue_or_settlement() -> None:
-    view = MarketView(books=(), positions=(), fills=())
-    for name in ("store", "clock", "venue", "settlement"):
-        assert not hasattr(view, name)
+def test_market_view_slots_are_allowlist() -> None:
+    assert set(MarketView.__slots__) == {"books", "positions", "fills"}
+    assert set(BookView.__slots__) == {
+        "venue",
+        "market_id",
+        "two_sided",
+        "bid_cents",
+        "ask_cents",
+        "bid_size",
+        "ask_size",
+        "ask_size_known",
+        "volume",
+        "reconstructed",
+        "staleness",
+    }
+    assert set(PositionView.__slots__) == {
+        "venue",
+        "market_id",
+        "quantity",
+        "avg_price_cents",
+    }
+    assert set(FillView.__slots__) == {
+        "venue",
+        "market_id",
+        "side",
+        "price_cents",
+        "quantity",
+    }
+    for forbidden in ("store", "clock", "venue", "settlement", "valid_at", "available_at"):
+        assert forbidden not in MarketView.__slots__
+    assert "valid_at" not in BookView.__slots__
+    assert "available_at" not in BookView.__slots__
+
+
+def _no_get_capable_fields(obj: object) -> None:
+    for name in type(obj).__slots__:
+        val = getattr(obj, name)
+        getter = getattr(val, "get", None)
+        if callable(getter) and not isinstance(val, (str, bytes)):
+            raise AssertionError(
+                f"{type(obj).__name__}.{name} is get-capable ({type(val).__name__}); "
+                "a strategy could reach a store through a field it was handed"
+            )
+
+
+def test_populated_book_view_has_no_get_capable_fields() -> None:
+    store, clock = _store_with_book_and_future_outcome()
+    view = build_market_view(store=store, clock=clock, book_keys=[("kalshi", BOOK_KEY)])
+    assert view.books
+    _no_get_capable_fields(view)
+    _no_get_capable_fields(view.books[0])
 
 
 def test_cheating_strategy_cannot_reach_store_from_view() -> None:

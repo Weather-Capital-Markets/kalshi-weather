@@ -29,12 +29,13 @@ from wxmm.backtest.settle import (
 )
 from wxmm.core.money import Money
 from wxmm.core.types import (
-    AsOfRecord,
     BookSnapshot,
     ClockBoundStore,
     InMemoryAsOfStore,
     Order,
     Trade,
+    published_record,
+    require_clock_bound_store,
 )
 from wxmm.core.utc import require_utc
 from wxmm.data.quality import CoverageRow, build_coverage_report, row_from_book
@@ -69,6 +70,7 @@ def run(
     held_out_unlock: HeldOutUnlock | None = None,
     rounding: FeeRounding = FeeRounding.PER_ORDER_CENT,
     inner_store: InMemoryAsOfStore | None = None,
+    store: object | None = None,
     observations: Sequence[Observation] | None = None,
     settlement_fee_policy: SettlementFeePolicy | None = None,
     yes_if_at_least: Mapping[str, int] | None = None,
@@ -94,6 +96,8 @@ def run(
 
     ordered = sorted(events, key=lambda ev: (require_utc(ev.ts), ev.kind, ev.market_id))
     extra: dict[str, Any] = {"ledger": [entry.payload for entry in ledger.entries]}
+    if store is not None:
+        require_clock_bound_store(store)
     if not ordered:
         coverage = build_coverage_report(list(coverage_rows or ()))
         snap = vintage.snapshot().snapshot_id if vintage is not None else snapshot_id_for(())
@@ -111,7 +115,10 @@ def run(
         )
 
     clock = SimClock(ordered[0].ts)
-    store = ClockBoundStore(inner_store or InMemoryAsOfStore(), clock)
+    if store is not None:
+        bound = require_clock_bound_store(store)
+    else:
+        bound = ClockBoundStore(inner_store or InMemoryAsOfStore(), clock)
     fills: list[Fill] = []
     fill_views: list[FillView] = []
     pnl = Money.zero()
@@ -125,12 +132,12 @@ def run(
         climate_for_market[event.market_id] = event.climate_day
         if event.kind == "book" and isinstance(event.payload, BookSnapshot):
             last_book[event.market_id] = event.payload
-            store.put(
-                AsOfRecord(
+            bound.put(
+                published_record(
                     key=f"book:{event.market_id}",
                     payload=event.payload,
                     valid_at=event.ts,
-                    available_at=event.ts,
+                    source_published_at=event.ts,
                     source="replay",
                     ingest_run_id="replay",
                 )
@@ -141,7 +148,7 @@ def run(
         )
         book_keys = tuple((venue.name, f"book:{mid}") for mid in last_book)
         view = build_market_view(
-            store=store,
+            store=bound,
             clock=clock,
             book_keys=book_keys,
             positions=positions,

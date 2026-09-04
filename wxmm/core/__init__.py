@@ -39,6 +39,8 @@ from wxmm.core.types import (
     FrozenClock,
     InMemoryAsOfStore,
     VenueFact,
+    published_record,
+    require_clock_bound_store,
 )
 from wxmm.core.underlying import Underlying, UnderlyingRegistry
 from wxmm.core.utc import require_utc
@@ -69,5 +71,7 @@ __all__ = [
     "VenueFact",
     "WallClockError",
     "WxmmError",
+    "published_record",
+    "require_clock_bound_store",
     "require_utc",
 ]

@@ -17,7 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Iterable
 
-from wxmm.core.types import AsOfRecord, InMemoryAsOfStore
+from wxmm.core.types import AsOfRecord, InMemoryAsOfStore, published_record
 from wxmm.core.utc import require_utc
 
 NBM_BUCKET = "s3://noaa-nbm-grib2-pds"
@@ -88,11 +88,12 @@ class VintageStore:
         ingest_run_id: str,
         availability: str = "known",
     ) -> AsOfRecord:
-        record = AsOfRecord(
+        """Write a record. ``available_at`` is source publication time, not ingest now."""
+        record = published_record(
             key=key,
             payload=payload,
             valid_at=valid_at,
-            available_at=available_at,
+            source_published_at=available_at,
             source=source,
             ingest_run_id=ingest_run_id,
             availability=availability,

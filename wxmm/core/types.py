@@ -123,6 +123,33 @@ class AsOfRecord:
             raise ValueError(f"availability must be known|unknown, not {self.availability!r}")
 
 
+def published_record(
+    *,
+    key: str,
+    payload: object,
+    valid_at: datetime,
+    source_published_at: datetime,
+    source: str,
+    ingest_run_id: str,
+    availability: str = "known",
+) -> AsOfRecord:
+    """Public door for durable records.
+
+    ``available_at`` is the source's publication time (``source_published_at``),
+    never ingest wall-clock. Ingest modules must call this (or the typed
+    helpers in ``wxmm.data.ingest.timestamps``), not ``AsOfRecord(...)``.
+    """
+    return AsOfRecord(
+        key=key,
+        payload=payload,
+        valid_at=valid_at,
+        available_at=source_published_at,
+        source=source,
+        ingest_run_id=ingest_run_id,
+        availability=availability,
+    )
+
+
 def assert_available(record: AsOfRecord, as_of: datetime, *, key: str | None = None) -> None:
     """Raise ``LeakageError`` if ``record`` is not readable at ``as_of``.
 
@@ -214,6 +241,16 @@ class InMemoryAsOfStore:
         """Read this exact record, or ``LeakageError`` — never skip it."""
         assert_available(record, as_of)
         return record
+
+
+def require_clock_bound_store(store: object) -> ClockBoundStore:
+    """Replay / harness refuse a raw ``AsOfStore``. LeakageError is not optional."""
+    if not isinstance(store, ClockBoundStore):
+        raise TypeError(
+            f"unbound store refused: {type(store).__name__}; "
+            "replay and MarketView construction require ClockBoundStore"
+        )
+    return store
 
 
 class ClockBoundStore:

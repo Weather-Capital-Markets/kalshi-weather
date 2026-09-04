@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from wxmm.core.errors import SourceTimestampRequired
-from wxmm.core.types import AsOfRecord
+from wxmm.core.types import AsOfRecord, published_record
 from wxmm.core.utc import require_utc
 
 VOID_NBM_ASSUMED_LATENCY_MIN = 60
@@ -103,11 +103,11 @@ def wunderground_record(
     The leakage guard treats unknown availability as not yet available at
     any as_of — never as 'assume it was published'.
     """
-    return AsOfRecord(
+    return published_record(
         key=key,
         payload=payload,
         valid_at=valid_at,
-        available_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
+        source_published_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
         source="wunderground",
         ingest_run_id=ingest_run_id,
         availability=AVAILABILITY_UNKNOWN,
@@ -123,11 +123,11 @@ def kalshi_candle_record(
     ingest_run_id: str,
 ) -> AsOfRecord:
     available = kalshi_candle_available_at(emission_ts)
-    return AsOfRecord(
+    return published_record(
         key=key,
         payload=payload,
         valid_at=valid_at,
-        available_at=available,
+        source_published_at=available,
         source="kalshi_candle",
         ingest_run_id=ingest_run_id,
         availability=AVAILABILITY_KNOWN,
@@ -143,11 +143,11 @@ def clinyc_record(
     ingest_run_id: str,
 ) -> AsOfRecord:
     available = clinyc_available_at(issuance_ts_from_product)
-    return AsOfRecord(
+    return published_record(
         key=key,
         payload=payload,
         valid_at=valid_at,
-        available_at=available,
+        source_published_at=available,
         source="clinyc_afos",
         ingest_run_id=ingest_run_id,
         availability=AVAILABILITY_KNOWN,
@@ -165,11 +165,11 @@ def nbm_cycle_record(
     body = dict(payload) if isinstance(payload, dict) else {"value": payload}
     body["cycle_latency_min"] = publication.latency_min
     body["cycle_nominal_utc"] = publication.cycle_nominal_utc.isoformat()
-    return AsOfRecord(
+    return published_record(
         key=key,
         payload=body,
         valid_at=valid_at,
-        available_at=nbm_available_at(publication),
+        source_published_at=nbm_available_at(publication),
         source="nbm_idx",
         ingest_run_id=ingest_run_id,
         availability=AVAILABILITY_KNOWN,

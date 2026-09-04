@@ -6,7 +6,15 @@ from datetime import timedelta
 from typing import Sequence
 
 from wxmm.core.errors import LeakageError
-from wxmm.core.types import AsOfRecord, BookSnapshot, Clock, ClockBoundStore, Order, Side
+from wxmm.core.types import (
+    AsOfRecord,
+    BookSnapshot,
+    Clock,
+    ClockBoundStore,
+    Order,
+    Side,
+    require_clock_bound_store,
+)
 from wxmm.strategy.view import BookView, FillView, MarketView, PositionView, ProposedOrder
 
 
@@ -61,10 +69,11 @@ def build_market_view(
     fills: Sequence[FillView] = (),
 ) -> MarketView:
     """Read books at ``clock.now()``. Future/unknown records raise LeakageError."""
+    bound = require_clock_bound_store(store)
     now = clock.now()
     books: list[BookView] = []
     for venue, key in book_keys:
-        rec = store.get(key, as_of=now)
+        rec = bound.get(key, as_of=now)
         if rec.availability != "known":
             raise LeakageError(f"AVAILABILITY_UNKNOWN cannot enter MarketView key={key!r}")
         if rec.available_at > now:
