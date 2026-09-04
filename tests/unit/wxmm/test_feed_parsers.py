@@ -82,5 +82,86 @@ def test_dollar_prices_convert_via_decimal() -> None:
     assert isinstance(payload_f, dict)
     assert payload_f["yes_bid_cents"] == 40
     assert "float(" not in inspect.getsource(feed_mod._cents)
-    assert "float(" not in inspect.getsource(feed_mod._best_level)
     assert "float(" not in inspect.getsource(feed_mod._dollars_to_cents)
+    assert "float(" not in inspect.getsource(feed_mod._qty)
+    assert "float(" not in inspect.getsource(feed_mod._best_bid_from_levels)
+    assert "float(" not in inspect.getsource(feed_mod._kalshi_orderbook_top)
+    src = Path(feed_mod.__file__).read_text(encoding="utf-8")
+    assert "from analysis" not in src
+    assert "import analysis" not in src
+
+
+def test_live_kalshi_logger_orderbook_yes_no_ladder() -> None:
+    received = datetime(2026, 9, 4, 3, 5, tzinfo=UTC)
+    payload = json.loads((FIX / "kalshi_logger_orderbook.json").read_text())
+    update = parse_kalshi_ticker(payload, received_at=received)
+    body = update.payload
+    assert isinstance(body, dict)
+    assert update.market_id == "KXHIGHNY-26SEP04-B84.5"
+    assert body["yes_bid_cents"] == 52
+    assert body["yes_ask_cents"] == 55
+    assert body["bid_size"] == 28
+    assert body["ask_size"] == 6
+    assert update.valid_at == datetime(2026, 9, 4, 3, 1, tzinfo=UTC)
+
+
+def test_live_kalshi_markets_ticker_uses_ticker_not_market_ticker() -> None:
+    received = datetime(2026, 9, 4, 3, 5, tzinfo=UTC)
+    payload = json.loads((FIX / "kalshi_market_ticker.json").read_text())
+    update = parse_kalshi_ticker(payload, received_at=received)
+    body = update.payload
+    assert isinstance(body, dict)
+    assert update.market_id == "KXHIGHNY-26SEP04-B84.5"
+    assert body["yes_bid_cents"] == 52
+    assert body["yes_ask_cents"] == 55
+    assert body["bid_size"] == 28
+    assert body["ask_size"] == 6
+
+
+def test_kalshi_rest_orderbook_fp_without_logger_envelope() -> None:
+    received = datetime(2026, 9, 4, 3, 5, tzinfo=UTC)
+    envelope = json.loads((FIX / "kalshi_logger_orderbook.json").read_text())
+    body = envelope["payload"]
+    update = parse_kalshi_rest_book(
+        body,
+        received_at=received,
+        market_id="KXHIGHNY-26SEP04-B84.5",
+    )
+    payload = update.payload
+    assert isinstance(payload, dict)
+    assert payload["yes_bid_cents"] == 52
+    assert payload["yes_ask_cents"] == 55
+
+
+def test_live_polymarket_clob_best_is_not_first_level() -> None:
+    received = datetime(2026, 9, 4, 3, 5, tzinfo=UTC)
+    raw = json.loads((FIX / "polymarket_clob_book.json").read_text())
+    update = parse_polymarket_clob(raw, received_at=received)
+    payload = update.payload
+    assert isinstance(payload, dict)
+    assert payload["yes_bid_cents"] == 40
+    assert payload["yes_ask_cents"] == 41
+    assert payload["bid_size"] == 1655
+    assert payload["ask_size"] == 299
+    assert update.valid_at == datetime(2026, 9, 4, 3, 3, 6, 713000, tzinfo=UTC)
+
+
+def test_kalshi_empty_book_extremes_are_clipped() -> None:
+    received = datetime(2026, 7, 4, 16, 0, 1, tzinfo=UTC)
+    update = parse_kalshi_ticker(
+        {
+            "market_ticker": "M",
+            "yes_bid_cents": 0,
+            "yes_ask_cents": 100,
+            "yes_bid_size": 3,
+            "yes_ask_size": 4,
+        },
+        received_at=received,
+    )
+    payload = update.payload
+    assert isinstance(payload, dict)
+    assert payload["yes_bid_cents"] is None
+    assert payload["yes_ask_cents"] is None
+    assert payload["two_sided"] is False
+    assert payload["bid_size"] is None
+    assert payload["ask_size"] is None
