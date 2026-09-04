@@ -76,6 +76,43 @@ def test_asos_fetch_month_uses_timezone_aware_iem_timestamps(tmp_path: Path) -> 
     assert captured["ets"] == "2025-05-31T23:59:59Z"
 
 
+def test_asos_header_only_csv_does_not_mark_complete(tmp_path: Path) -> None:
+    config = {
+        "storage": {
+            "raw_dir": str(tmp_path / "raw"),
+            "backfill_db": str(tmp_path / "backfill.sqlite"),
+        },
+        "api": {
+            "timeout_sec": 5,
+            "max_requests_per_sec": 1,
+            "paths": {"markets": "/markets"},
+        },
+        "asos_obs": {
+            "start_date": "2025-05-01",
+            "stations": ["NYC"],
+            "network": "NY_ASOS",
+        },
+    }
+    backfill = AsosObsBackfill(config)
+    backfill.client = MagicMock()
+    backfill.client.get.return_value = RequestResult(
+        status_code=200,
+        latency_ms=1,
+        json_body=None,
+        error_text=None,
+        endpoint="/cgi-bin/request/asos.py",
+        text_body="station,valid,tmpf\n",
+    )
+    backfill._fetch_month("NYC", "2025-05", can_complete=True)
+    backfill.close()
+
+    conn = connect(config["storage"]["backfill_db"])
+    init_backfill_schema(conn)
+    init_state_schema(conn)
+    assert not asos_month_complete(conn, "NYC", "2025-05")
+    conn.close()
+
+
 def test_asos_backfill_writes_raw_and_marks_month_complete(tmp_path: Path) -> None:
     config = {
         "storage": {

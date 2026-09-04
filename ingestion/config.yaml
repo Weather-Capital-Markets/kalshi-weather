@@ -78,9 +78,14 @@ bracket_enumeration:
   out_dir: "analysis/out"
   start_date: "2021-08-05"
 
+forecast_vs_market:
+  out_dir: "analysis/out"
+  horizon_h: 24
+  primary_band: [0.10, 0.90]
+
 nbm_latency_check:
   out_dir: "analysis/out"
-  assumed_latency_min: 60
+  assumed_latency_min: 441
   min_cycles: 20
 
 nbm_availability_watch:
@@ -88,22 +93,24 @@ nbm_availability_watch:
   poll_interval_sec: 300
   min_cycles: 6
   max_watch_age_hours: 12
-  assumed_latency_min: 60
+  assumed_latency_min: 441
   sources: ["aws", "nomads"]
 
 nbm_archive:
   base_url: "https://noaa-nbm-grib2-pds.s3.amazonaws.com"
-  publication_latency_min: 60
+  publication_latency_min: 441
+  publication_latency_max_min: 453
   station_lat: 40.779
   station_lon: -73.969
-  start_date: "2021-08-05"
+  start_date: "2022-12-11"
   end_date: "2026-05-03"
   snapshot_horizon_h: 24
-  decoded_dir: "data/nbm/decoded"
+  decoded_dir: "data/nbm/decoded_v441"
+  backfill_db: "data/backfill_v441.sqlite"
   # K2 calibration scope: 9 deciles of the 18-h max-window ladder, not all 99 levels.
   percentile_levels: [10, 20, 30, 40, 50, 60, 70, 80, 90]
   sample_size: 300
-  sample_seed: 42
+  sample_seed: 43
   # v4.2 boundary splits early (v4.0/v4.1) vs late (v4.2/v4.3) within the market span.
   sub_era_split: "2024-05-15"
 

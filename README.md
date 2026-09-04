@@ -13,7 +13,7 @@ logger; analysis, models, and weather ingestion come in later sessions.
 ## Quick start (local)
 
 ```bash
-git clone https://github.com/YOUR_USER/kalshi-weather.git
+git clone https://github.com/Weather-Capital-Markets/kalshi-weather.git
 cd kalshi-weather
 
 python3.11 -m venv .venv
@@ -377,7 +377,8 @@ in `ingestion/config.yaml` so multi-level depth metrics are meaningful.
 # A. Extended window mismatch (CLI lst/ldt + ASOS KNYC; window_mismatch_k2.csv)
 python -m analysis.window_mismatch
 
-# B. NBM qmd archive probe (paste output before bulk backfill)
+# B. NBM qmd archive (empirical vintage; writes data/nbm/decoded_v441/)
+python -m ingestion.nbm_archive --vintage-calibrate
 python -m ingestion.nbm_archive --probe
 python -m ingestion.nbm_archive --dry-run
 python -m ingestion.nbm_archive
@@ -389,8 +390,11 @@ whole 283 MB grib2 files. Requires `requirements-analysis.txt` (cfgrib, pyarrow)
 ```bash
 # Session 6b — K2 blocking prerequisites (measurement only; 6c gated)
 python -m analysis.bracket_enumeration
-python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > 60 min
+python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > assumed (441 min)
 python -m analysis.nbm_availability_watch --mode tick   # VPS timer: first-availability poll
 python -m analysis.nbm_availability_watch --mode report   # summarize CSV
+
+# Session 6c — NBM forecast vs market at T-24h (300-day decoded_v441 sample)
+python -m analysis.forecast_vs_market
 ```
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Literal
+from typing import Callable, Literal
 
 IDX_LINE_RE = re.compile(
     r"^(?P<msg>\d+):(?P<byte_offset>\d+):"
@@ -26,6 +26,14 @@ WINDOW_STAT_RE = re.compile(r"^(?P<start>\d+)-(?P<end>\d+) hour max fcst$")
 QMD_WINDOW_FORECAST_HOURS: tuple[int, ...] = tuple(range(18, 271, 12))
 # Window max/min qmd products exist on 00Z and 12Z cycles only (§3.2).
 MAX_PRODUCT_CYCLE_HOURS: tuple[int, ...] = (0, 12)
+
+# Measured qmd grib publication latency (Session 6b-fix / 7e).
+DEFAULT_PUBLICATION_LATENCY_P90_MIN = 441
+DEFAULT_PUBLICATION_LATENCY_MAX_MIN = 453
+
+
+class VintageAvailabilityError(RuntimeError):
+    """Selected vintage would not be available at the T-24h snapshot (V1)."""
 
 
 @dataclass(frozen=True)
@@ -60,6 +68,33 @@ class IdxLine:
         if not match:
             return None
         return int(match.group(1))
+
+
+@dataclass(frozen=True)
+class MatchedWindow:
+    forecast_hour: int
+    idx_lines: tuple[IdxLine, ...]
+    window_start_utc: datetime
+    window_end_utc: datetime
+
+
+@dataclass(frozen=True)
+class VintageSelection:
+    cycle: datetime
+    forecast_hour: int
+    matched_lines: tuple[IdxLine, ...]
+    forecast_lead_h: float
+    publication_utc_p90: datetime
+    publication_utc_max: datetime
+    snapshot_utc: datetime
+
+    @property
+    def snapshot_margin_min_p90(self) -> float:
+        return (self.snapshot_utc - self.publication_utc_p90).total_seconds() / 60.0
+
+    @property
+    def snapshot_margin_min_max(self) -> float:
+        return (self.snapshot_utc - self.publication_utc_max).total_seconds() / 60.0
 
 
 @dataclass(frozen=True)
@@ -308,3 +343,135 @@ def era_band_for_date(climate_date: date) -> EraBand:
     if climate_date < date(2026, 5, 4):
         return "v4_retrospective"
     return "v5_prospective"
+
+
+def target_max_window_end_utc(climate_date: date) -> datetime:
+    """Climate max window ends 06Z on the day after climate_date (12Z + 18h)."""
+    return datetime(
+        climate_date.year,
+        climate_date.month,
+        climate_date.day,
+        12,
+        tzinfo=timezone.utc,
+    ) + timedelta(hours=18)
+
+
+def target_max_window_start_utc(climate_date: date) -> datetime:
+    return target_max_window_end_utc(climate_date) - timedelta(hours=18)
+
+
+def select_forecast_hours_for_cycle(cycle_hour: int) -> list[int]:
+    return [fh for fh in QMD_WINDOW_FORECAST_HOURS if max_product_for_cycle_hour(cycle_hour, fh)]
+
+
+def match_max_window_in_idx(
+    lines: list[IdxLine],
+    *,
+    cycle_dt: datetime,
+    climate_date: date,
+    percentile_levels: set[int] | None = None,
+) -> MatchedWindow | None:
+    """Return idx-confirmed max-window match for a climate day's 12Z-06Z window."""
+    target_end = target_max_window_end_utc(climate_date)
+    target_start = target_max_window_start_utc(climate_date)
+    by_forecast: dict[int, list[IdxLine]] = {}
+    for line in lines:
+        if not line.is_max_window_percentile:
+            continue
+        hours = line.window_hours
+        if hours is None:
+            continue
+        forecast_hour = hours[1]
+        if max_window_end_utc(cycle_dt, forecast_hour) != target_end:
+            continue
+        if percentile_levels is not None and line.percentile_level not in percentile_levels:
+            continue
+        by_forecast.setdefault(forecast_hour, []).append(line)
+    if not by_forecast:
+        return None
+    forecast_hour = max(by_forecast)
+    matched = tuple(by_forecast[forecast_hour])
+    return MatchedWindow(
+        forecast_hour=forecast_hour,
+        idx_lines=matched,
+        window_start_utc=target_start,
+        window_end_utc=target_end,
+    )
+
+
+def forecast_lead_hours(cycle_dt: datetime, climate_date: date) -> float:
+    """Hours from cycle nominal to climate max window start (12Z on climate day)."""
+    window_start = target_max_window_start_utc(climate_date)
+    return (window_start - cycle_dt).total_seconds() / 3600.0
+
+
+def assert_vintage_available(
+    cycle: datetime,
+    snapshot_utc: datetime,
+    *,
+    latency_p90_min: int,
+) -> datetime:
+    """V1: publication at p90 latency must be strictly before snapshot."""
+    pub = publication_utc(cycle, latency_p90_min)
+    if pub >= snapshot_utc:
+        raise VintageAvailabilityError(
+            f"vintage {cycle.isoformat()} publication_utc={pub.isoformat()} "
+            f"is not strictly before snapshot_utc={snapshot_utc.isoformat()} "
+            f"(latency_p90_min={latency_p90_min})"
+        )
+    return pub
+
+
+def available_max_cycles(
+    snapshot_utc: datetime,
+    *,
+    latency_max_min: int,
+) -> list[datetime]:
+    """00Z/12Z cycles with conservative (max) publication before snapshot."""
+    return [
+        cycle
+        for cycle in candidate_max_cycles_for_snapshot(snapshot_utc)
+        if publication_utc(cycle, latency_max_min) < snapshot_utc
+    ]
+
+
+def empirical_vintage_for_climate_date(
+    climate_date: date,
+    snapshot_utc: datetime,
+    *,
+    fetch_idx: Callable[[datetime, int], str | None],
+    latency_p90_min: int = DEFAULT_PUBLICATION_LATENCY_P90_MIN,
+    latency_max_min: int = DEFAULT_PUBLICATION_LATENCY_MAX_MIN,
+    percentile_levels: set[int] | None = None,
+) -> VintageSelection | None:
+    """Select latest cycle whose idx confirms the climate max window (empirical)."""
+    candidates = sorted(available_max_cycles(snapshot_utc, latency_max_min=latency_max_min))
+    for cycle in reversed(candidates):
+        for forecast_hour in select_forecast_hours_for_cycle(cycle.hour):
+            idx_text = fetch_idx(cycle, forecast_hour)
+            if not idx_text:
+                continue
+            matched = match_max_window_in_idx(
+                parse_idx_text(idx_text),
+                cycle_dt=cycle,
+                climate_date=climate_date,
+                percentile_levels=percentile_levels,
+            )
+            if matched is None:
+                continue
+            pub_p90 = assert_vintage_available(
+                cycle,
+                snapshot_utc,
+                latency_p90_min=latency_p90_min,
+            )
+            pub_max = publication_utc(cycle, latency_max_min)
+            return VintageSelection(
+                cycle=cycle,
+                forecast_hour=matched.forecast_hour,
+                matched_lines=matched.idx_lines,
+                forecast_lead_h=forecast_lead_hours(cycle, climate_date),
+                publication_utc_p90=pub_p90,
+                publication_utc_max=pub_max,
+                snapshot_utc=snapshot_utc,
+            )
+    return None
