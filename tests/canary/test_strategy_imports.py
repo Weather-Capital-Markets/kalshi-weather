@@ -36,7 +36,9 @@ def _scan(path: Path) -> list[str]:
                 for alias in node.names:
                     nested = _blocked(f"wxmm.{alias.name}")
                     if nested:
-                        hits.append(f"{path}:{node.lineno} from wxmm import {alias.name} ({nested})")
+                        hits.append(
+                            f"{path}:{node.lineno} from wxmm import {alias.name} ({nested})"
+                        )
     return hits
 
 

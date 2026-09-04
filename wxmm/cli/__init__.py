@@ -17,8 +17,8 @@ from wxmm.ops.console import ConsoleState, render
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wxmm", description="WXMM ops console (no order router)")
     sub = parser.add_subparsers(dest="cmd")
-    sub.add_parser("ingest", help="ingest wrapper (source timestamps required; no wall-clock default)")
-    sub.add_parser("replay", help="replay wrapper (requires a pre-registered config; no order send)")
+    sub.add_parser("ingest", help="ingest wrapper (source timestamps; no wall-clock default)")
+    sub.add_parser("replay", help="replay wrapper (pre-registered config; no order send)")
     sub.add_parser("report", help="report wrapper (coverage/ledger; no business logic)")
     sub.add_parser("console", help="print an empty console skeleton")
     sub.add_parser("ledger", help="ledger wrapper (append-only records; no business logic)")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Sequence
 
 from wxmm.core.errors import UnverifiedSettlementFee
 from wxmm.core.money import Money
@@ -53,13 +54,14 @@ class ResolutionPath:
 def resolve_at(
     venue: str,
     climate_day: date,
-    observations: tuple[Observation, ...] | list[Observation],
+    observations: Sequence[Observation],
     as_of: datetime,
 ) -> SettlementResult:
+    obs = tuple(observations)
     if venue == "kalshi":
-        return kalshi_resolver.resolve(climate_day, observations, as_of)
+        return kalshi_resolver.resolve(climate_day, obs, as_of)
     if venue == "polymarket":
-        return pm_resolver.resolve(climate_day, observations, as_of)
+        return pm_resolver.resolve(climate_day, obs, as_of)
     raise KeyError(f"unknown venue {venue!r}")
 
 
@@ -72,7 +74,7 @@ def binary_payout_cents(high_f: int | None, *, yes_if_at_least: int) -> int | No
 
 def polymarket_resolution_path(
     climate_day: date,
-    observations: tuple[Observation, ...] | list[Observation],
+    observations: Sequence[Observation],
     *,
     as_of_final: datetime,
 ) -> ResolutionPath:
@@ -91,8 +93,9 @@ def polymarket_resolution_path(
         and obs.available_at <= as_of_final_utc
     ]
     as_of_initial = min(published) if published else as_of_final_utc
-    initial = pm_resolver.resolve(climate_day, observations, as_of_initial)
-    final = pm_resolver.resolve(climate_day, observations, as_of_final_utc)
+    obs = tuple(observations)
+    initial = pm_resolver.resolve(climate_day, obs, as_of_initial)
+    final = pm_resolver.resolve(climate_day, obs, as_of_final_utc)
     return ResolutionPath(
         climate_day=climate_day,
         venue="polymarket",
