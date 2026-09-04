@@ -17,6 +17,7 @@ from analysis.station_basis import (
     run,
     summarize_slice,
     whole_f,
+    withdraw_summer_ladder_brackets,
 )
 from ingestion.climate_time import AsosObservation, asos_max_for_climate_day
 from ingestion.writer import RawJsonlWriter, utc_now_iso
@@ -80,6 +81,19 @@ def test_summarize_slice_includes_headline_fraction() -> None:
     assert row["share_klga_warmer"] == 0.5
 
 
+def test_withdraw_summer_ladder_keeps_jja() -> None:
+    jja = withdraw_summer_ladder_brackets(
+        {"slice": "JJA", "bracket_disagree_frac": 0.12, "bracket_disagree_frac_middle": 0.1}
+    )
+    djf = withdraw_summer_ladder_brackets(
+        {"slice": "DJF", "bracket_disagree_frac": 0.0, "bracket_disagree_frac_middle": 0.0}
+    )
+    assert jja["bracket_status"] == "measured"
+    assert jja["bracket_disagree_frac"] == 0.12
+    assert djf["bracket_status"] == "withdrawn_summer_ladder"
+    assert pd.isna(djf["bracket_disagree_frac"])
+
+
 def _write_station_fixtures(raw_dir: Path) -> None:
     writer = RawJsonlWriter(raw_dir)
     nyc = Path(__file__).resolve().parent / "fixtures" / "asos_nyc_sample.csv"
@@ -112,6 +126,8 @@ def test_daily_max_table_from_fixture() -> None:
     ]
     maxes = daily_max_table(obs, start=date(2025, 5, 1), end=date(2025, 5, 1))
     assert maxes["2025-05-01"] == 81
+    dropped = daily_max_table(obs, start=date(2025, 5, 1), end=date(2025, 5, 1), min_obs=12)
+    assert dropped == {}
 
 
 def test_disagree_by_knyc_max_spikes_at_bin_edges() -> None:
@@ -134,8 +150,10 @@ def test_disagree_by_knyc_max_spikes_at_bin_edges() -> None:
     assert row86["bracket_disagree_frac"] == 0.0
     assert row40["bracket_disagree_frac"] == 0.0
 
+
 def test_station_basis_run_writes_csv_and_notes(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     raw_dir = tmp_path / "raw"
     _write_station_fixtures(raw_dir)
@@ -162,6 +180,10 @@ def test_station_basis_run_writes_csv_and_notes(
     summary = pd.read_csv(csv_path, comment="#")
     assert "overall" in summary["slice"].values
     assert "DJF" in summary["slice"].values
+    assert "ladder_interior" in summary["slice"].values
+    djf = summary[summary["slice"] == "DJF"].iloc[0]
+    assert djf["bracket_status"] == "withdrawn_summer_ladder"
+    assert pd.isna(djf["bracket_disagree_frac"])
     assert (out_dir / "station_basis_delta_hist.png").exists()
     assert (out_dir / "station_basis_disagree_by_season.png").exists()
     assert (out_dir / "station_basis_delta_by_month.png").exists()

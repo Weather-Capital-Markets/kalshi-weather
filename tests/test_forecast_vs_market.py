@@ -11,11 +11,17 @@ import pytest
 
 from analysis.bracket_enumeration import ParsedStrike, parse_market_strike
 from analysis.forecast_vs_market import (
+    TAIL_CLAMP,
+    TAIL_LINEAR,
+    attach_normalized_mids,
     bracket_id,
     bracket_probabilities_for_markets,
     bracket_probability,
     build_comparison_table,
     cdf_at_temperature,
+    k2_murphy_table,
+    k2_window_split,
+    select_unique_snapshot,
     settled_yes,
     summarize_comparison,
 )
@@ -70,9 +76,7 @@ def test_cdf_and_bracket_probability_monotone_ladder() -> None:
     levels = [10, 50, 90]
     values = [70.0, 75.0, 80.0]
     assert cdf_at_temperature(levels, values, 75.0) == pytest.approx(0.50, abs=0.01)
-    strike = parse_market_strike(
-        {"strike_type": "between", "floor_strike": 74, "cap_strike": 76}
-    )
+    strike = parse_market_strike({"strike_type": "between", "floor_strike": 74, "cap_strike": 76})
     assert strike is not None
     prob = bracket_probability(strike, levels, values)
     assert 0.0 < prob < 1.0
@@ -195,3 +199,59 @@ def test_build_comparison_table_with_synthetic_raw(tmp_path: Path) -> None:
     assert between["nbm_prob"] > 0.0
     summary = summarize_comparison(table)
     assert not summary.empty
+    assert "market_brier_normalized" in summary.columns
+    assert table["market_mid_normalized"].notna().all()
+    day_sum = table.groupby("climate_date")["market_mid_normalized"].sum()
+    assert day_sum.iloc[0] == pytest.approx(1.0)
+
+
+def test_tail_clamp_puts_mass_below_p10_at_zero() -> None:
+    levels = [10, 50, 90]
+    values = [70.0, 75.0, 80.0]
+    linear = cdf_at_temperature(levels, values, 67.5, tail=TAIL_LINEAR)
+    clamp = cdf_at_temperature(levels, values, 67.5, tail=TAIL_CLAMP)
+    assert linear > 0.0
+    assert clamp == pytest.approx(0.0)
+
+
+def test_select_unique_snapshot_raises_on_duplicates() -> None:
+    snap = pd.DataFrame({"ticker": ["A", "A"], "mid_carryforward": [0.2, 0.3]})
+    with pytest.raises(ValueError, match="duplicate snapshots"):
+        select_unique_snapshot(snap, ticker="A", horizon_h=24)
+    assert select_unique_snapshot(snap.iloc[0:0], ticker="A", horizon_h=24) is None
+
+
+def test_k2_window_split_include_and_exclude() -> None:
+    frame = pd.DataFrame(
+        {
+            "climate_date": ["2022-12-15", "2022-12-16"],
+            "in_primary_band": [True, True],
+            "settled_yes": [1.0, 0.0],
+            "nbm_prob": [0.8, 0.2],
+            "market_mid_carryforward": [0.7, 0.3],
+            "market_mid_normalized": [0.7, 0.3],
+            "edge_cf": [0.0, 0.0],
+            "two_sided_carryforward": [True, True],
+            "window_mismatch": [False, True],
+        }
+    )
+    split = k2_window_split(frame)
+    include = split[split["era"] == "include"].iloc[0]
+    exclude = split[split["era"] == "exclude_mismatch"].iloc[0]
+    assert include["n_obs"] == 2
+    assert exclude["n_obs"] == 1
+    murphy = k2_murphy_table(frame)
+    assert set(murphy["model"]) >= {"nbm", "market_cf"}
+
+
+def test_normalized_mids_leave_missing_alone() -> None:
+    frame = pd.DataFrame(
+        {
+            "climate_date": ["2022-12-15", "2022-12-15"],
+            "market_mid_carryforward": [0.40, None],
+            "nbm_prob": [0.5, 0.5],
+        }
+    )
+    out = attach_normalized_mids(frame)
+    assert out.loc[0, "market_mid_normalized"] == pytest.approx(1.0)
+    assert pd.isna(out.loc[1, "market_mid_normalized"])

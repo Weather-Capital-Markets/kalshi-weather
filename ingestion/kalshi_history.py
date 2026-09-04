@@ -475,10 +475,15 @@ class HistoryBackfill:
                 "status": row["status"],
             }
             open_ts = _unix(_parse_iso(row["open_time"]))
-            close_ts = _unix(_parse_iso(row["close_time"])) or int(time.time())
+            close_ts = _unix(_parse_iso(row["close_time"]))
             if open_ts is None:
                 logger.warning("skip %s: missing open_time", ticker)
                 continue
+            if close_ts is None:
+                raise RuntimeError(
+                    f"historical market {ticker} missing close_time; "
+                    "refusing wall-clock fallback"
+                )
             cursor_ts = int(progress["last_end_ts"]) if progress else open_ts
             while cursor_ts < close_ts and not self._shutdown:
                 window_end = min(close_ts, cursor_ts + self.chunk_sec)

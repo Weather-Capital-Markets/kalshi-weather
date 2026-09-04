@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from ingestion.asos_parse import load_asos_observations_from_raw
-from ingestion.climate_day import climate_date_of
+from ingestion.climate_day import climate_date_of, climate_day_end, climate_day_start
 from ingestion.climate_time import AsosObservation, asos_max_for_climate_day
 from ingestion.config_loader import load_config
 
@@ -32,6 +32,12 @@ NOTES_CAVEAT = (
     "basis: station-to-station difference only; provider-to-provider disagreement is "
     "unmeasured."
 )
+NOTE_SUMMER_LADDER = (
+    "NOTE: polymarket_bracket() hard-codes one observed summer ladder (≤75 / ≥94). "
+    "DJF/MAM/SON and overall bracket_disagree_frac are withdrawn_summer_ladder — "
+    "winter maxes all land in tail_below, so disagreement is arithmetically impossible. "
+    "Measured bracket rows are JJA and ladder_interior (both stations in 76–93°F)."
+)
 
 SEASONS = {
     "DJF": {12, 1, 2},
@@ -39,6 +45,10 @@ SEASONS = {
     "JJA": {6, 7, 8},
     "SON": {9, 10, 11},
 }
+LADDER_INTERIOR_LO = 76
+LADDER_INTERIOR_HI = 93
+COVERAGE_MIN_OBS = 12
+BRACKET_MEASURED_SLICES = frozenset({"JJA", "ladder_interior"})
 
 
 def whole_f(tmpf: float) -> int:
@@ -46,13 +56,27 @@ def whole_f(tmpf: float) -> int:
 
 
 def polymarket_bracket(max_f: int) -> str:
-    """Assign a whole-°F daily max to Polymarket's even-edged bracket ladder."""
+    """Assign a whole-°F daily max to one observed Polymarket even-edged summer ladder.
+
+    Cut points ≤75 / ≥94 are not a winter measurement. See NOTE_SUMMER_LADDER.
+    """
     if max_f <= 75:
         return "tail_below"
     if max_f >= 94:
         return "tail_above"
     low = max_f if max_f % 2 == 0 else max_f - 1
     return f"between_{low}-{low + 1}"
+
+
+def in_ladder_interior(max_f: int) -> bool:
+    return LADDER_INTERIOR_LO <= max_f <= LADDER_INTERIOR_HI
+
+
+def climate_day_obs_count(observations: list[AsosObservation], climate: str) -> int:
+    day = date.fromisoformat(climate)
+    start = climate_day_start(day)
+    end = climate_day_end(day)
+    return sum(1 for obs in observations if start <= obs.valid_utc < end)
 
 
 def season_of(climate_date: str | date) -> str:
@@ -69,8 +93,14 @@ def daily_max_table(
     *,
     start: date,
     end: date,
+    min_obs: int = 1,
 ) -> dict[str, int]:
-    """Return climate_date -> whole-°F daily max for days in [start, end]."""
+    """Return climate_date -> whole-°F daily max for days in [start, end].
+
+    Days with fewer than min_obs surviving observations in the LST climate day
+    are omitted. Default min_obs=1 keeps the historical inner-join n; run()
+    reports how many days COVERAGE_MIN_OBS would drop.
+    """
     by_day: dict[str, list[AsosObservation]] = {}
     for obs in observations:
         climate = climate_date_of(obs.valid_utc)
@@ -81,7 +111,11 @@ def daily_max_table(
     current = start
     while current <= end:
         climate = current.isoformat()
-        max_f, _ = asos_max_for_climate_day(by_day.get(climate, []), climate)
+        day_obs = by_day.get(climate, [])
+        if climate_day_obs_count(day_obs, climate) < min_obs:
+            current += timedelta(days=1)
+            continue
+        max_f, _ = asos_max_for_climate_day(day_obs, climate)
         if max_f is not None:
             maxes[climate] = whole_f(max_f)
         current += timedelta(days=1)
@@ -114,6 +148,7 @@ def build_paired_days(
                     "knyc_bracket": polymarket_bracket(knyc_f),
                     "klga_bracket": polymarket_bracket(klga_f),
                     "bracket_disagree": polymarket_bracket(knyc_f) != polymarket_bracket(klga_f),
+                    "ladder_interior": in_ladder_interior(knyc_f) and in_ladder_interior(klga_f),
                 }
             )
         current += timedelta(days=1)
@@ -144,6 +179,7 @@ def summarize_slice(frame: pd.DataFrame, *, slice_name: str) -> dict[str, Any]:
         "share_klga_warmer": round(float((delta > 0).mean()), 4) if n else float("nan"),
         "share_knyc_warmer": round(float((delta < 0).mean()), 4) if n else float("nan"),
         "bracket_disagree_frac": round(float(disagree.mean()), 4) if n else float("nan"),
+        "bracket_status": "measured",
         "bracket_disagree_frac_middle": float("nan"),
         "knyc_middle_p10": float("nan"),
         "knyc_middle_p90": float("nan"),
@@ -151,31 +187,23 @@ def summarize_slice(frame: pd.DataFrame, *, slice_name: str) -> dict[str, Any]:
     return row
 
 
-def add_middle_disagreement(
-    summary_rows: list[dict[str, Any]],
-    paired: pd.DataFrame,
-) -> list[dict[str, Any]]:
-    if paired.empty:
-        return summary_rows
-    p10 = float(paired["knyc_max_f"].quantile(0.10))
-    p90 = float(paired["knyc_max_f"].quantile(0.90))
-    middle = paired[(paired["knyc_max_f"] >= p10) & (paired["knyc_max_f"] <= p90)]
-    middle_frac = float(middle["bracket_disagree"].mean()) if not middle.empty else float("nan")
-    updated: list[dict[str, Any]] = []
-    for row in summary_rows:
-        new_row = dict(row)
-        if row["slice"] == "overall":
-            new_row["bracket_disagree_frac_middle"] = round(middle_frac, 4)
-            new_row["knyc_middle_p10"] = round(p10, 1)
-            new_row["knyc_middle_p90"] = round(p90, 1)
-        updated.append(new_row)
-    return updated
+def withdraw_summer_ladder_brackets(row: dict[str, Any]) -> dict[str, Any]:
+    """Null seasonal/overall bracket fractions that are not measurements."""
+    out = dict(row)
+    if out["slice"] in BRACKET_MEASURED_SLICES:
+        out["bracket_status"] = "measured"
+        return out
+    out["bracket_status"] = "withdrawn_summer_ladder"
+    out["bracket_disagree_frac"] = float("nan")
+    out["bracket_disagree_frac_middle"] = float("nan")
+    return out
 
 
 def write_summary_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         handle.write(f"# {NOTES_CAVEAT}\n")
+        handle.write(f"# {NOTE_SUMMER_LADDER}\n")
         handle.write(
             "# whole-°F daily max = round(IEM ASOS tmpf); "
             "LST climate day per data-sources.md §1.1\n"
@@ -202,15 +230,19 @@ def _plot_delta_hist(frame: pd.DataFrame, path: Path) -> None:
 
 def _plot_disagree_by_season(summary: pd.DataFrame, path: Path) -> None:
     season_rows = summary[summary["slice"].isin(SEASONS.keys())]
-    if season_rows.empty:
-        return
-    plt.figure(figsize=(7, 4))
-    plt.bar(season_rows["slice"], season_rows["bracket_disagree_frac"])
-    plt.ylabel("bracket_disagree_frac")
-    plt.xlabel("season")
-    plt.title("Different Polymarket bracket (even-edged ladder)")
-    plt.tight_layout()
+    if "bracket_status" in summary.columns:
+        season_rows = season_rows[season_rows["bracket_status"] == "measured"]
+    season_rows = season_rows[season_rows["n_days"] > 0]
     path.parent.mkdir(parents=True, exist_ok=True)
+    plt.figure(figsize=(7, 4))
+    if season_rows.empty:
+        plt.title("Measured seasonal bracket disagreement (none in this window)")
+    else:
+        plt.bar(season_rows["slice"], season_rows["bracket_disagree_frac"])
+        plt.ylabel("bracket_disagree_frac")
+        plt.xlabel("season")
+        plt.title("Different Polymarket bracket (JJA / interior only)")
+    plt.tight_layout()
     plt.savefig(path)
     plt.close()
 
@@ -312,6 +344,9 @@ def _print_slice(row: dict[str, Any]) -> None:
         f"share_knyc_warmer={row['share_knyc_warmer']}\n"
         f"bracket_disagree_frac={row['bracket_disagree_frac']}"
     )
+    status = row.get("bracket_status")
+    if status and status != "measured":
+        print(f"bracket_status={status}")
     if row["slice"] == "overall" and not pd.isna(row.get("knyc_middle_p10")):
         print(
             f"knyc middle band: [{row['knyc_middle_p10']}, {row['knyc_middle_p90']}] °F\n"
@@ -336,18 +371,35 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
 
     knyc_maxes = daily_max_table(knyc_obs, start=start, end=end)
     klga_maxes = daily_max_table(klga_obs, start=start, end=end)
+    knyc_cov = daily_max_table(knyc_obs, start=start, end=end, min_obs=COVERAGE_MIN_OBS)
+    klga_cov = daily_max_table(klga_obs, start=start, end=end, min_obs=COVERAGE_MIN_OBS)
     paired = build_paired_days(
         knyc_maxes=knyc_maxes,
         klga_maxes=klga_maxes,
         start=start,
         end=end,
     )
+    paired_cov = build_paired_days(
+        knyc_maxes=knyc_cov,
+        klga_maxes=klga_cov,
+        start=start,
+        end=end,
+    )
 
     print("=== NOTES ===")
     print(NOTES_CAVEAT)
+    print(NOTE_SUMMER_LADDER)
     print(f"window={start.isoformat()}..{end.isoformat()}")
     print(f"stations: KNYC={knyc_station}, KLGA={klga_station}")
     print("whole-°F daily max = round(IEM ASOS tmpf); LST climate day per data-sources.md §1.1")
+    print(
+        f"coverage knyc_days={len(knyc_maxes)} knyc_min_obs_{COVERAGE_MIN_OBS}={len(knyc_cov)} "
+        f"dropped={len(knyc_maxes) - len(knyc_cov)}; "
+        f"klga_days={len(klga_maxes)} klga_min_obs_{COVERAGE_MIN_OBS}={len(klga_cov)} "
+        f"dropped={len(klga_maxes) - len(klga_cov)}; "
+        f"paired={len(paired)} paired_min_obs_{COVERAGE_MIN_OBS}={len(paired_cov)} "
+        f"dropped={len(paired) - len(paired_cov)}"
+    )
 
     if paired.empty:
         print("no paired days with observations at both stations in range")
@@ -357,7 +409,13 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
     for season in ("DJF", "MAM", "JJA", "SON"):
         season_frame = paired[paired["season"] == season]
         summary_rows.append(summarize_slice(season_frame, slice_name=season))
-    summary_rows = add_middle_disagreement(summary_rows, paired)
+    if "ladder_interior" in paired.columns:
+        interior = paired[paired["ladder_interior"]]
+    else:
+        interior = paired.iloc[0:0]
+    summary_rows.append(summarize_slice(interior, slice_name="ladder_interior"))
+    summary_rows.append(summarize_slice(paired_cov, slice_name="coverage_min_obs_12"))
+    summary_rows = [withdraw_summer_ladder_brackets(row) for row in summary_rows]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "station_basis.csv"

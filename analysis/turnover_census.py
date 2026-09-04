@@ -42,8 +42,7 @@ NOTE_UPPER_BOUND = (
     "requires the logger (K4)."
 )
 NOTE_PREMIUM_ONCE = (
-    "NOTE: premium traded counts each trade once from the taker side; do not "
-    "double it."
+    "NOTE: premium traded counts each trade once from the taker side; do not " "double it."
 )
 NOTE_ERA_SPLIT = (
     "NOTE: 2021 is a distinct density regime (~1.3 brackets/day vs ~6/day from "
@@ -52,6 +51,12 @@ NOTE_ERA_SPLIT = (
 NOTE_KALSHI_ONLY = (
     "NOTE: Kalshi only. Polymarket has no historical equivalent — its volume "
     "history is not captured and cannot be backfilled."
+)
+NOTE_MEDIAN_OF_RATIOS = (
+    "NOTE: median_share_vol_last_Nh is the median of per-market-day ratios "
+    "(zero-volume days dropped). pooled_share_vol_last_Nh = Σ vol_last_Nh / "
+    "Σ contracts. Use the pooled share for where volume goes; the median "
+    "describes the typical dead bracket-day."
 )
 
 BAND_NAMES: tuple[str, ...] = ("10_90", "tails", "all")
@@ -206,6 +211,9 @@ def aggregate_market_day(
         "contracts_traded": contracts,
         "premium_traded": premium,
         "active_minutes": active_minutes,
+        "vol_last_1h": vol_last_1h,
+        "vol_last_3h": vol_last_3h,
+        "vol_last_6h": vol_last_6h,
         "share_vol_last_1h": (vol_last_1h / total) if total else float("nan"),
         "share_vol_last_3h": (vol_last_3h / total) if total else float("nan"),
         "share_vol_last_6h": (vol_last_6h / total) if total else float("nan"),
@@ -261,21 +269,25 @@ def build_market_day_table(
 def build_climate_day_table(market_days: pd.DataFrame) -> pd.DataFrame:
     if market_days.empty:
         return market_days
+    market_days = market_days.copy()
+    for hours in (1, 3, 6):
+        vol_col = f"vol_last_{hours}h"
+        if vol_col not in market_days.columns:
+            market_days[vol_col] = (
+                market_days[f"share_vol_last_{hours}h"] * market_days["contracts_traded"]
+            )
     mid_band = market_days[market_days["band"] == "10_90"]
     bracket_volumes = (
         mid_band[mid_band["contracts_traded"] > 0]
         .groupby(["climate_date", "season", "era", "ticker"], as_index=False)["contracts_traded"]
         .sum()
     )
-    concentration = (
-        bracket_volumes.groupby(["climate_date", "season", "era"], as_index=False)
-        .agg(
-            n_brackets_with_volume=("ticker", "nunique"),
-            top_bracket_share=(
-                "contracts_traded",
-                lambda s: float(s.max() / s.sum()) if s.sum() else float("nan"),
-            ),
-        )
+    concentration = bracket_volumes.groupby(["climate_date", "season", "era"], as_index=False).agg(
+        n_brackets_with_volume=("ticker", "nunique"),
+        top_bracket_share=(
+            "contracts_traded",
+            lambda s: float(s.max() / s.sum()) if s.sum() else float("nan"),
+        ),
     )
     grouped = market_days.groupby(
         ["climate_date", "season", "era", "band"],
@@ -284,10 +296,19 @@ def build_climate_day_table(market_days: pd.DataFrame) -> pd.DataFrame:
         premium_traded_climate_day=("premium_traded", "sum"),
         contracts_traded_climate_day=("contracts_traded", "sum"),
         n_brackets=("ticker", "nunique"),
-        share_vol_last_1h=("share_vol_last_1h", "mean"),
-        share_vol_last_3h=("share_vol_last_3h", "mean"),
-        share_vol_last_6h=("share_vol_last_6h", "mean"),
+        vol_last_1h=("vol_last_1h", "sum"),
+        vol_last_3h=("vol_last_3h", "sum"),
+        vol_last_6h=("vol_last_6h", "sum"),
     )
+    grouped["share_vol_last_1h"] = grouped["vol_last_1h"] / grouped[
+        "contracts_traded_climate_day"
+    ].replace(0, float("nan"))
+    grouped["share_vol_last_3h"] = grouped["vol_last_3h"] / grouped[
+        "contracts_traded_climate_day"
+    ].replace(0, float("nan"))
+    grouped["share_vol_last_6h"] = grouped["vol_last_6h"] / grouped[
+        "contracts_traded_climate_day"
+    ].replace(0, float("nan"))
     grouped = grouped.merge(
         concentration,
         on=["climate_date", "season", "era"],
@@ -295,6 +316,28 @@ def build_climate_day_table(market_days: pd.DataFrame) -> pd.DataFrame:
     )
     grouped["n_brackets_with_volume"] = grouped["n_brackets_with_volume"].fillna(0).astype(int)
     return grouped
+
+
+def _pooled_share(frame: pd.DataFrame, hours: int) -> float:
+    """Σ vol_last_Nh / Σ contracts. Zero-volume days contribute 0 to both sums."""
+    if frame.empty:
+        return float("nan")
+    vol_col = f"vol_last_{hours}h"
+    if vol_col in frame.columns:
+        vol = frame[vol_col].fillna(0.0)
+    else:
+        vol = (frame[f"share_vol_last_{hours}h"] * frame["contracts_traded"]).fillna(0.0)
+    contracts = float(frame["contracts_traded"].sum())
+    if contracts <= 0:
+        return float("nan")
+    return float(vol.sum() / contracts)
+
+
+def _median_share_active(frame: pd.DataFrame, hours: int, *, min_contracts: float) -> float:
+    active = frame[frame["contracts_traded"] >= min_contracts]
+    if active.empty:
+        return float("nan")
+    return float(active[f"share_vol_last_{hours}h"].median())
 
 
 def _distribution_stats(series: pd.Series) -> dict[str, float]:
@@ -388,6 +431,18 @@ def summarize_turnover(
                             if len(md_slice)
                             else float("nan")
                         ),
+                        "pooled_share_vol_last_1h": _pooled_share(md_slice, 1),
+                        "pooled_share_vol_last_3h": _pooled_share(md_slice, 3),
+                        "pooled_share_vol_last_6h": _pooled_share(md_slice, 6),
+                        "median_share_vol_last_1h_contracts_ge20": _median_share_active(
+                            md_slice, 1, min_contracts=20
+                        ),
+                        "median_share_vol_last_3h_contracts_ge20": _median_share_active(
+                            md_slice, 3, min_contracts=20
+                        ),
+                        "median_share_vol_last_6h_contracts_ge20": _median_share_active(
+                            md_slice, 6, min_contracts=20
+                        ),
                         **{f"climate_day_premium_{k}": v for k, v in climate_premium_dist.items()},
                     }
                 )
@@ -420,14 +475,13 @@ def write_outputs(summary: pd.DataFrame, out_dir: Path) -> Path:
         handle.write(f"# {NOTE_PREMIUM_ONCE}\n")
         handle.write(f"# {NOTE_ERA_SPLIT}\n")
         handle.write(f"# {NOTE_KALSHI_ONLY}\n")
+        handle.write(f"# {NOTE_MEDIAN_OF_RATIOS}\n")
     summary.to_csv(csv_path, mode="a", index=False)
     return csv_path
 
 
 def _plot_volume_by_season(climate_days: pd.DataFrame, path: Path) -> None:
-    plot = climate_days[
-        (climate_days["band"] == "10_90") & (climate_days["era"] == "2022_plus")
-    ]
+    plot = climate_days[(climate_days["band"] == "10_90") & (climate_days["era"] == "2022_plus")]
     if plot.empty:
         return
     data = [
@@ -473,12 +527,12 @@ def _plot_volume_vs_time_to_close(time_volumes: pd.DataFrame, path: Path) -> Non
 
 
 def _plot_volume_by_price_region(climate_days: pd.DataFrame, path: Path) -> None:
-    mid = climate_days[
-        (climate_days["band"] == "10_90") & (climate_days["era"] == "2022_plus")
-    ][["climate_date", "season", "contracts_traded_climate_day"]]
-    tails = climate_days[
-        (climate_days["band"] == "tails") & (climate_days["era"] == "2022_plus")
-    ][["climate_date", "season", "contracts_traded_climate_day"]]
+    mid = climate_days[(climate_days["band"] == "10_90") & (climate_days["era"] == "2022_plus")][
+        ["climate_date", "season", "contracts_traded_climate_day"]
+    ]
+    tails = climate_days[(climate_days["band"] == "tails") & (climate_days["era"] == "2022_plus")][
+        ["climate_date", "season", "contracts_traded_climate_day"]
+    ]
     if mid.empty and tails.empty:
         return
     merged = mid.merge(
@@ -492,8 +546,7 @@ def _plot_volume_by_price_region(climate_days: pd.DataFrame, path: Path) -> None
     ).replace(0, float("nan"))
     fig, ax = plt.subplots(figsize=(8, 4))
     data = [
-        merged.loc[merged["season"] == season, "share_10_90"].dropna().values
-        for season in SEASONS
+        merged.loc[merged["season"] == season, "share_10_90"].dropna().values for season in SEASONS
     ]
     labels = [s for s, values in zip(SEASONS, data, strict=True) if len(values)]
     data = [values for values in data if len(values)]
@@ -552,6 +605,7 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
     print(NOTE_PREMIUM_ONCE)
     print(NOTE_ERA_SPLIT)
     print(NOTE_KALSHI_ONLY)
+    print(NOTE_MEDIAN_OF_RATIOS)
 
     if not markets:
         print("no markets_history data in raw_dir")
