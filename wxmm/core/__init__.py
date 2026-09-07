@@ -13,6 +13,7 @@ Must never
 
 from __future__ import annotations
 
+from wxmm.core.book import BookUpdate, apply_book_update, book_store_key
 from wxmm.core.errors import (
     ConfigNotPreregistered,
     CoverageReportMissing,
@@ -59,6 +60,7 @@ from wxmm.core.utc import require_utc
 __all__ = [
     "AsOfRecord",
     "BookSource",
+    "BookUpdate",
     "ClockBoundStore",
     "ConfigNotPreregistered",
     "CoverageReportMissing",
@@ -90,10 +92,12 @@ __all__ = [
     "VenueFact",
     "WallClockError",
     "WxmmError",
+    "apply_book_update",
+    "book_store_key",
+    "clip_extreme_touch",
     "published_record",
     "received_record",
     "require_clock_bound_book_source",
     "require_clock_bound_store",
     "require_utc",
-    "clip_extreme_touch",
 ]

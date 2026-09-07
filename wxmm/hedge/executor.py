@@ -19,6 +19,8 @@ from enum import Enum
 from wxmm.core.errors import ResidualBasisRejected
 from wxmm.core.money import Money
 from wxmm.core.underlying import Underlying
+from wxmm.decide.proposal import Proposal
+from wxmm.execute.send_gate import ConfirmationToken, SendGate, SendResult
 from wxmm.hedge.planner import ConcreteLeg, ExecutableHedge, plan_executable
 from wxmm.hedge.residual import LiveResidual, residual_for
 from wxmm.risk.basis import BasisModel
@@ -123,3 +125,19 @@ class HedgeExecutor:
         ):
             return False
         return True
+
+    def send_leg(
+        self,
+        gate: SendGate,
+        proposal: Proposal,
+        token: ConfirmationToken,
+        *,
+        intent_id: str,
+    ) -> SendResult:
+        """Human-gated send. Token is required; there is no auto-send."""
+        if not self.can_propose_next_leg():
+            raise ResidualBasisRejected(
+                f"cannot send hedge leg; state={self.state.value} "
+                f"stopped_at={self.stopped_at_leg}"
+            )
+        return gate.send(proposal, token, intent_id=intent_id)

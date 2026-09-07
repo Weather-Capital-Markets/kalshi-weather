@@ -7,7 +7,13 @@ from decimal import Decimal
 
 import pytest
 
-from wxmm.core.errors import RateLimited, StaleBookError
+from wxmm.core.book import (
+    book_store_key,
+    snapshot_payload,
+    snapshot_update,
+    stale_update,
+)
+from wxmm.core.errors import RateLimited, ResidualBasisRejected, StaleBookError
 from wxmm.core.money import Money
 from wxmm.core.types import FrozenClock, InMemoryAsOfStore, Order
 from wxmm.core.underlying import KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH
@@ -19,13 +25,7 @@ from wxmm.execute.send_gate import SendGate
 from wxmm.hedge.executor import HedgeExecutor, HedgeState
 from wxmm.live.feed import FakeTransport, Feed
 from wxmm.live.health import FeedHealth
-from wxmm.live.state import (
-    LiveState,
-    book_store_key,
-    snapshot_payload,
-    snapshot_update,
-    stale_update,
-)
+from wxmm.live.state import LiveState
 from wxmm.risk.basis import BasisModel
 from wxmm.risk.position import Position
 from wxmm.venues.fake.adapter import FakeVenue
@@ -266,3 +266,36 @@ def test_completed_cross_underlying_hedge_stays_complete() -> None:
     assert ex.last_residual is not None
     assert ex.last_residual.residual_basis_risk_pct == Decimal("61.5")
     assert ex.can_propose_next_leg() is False
+
+
+def test_hedge_send_leg_goes_through_send_gate() -> None:
+    import inspect
+
+    token_param = inspect.signature(HedgeExecutor.send_leg).parameters["token"]
+    assert token_param.default is inspect.Parameter.empty
+    clock = FrozenClock(TS)
+    venue = FakeVenue(InMemoryAsOfStore())
+    gate = SendGate(venue, Journal(), clock)
+    pos = Position("kalshi", "A", KALSHI_NYC_DAILY_HIGH, 10, 50)
+    model = BasisModel(KALSHI_NYC_DAILY_HIGH, POLYMARKET_NYC_DAILY_HIGH)
+    ex = HedgeExecutor(
+        position=pos,
+        toward=POLYMARKET_NYC_DAILY_HIGH,
+        book_size=Money.cents(100000),
+        max_basis_risk_pct=Decimal("100"),
+        basis=model,
+        season="JJA",
+    )
+    ex.plan_now(at=TS, hedge_venue="polymarket", hedge_market_id="nyc-76-77")
+    proposal = _proposal()
+    gate.journal.propose("h1", _order(), TS, underlying=KALSHI_NYC_DAILY_HIGH)
+    token = gate.issue_token(proposal)
+    result = ex.send_leg(gate, proposal, token, intent_id="h1")
+    assert result.accepted is True
+    assert venue.submitted
+    ex.abandon()
+    gate.journal.propose("h2", _order(), TS, underlying=KALSHI_NYC_DAILY_HIGH)
+    token2 = gate.issue_token(proposal)
+    with pytest.raises(ResidualBasisRejected):
+        ex.send_leg(gate, proposal, token2, intent_id="h2")
+    assert len(venue.submitted) == 1

@@ -19,12 +19,12 @@ from typing import Mapping
 from wxmm.core.errors import LimitBreach, UnverifiedFeeSchedule
 from wxmm.core.money import Money
 from wxmm.core.ratelimit import TokenBucket, proposal_cost
-from wxmm.core.types import Order
+from wxmm.core.types import POLYMARKET_FEE_SCHEDULE, Order
 from wxmm.decide.fairvalue import FairValueProvider, NullFairValue
 from wxmm.decide.proposal import Proposal
 from wxmm.risk.limits import Limits
 from wxmm.strategy.view import BookView, MarketView
-from wxmm.venues.base import modelled_fee
+from wxmm.venues.kalshi.fees import order_fee
 
 
 def _rank_key(p: Proposal) -> tuple[object, ...]:
@@ -129,7 +129,14 @@ def _from_book(
         fee: Money | None
         fee_unverified = False
         try:
-            fee = modelled_fee(book.venue, order)
+            if book.venue == "polymarket":
+                raise UnverifiedFeeSchedule(
+                    f"{POLYMARKET_FEE_SCHEDULE.name} is "
+                    f"{POLYMARKET_FEE_SCHEDULE.status.value}"
+                )
+            if book.venue not in {"kalshi", "fake"}:
+                raise KeyError(f"no modelled fee for venue {book.venue!r}")
+            fee = order_fee(order)
         except UnverifiedFeeSchedule:
             fee = None
             fee_unverified = True

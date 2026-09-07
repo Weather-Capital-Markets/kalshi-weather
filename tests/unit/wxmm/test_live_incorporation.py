@@ -13,13 +13,14 @@ from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
 
+from wxmm.core.book import apply_book_update
 from wxmm.core.types import ClockBoundStore, FrozenClock, InMemoryAsOfStore
 from wxmm.core.view import build_market_view
 from wxmm.decide.engine import propose
 from wxmm.decide.fairvalue import NullFairValue
 from wxmm.live.feed import Feed, KalshiWsTransport, parse_kalshi_ticker, parse_polymarket_clob
 from wxmm.live.health import FeedHealth
-from wxmm.live.state import LiveState, apply_book_update
+from wxmm.live.state import LiveState
 from wxmm.strategy.view import MarketView
 
 UTC = timezone.utc

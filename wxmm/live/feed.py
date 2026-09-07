@@ -21,14 +21,10 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, Decimal, InvalidOperation
 from typing import Protocol, cast
 
+from wxmm.core.book import BookUpdate, snapshot_payload, snapshot_update
 from wxmm.core.types import Clock, clip_extreme_touch
 from wxmm.live.health import FeedHealth
-from wxmm.live.state import (
-    BookUpdate,
-    LiveState,
-    snapshot_payload,
-    snapshot_update,
-)
+from wxmm.live.state import LiveState
 
 
 class Transport(Protocol):

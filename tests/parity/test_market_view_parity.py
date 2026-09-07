@@ -16,18 +16,18 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from wxmm.core.errors import StaleBookError
-from wxmm.core.types import ClockBoundStore, FrozenClock, InMemoryAsOfStore
-from wxmm.core.view import build_market_view
-from wxmm.live.state import (
+from wxmm.core.book import (
     BookUpdate,
-    LiveState,
     apply_book_update,
     book_store_key,
     snapshot_payload,
     snapshot_update,
     stale_update,
 )
+from wxmm.core.errors import StaleBookError
+from wxmm.core.types import ClockBoundStore, FrozenClock, InMemoryAsOfStore
+from wxmm.core.view import build_market_view
+from wxmm.live.state import LiveState
 from wxmm.strategy.view import BookView, MarketView
 
 UTC = timezone.utc
@@ -307,3 +307,11 @@ def test_unbound_store_still_refused() -> None:
     clock = FrozenClock(T0)
     with pytest.raises(TypeError, match="unbound store refused"):
         build_market_view(store=InMemoryAsOfStore(), clock=clock, book_keys=())
+
+
+def test_apply_book_update_is_importable_without_live() -> None:
+    """Replay consumes BookUpdate from core, not from wxmm.live."""
+    import wxmm.core.book as book_mod
+
+    assert book_mod.apply_book_update.__module__ == "wxmm.core.book"
+    assert book_mod.BookUpdate.__module__ == "wxmm.core.book"

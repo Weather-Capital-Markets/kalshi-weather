@@ -51,3 +51,9 @@ name = "Backtest cannot reach live"
 type = "forbidden"
 source_modules = ["wxmm.backtest"]
 forbidden_modules = ["wxmm.live"]
+
+[[tool.importlinter.contracts]]
+name = "Measure cannot reach live transports"
+type = "forbidden"
+source_modules = ["wxmm.measure"]
+forbidden_modules = ["wxmm.live"]
