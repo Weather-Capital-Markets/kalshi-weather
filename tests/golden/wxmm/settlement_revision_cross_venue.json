@@ -1,0 +1,62 @@
+{
+  "name": "cross_venue_revision_divergence",
+  "climate_day": "2025-07-04",
+  "as_of": "2025-07-06T16:00:00+00:00",
+  "kalshi_observations": [
+    {
+      "station": "KNYC",
+      "climate_day": "2025-07-04",
+      "high_f": 88,
+      "valid_at": "2025-07-05T11:30:00+00:00",
+      "available_at": "2025-07-05T11:30:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": false
+    },
+    {
+      "station": "KNYC",
+      "climate_day": "2025-07-04",
+      "high_f": 89,
+      "valid_at": "2025-07-05T13:30:00+00:00",
+      "available_at": "2025-07-05T13:30:00+00:00",
+      "source": "CLINYC",
+      "is_full_day": true,
+      "is_revision": true
+    }
+  ],
+  "polymarket_observations": [
+    {
+      "station": "KLGA",
+      "climate_day": "2025-07-04",
+      "high_f": 88,
+      "valid_at": "2025-07-05T03:00:00+00:00",
+      "available_at": "2025-07-05T03:00:00+00:00",
+      "source": "WU_DAILY",
+      "is_full_day": true,
+      "is_revision": false
+    },
+    {
+      "station": "KLGA",
+      "climate_day": "2025-07-04",
+      "high_f": 89,
+      "valid_at": "2025-07-05T13:30:00+00:00",
+      "available_at": "2025-07-05T13:30:00+00:00",
+      "source": "WU_DAILY",
+      "is_full_day": true,
+      "is_revision": true
+    },
+    {
+      "station": "KLGA",
+      "climate_day": "2025-07-05",
+      "high_f": 91,
+      "valid_at": "2025-07-05T16:00:00+00:00",
+      "available_at": "2025-07-05T16:00:00+00:00",
+      "source": "WU_DAILY",
+      "is_full_day": false,
+      "is_revision": false
+    }
+  ],
+  "expected_kalshi_high_f": 88,
+  "expected_polymarket_high_f": 89,
+  "notes": "Same climate day: Kalshi 7/8 AM snapshot ignores the 13:30Z revision; Polymarket accepts it until next day's first datapoint at 16:00Z."
+}

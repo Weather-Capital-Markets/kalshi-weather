@@ -12,3 +12,42 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["wxmm"]
+warn_unused_ignores = true
+show_error_codes = true
+# ingestion/ and analysis/ are pandas-era code and are not under mypy --strict.
+
+[[tool.mypy.overrides]]
+module = ["polars", "polars.*", "duckdb"]
+ignore_missing_imports = true
+
+[tool.importlinter]
+root_packages = ["wxmm", "strategies"]
+
+[[tool.importlinter.contracts]]
+name = "Strategy cannot reach store, venues, settlement, or backtest clock"
+type = "forbidden"
+source_modules = ["wxmm.strategy", "strategies"]
+forbidden_modules = ["wxmm.data", "wxmm.venues", "wxmm.settlement", "wxmm.backtest"]
+
+[[tool.importlinter.contracts]]
+name = "Decide cannot reach execute, live, or backtest"
+type = "forbidden"
+source_modules = ["wxmm.decide"]
+forbidden_modules = ["wxmm.execute", "wxmm.live", "wxmm.backtest"]
+
+[[tool.importlinter.contracts]]
+name = "Live cannot reach backtest"
+type = "forbidden"
+source_modules = ["wxmm.live"]
+forbidden_modules = ["wxmm.backtest"]
+
+[[tool.importlinter.contracts]]
+name = "Backtest cannot reach live"
+type = "forbidden"
+source_modules = ["wxmm.backtest"]
+forbidden_modules = ["wxmm.live"]
