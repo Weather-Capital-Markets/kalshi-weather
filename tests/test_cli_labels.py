@@ -121,6 +121,31 @@ def test_request_limit_stays_within_what_iem_accepts(tmp_path: Path) -> None:
     assert captured["limit"] <= IEM_MAX_LIMIT
 
 
+def test_empty_body_does_not_mark_month_complete(tmp_path: Path) -> None:
+    app = CliLabelBackfill(_backfill_config(tmp_path))
+
+    class EmptyClient:
+        def close(self) -> None:
+            return None
+
+        def get(self, path: str, *, params=None) -> RequestResult:
+            return RequestResult(
+                status_code=200,
+                latency_ms=1,
+                json_body=None,
+                error_text=None,
+                endpoint=path,
+                text_body="",
+            )
+
+    try:
+        app.client = EmptyClient()  # type: ignore[assignment]
+        app._fetch_month("2026-07", can_complete=True)
+        assert not month_complete(app.conn, "2026-07")
+    finally:
+        app.close()
+
+
 def test_current_month_is_not_marked_complete(tmp_path: Path) -> None:
     # August is still accumulating issuances; one successful fetch on the 14th
     # must not stop a later run from picking up the rest of the month.
@@ -139,7 +164,7 @@ def test_current_month_is_not_marked_complete(tmp_path: Path) -> None:
                 json_body=None,
                 error_text=None,
                 endpoint=path,
-                text_body="",
+                text_body=FIXTURE.read_text(encoding="utf-8"),
             )
 
     try:

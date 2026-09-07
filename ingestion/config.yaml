@@ -27,7 +27,7 @@ cadence_sec:
 storage:
   raw_dir: "data/raw"
   heartbeat_db: "data/heartbeat.sqlite"
-  backfill_db: "data/backfill_v441.sqlite"
+  backfill_db: "data/backfill.sqlite"
   labels_csv: "data/labels/clinyc.csv"
 
 history:
@@ -106,6 +106,7 @@ nbm_archive:
   end_date: "2026-05-03"
   snapshot_horizon_h: 24
   decoded_dir: "data/nbm/decoded_v441"
+  backfill_db: "data/backfill_v441.sqlite"
   # K2 calibration scope: 9 deciles of the 18-h max-window ladder, not all 99 levels.
   percentile_levels: [10, 20, 30, 40, 50, 60, 70, 80, 90]
   sample_size: 300

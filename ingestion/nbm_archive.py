@@ -1,6 +1,7 @@
 """Point-in-time NBM qmd archive extraction (retrospective leg).
 
-Allowed DB: storage.backfill_db only. Never open storage.heartbeat_db.
+Allowed DB: nbm_archive.backfill_db (falls back to storage.backfill_db).
+Never open storage.heartbeat_db. Kalshi/CLINYC/ASOS resume stays on storage.backfill_db.
 
 Uses AWS .idx sidecars and HTTP byte-range requests — never downloads whole grib2
 files (283 MB each). See knowledge/data-sources.md §2–§3, §5.1.
@@ -49,6 +50,7 @@ from ingestion.state import (
     nbm_day_complete,
     set_nbm_day_complete,
 )
+from ingestion.validate_units import assert_non_empty_frame
 from ingestion.writer import RawJsonlWriter, utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -191,20 +193,21 @@ class NbmArchiveBackfill:
         )
         self.station_lat = float(nbm.get("station_lat") or 40.779)
         self.station_lon = float(nbm.get("station_lon") or -73.969)
-        self.start_date = date.fromisoformat(str(nbm.get("start_date") or "2021-08-05"))
+        self.start_date = date.fromisoformat(str(nbm.get("start_date") or "2022-12-11"))
         self.end_date = date.fromisoformat(str(nbm.get("end_date") or "2026-05-03"))
         self.horizon_h = int(nbm.get("snapshot_horizon_h") or 24)
-        self.decoded_dir = Path(str(nbm.get("decoded_dir") or "data/nbm/decoded"))
+        self.decoded_dir = Path(str(nbm.get("decoded_dir") or "data/nbm/decoded_v441"))
         raw_levels = nbm.get("percentile_levels") or list(DEFAULT_PERCENTILE_LEVELS)
         self.percentile_levels = tuple(int(level) for level in raw_levels)
         self.percentile_level_set = set(self.percentile_levels)
         self.sample_size = int(nbm.get("sample_size") or 300)
-        self.sample_seed = int(nbm.get("sample_seed") or 42)
+        self.sample_seed = int(nbm.get("sample_seed") or 43)
         self.sub_era_split = date.fromisoformat(
             str(nbm.get("sub_era_split") or "2024-05-15"),
         )
         self.writer = RawJsonlWriter(storage["raw_dir"])
-        self.conn = connect(storage["backfill_db"])
+        self.backfill_db_path = Path(str(nbm.get("backfill_db") or storage["backfill_db"]))
+        self.conn = connect(self.backfill_db_path)
         init_schema(self.conn)
         init_state_schema(self.conn)
         init_backfill_schema(self.conn)
@@ -482,6 +485,10 @@ class NbmArchiveBackfill:
             ):
                 frame[col] = result.get(col)
             out_path = self.decoded_dir / f"{climate_date.isoformat()}.parquet"
+            assert_non_empty_frame(
+                frame,
+                what=f"NBM parquet ladder for {climate_date.isoformat()}",
+            )
             frame.to_parquet(out_path, index=False)
             result["decoded_path"] = str(out_path)
             result["status"] = "ok"

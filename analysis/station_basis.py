@@ -21,6 +21,7 @@ from ingestion.asos_parse import load_asos_observations_from_raw
 from ingestion.climate_day import climate_date_of, climate_day_end, climate_day_start
 from ingestion.climate_time import AsosObservation, asos_max_for_climate_day
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_rows
 
 plt.switch_backend("Agg")
 logger = logging.getLogger(__name__)
@@ -200,6 +201,7 @@ def withdraw_summer_ladder_brackets(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def write_summary_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    assert_non_empty_rows(len(rows), what="station_basis.csv summary rows")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         handle.write(f"# {NOTES_CAVEAT}\n")
