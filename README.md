@@ -1,8 +1,19 @@
 # kalshi-weather
 
-Research and trading system for Kalshi KXHIGHNY/KNYC Central Park daily
-maximum-temperature markets. Session 1 delivers a production-quality market-data
-logger; analysis, models, and weather ingestion come in later sessions.
+Research and trading **instrument** for Kalshi KXHIGHNY (Central Park / KNYC /
+CLINYC daily maximum temperature) and, separately, Polymarket NYC daily-high
+(LaGuardia / KLGA / Weather Underground). Those are different underlyings —
+not an arbitrage.
+
+**Instrument before edge.** `ingestion/` and `analysis/` measure. K1 census
+execution is still gated on root-chat ratification; K2 is blocked on NBM
+first-availability. `wxmm/` is the as-of trading/backtest stack: no fair-value
+model, no production strategy, no order router. Live send is a human token
+against a fake venue. Capital still requires a re-verified Kalshi maker-fee
+fact and a verified Polymarket fee schedule.
+
+Session 1 delivered the market-data logger. Later sessions added historical
+backfill, measurement, and the WXMM instrument (Stages B1–B3).
 
 ## Requirements
 
@@ -193,9 +204,12 @@ Tests mock HTTP; no live API calls in CI.
 ## Project layout
 
 ```
-knowledge/          Source-of-truth docs (weather, venue facts)
-ingestion/          Kalshi market-data logger
-tests/              Unit tests
+knowledge/          Source-of-truth docs (weather, venue facts, research gates)
+ingestion/          Kalshi / Polymarket market-data loggers
+analysis/           Measurement (census, clocks, NBM, basis) — not models
+wxmm/               As-of trading/backtest instrument (no FV, no router)
+strategies/         Idle example only
+tests/              Unit / canary / parity / golden
 deploy/             systemd unit files + VPS scripts in scripts/
 data/               Runtime captures (gitignored)
 ```

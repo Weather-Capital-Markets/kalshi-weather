@@ -6,8 +6,10 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from wxmm.core.money import Money
-from wxmm.core.types import AsOfStore, BookSnapshot, Order, Trade
+from wxmm.core.types import AsOfStore, BookSnapshot, InMemoryAsOfStore, Order, Trade
 from wxmm.settlement.rules import SettlementRule
+
+_FEE_STORE = InMemoryAsOfStore()
 
 
 @runtime_checkable
@@ -52,4 +54,14 @@ def get_venue(name: str, store: AsOfStore) -> Venue:
         from wxmm.venues.polymarket.adapter import PolymarketVenue
 
         return PolymarketVenue(store)
+    if name == "fake":
+        from wxmm.venues.fake.adapter import FakeVenue
+
+        return FakeVenue(store)
     raise KeyError(f"unknown venue {name!r}; registry accepts a third only when facts exist")
+
+
+def modelled_fee(venue_name: str, order: Order) -> Money:
+    """Fee from the venue adapter. Polymarket raises ``UnverifiedFeeSchedule``."""
+    name = "kalshi" if venue_name == "fake" else venue_name
+    return get_venue(name, _FEE_STORE).fee(order)

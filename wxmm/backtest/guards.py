@@ -22,6 +22,11 @@ _SCAN_ROOTS = (
     "wxmm/backtest",
     "wxmm/risk",
     "wxmm/strategy",
+    "wxmm/decide",
+    "wxmm/execute",
+    "wxmm/hedge",
+    "wxmm/measure",
+    "wxmm/monitor",
 )
 
 

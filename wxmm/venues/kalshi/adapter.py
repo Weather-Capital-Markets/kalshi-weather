@@ -6,7 +6,15 @@ from datetime import datetime, timedelta
 from typing import cast
 
 from wxmm.core.money import Money
-from wxmm.core.types import AsOfRecord, AsOfStore, BookLevel, BookSnapshot, Order, Trade
+from wxmm.core.types import (
+    AsOfRecord,
+    AsOfStore,
+    BookLevel,
+    BookSnapshot,
+    Order,
+    Trade,
+    clip_extreme_touch,
+)
 from wxmm.core.utc import require_utc
 from wxmm.settlement.eras import settlement_rule_in_force
 from wxmm.settlement.rules import SettlementRule
@@ -108,24 +116,38 @@ def _normalize_empty_book(snap: BookSnapshot) -> BookSnapshot:
     return snap
 
 
+def _optional_int_cents(payload: dict[str, object], *keys: str) -> int | None:
+    for key in keys:
+        raw = payload.get(key)
+        if isinstance(raw, int) and not isinstance(raw, bool):
+            return raw
+    return None
+
+
 def _book_from_payload(market: str, rec: AsOfRecord) -> BookSnapshot:
     payload = rec.payload
     if not isinstance(payload, dict):
         raise TypeError(f"unexpected book payload for {market}")
-    bid = int(payload.get("yes_bid_cents", 0))
-    ask = int(payload.get("yes_ask_cents", 100))
-    two_sided = not empty_book_from_extreme_quotes(bid, ask)
-    bids = (BookLevel(bid, payload.get("bid_size")),) if two_sided and bid > 0 else ()
-    asks = (BookLevel(ask, payload.get("ask_size")),) if two_sided and ask < 100 else ()
+    bid, ask = clip_extreme_touch(
+        _optional_int_cents(payload, "yes_bid_cents", "bid_cents"),
+        _optional_int_cents(payload, "yes_ask_cents", "ask_cents"),
+    )
+    two_sided = bid is not None and ask is not None
+    bid_size = payload.get("bid_size")
     ask_size = payload.get("ask_size")
+    bid_qty = bid_size if isinstance(bid_size, int) else None
+    ask_qty = ask_size if isinstance(ask_size, int) else None
+    bids = (BookLevel(bid, bid_qty),) if bid is not None else ()
+    asks = (BookLevel(ask, ask_qty),) if ask is not None else ()
+    volume = payload.get("volume")
     return BookSnapshot(
         market_id=market,
         valid_at=rec.valid_at,
         available_at=rec.available_at,
         bids=bids,
         asks=asks,
-        volume=payload.get("volume"),
-        ask_size_known=ask_size is not None,
+        volume=volume if volume is None or isinstance(volume, int) else None,
+        ask_size_known=ask is not None and ask_size is not None,
         reconstructed=bool(payload.get("reconstructed", False)),
         staleness=payload.get("staleness") or timedelta(0),
         two_sided=two_sided,

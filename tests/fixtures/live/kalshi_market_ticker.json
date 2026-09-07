@@ -1,0 +1,17 @@
+{
+  "ticker": "KXHIGHNY-26SEP04-B84.5",
+  "event_ticker": "KXHIGHNY-26SEP04",
+  "status": "active",
+  "yes_bid_dollars": "0.5200",
+  "yes_ask_dollars": "0.5500",
+  "yes_bid_size_fp": "28.00",
+  "yes_ask_size_fp": "6.00",
+  "volume_fp": "2756.13",
+  "open_interest_fp": "2103.94",
+  "last_price_dollars": "0.5700",
+  "updated_time": "2026-09-03T14:00:01.360783Z",
+  "close_time": "2026-09-05T05:00:00Z",
+  "floor_strike": 84,
+  "cap_strike": 85,
+  "strike_type": "between"
+}

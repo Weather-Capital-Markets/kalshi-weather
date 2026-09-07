@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from wxmm.backtest.harness import build_market_view
 from wxmm.backtest.replay import run
 from wxmm.core.types import FrozenClock, InMemoryAsOfStore
+from wxmm.core.view import build_market_view
 from wxmm.strategy.view import MarketView, ProposedOrder
 from wxmm.venues.base import get_venue
 
