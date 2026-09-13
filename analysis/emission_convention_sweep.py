@@ -425,7 +425,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--start",
         type=str,
         default=DEFAULT_WINDOW_START.isoformat(),
-        help=f"Declared window start (default {DEFAULT_WINDOW_START.isoformat()}; do not recover orphan prose window)",
+        help=(
+            f"Declared window start (default {DEFAULT_WINDOW_START.isoformat()}; "
+            "do not recover orphan prose window)"
+        ),
     )
     parser.add_argument(
         "--end",

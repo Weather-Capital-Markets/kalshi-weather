@@ -81,7 +81,8 @@ def brier_decomposition(
     res = 0.0
     for b in range(n_bins):
         lo, hi = bin_edges[b], bin_edges[b + 1]
-        idx = [i for i, p in enumerate(probs) if (p >= lo and (p < hi or (b == n_bins - 1 and p <= hi)))]
+        last = b == n_bins - 1
+        idx = [i for i, p in enumerate(probs) if p >= lo and (p < hi or (last and p <= hi))]
         if not idx:
             continue
         n_k = len(idx)
