@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from analysis.emission_compare import book_at_or_before, compare_ticker_convention, prices_match
+from analysis.emission_compare import compare_ticker_convention
 from analysis.orderbook import top_of_book_from_payload
 from analysis.spread_census import candle_fields, parse_iso_utc
 from ingestion.client import KalshiClient, RequestResult

@@ -14,10 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Mapping, Protocol, Sequence
+from typing import Mapping, Protocol
 
-from wxmm.fairvalue.anchor import LadderQuote, market_implied, normalised_market_ladder
 from wxmm.core.errors import ReconstructionBoundRequired
+from wxmm.fairvalue.anchor import LadderQuote, market_implied, normalised_market_ladder
 from wxmm.fairvalue.reconstruction_bound import (
     ReconstructionBound,
     require_reconstruction_bound_for_fit,
@@ -33,8 +33,9 @@ class Baseline(Protocol):
     @property
     def name(self) -> str: ...
 
-    def forecast(self, view: MarketView, *, context: BaselineContext) -> Mapping[str, Decimal] | None:
-        ...
+    def forecast(
+        self, view: MarketView, *, context: BaselineContext
+    ) -> Mapping[str, Decimal] | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +54,9 @@ class BaselineContext:
 class ClimatologyBaseline:
     name: str = "climatology"
 
-    def forecast(self, view: MarketView, *, context: BaselineContext) -> Mapping[str, Decimal] | None:
+    def forecast(
+        self, view: MarketView, *, context: BaselineContext
+    ) -> Mapping[str, Decimal] | None:
         if context.climatology_table is None:
             return None
         row = context.climatology_table.get(context.doy)
@@ -69,7 +72,9 @@ class ClimatologyBaseline:
 class PersistenceBaseline:
     name: str = "persistence"
 
-    def forecast(self, view: MarketView, *, context: BaselineContext) -> Mapping[str, Decimal] | None:
+    def forecast(
+        self, view: MarketView, *, context: BaselineContext
+    ) -> Mapping[str, Decimal] | None:
         if not context.last_trade_price_cents:
             return None
         market_ids = [book.market_id for book in view.books]
@@ -89,7 +94,9 @@ class PersistenceBaseline:
 class MarketMidBaseline:
     name: str = "market_mid"
 
-    def forecast(self, view: MarketView, *, context: BaselineContext) -> Mapping[str, Decimal] | None:
+    def forecast(
+        self, view: MarketView, *, context: BaselineContext
+    ) -> Mapping[str, Decimal] | None:
         if context.reconstruction_bound is None:
             raise ReconstructionBoundRequired(
                 "market_mid baseline requires a registered reconstruction bound in context"
@@ -106,7 +113,9 @@ class NbmLadderBaseline:
     name: str = "nbm_ladder"
     interpolation_note: str = NBM_INTERPOLATION_UNCERTAIN
 
-    def forecast(self, view: MarketView, *, context: BaselineContext) -> Mapping[str, Decimal] | None:
+    def forecast(
+        self, view: MarketView, *, context: BaselineContext
+    ) -> Mapping[str, Decimal] | None:
         if context.nbm_ladder is None:
             return None
         market_ids = {book.market_id for book in view.books}

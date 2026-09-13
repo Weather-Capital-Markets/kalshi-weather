@@ -86,6 +86,11 @@ window_mismatch (K2 prep)
 validate_emission_forward (run when VPS alive; rsync or on-box)
 ```
 
+**C1-X1 (2026-09-13) — not blocked by Stage 0.** Maker/taker returns on the
+public trade record (`wxmm/analysis/`, `wxmm/eval/flb.py`). Reads no book and
+no candle. Prereg `prereg/c1-x1-v1.yaml` (go/no-go still `FILL_IN`; `run()`
+refuses until the root chat fills them). X1a without X1b is uninterpretable.
+
 **Stage 0 (C1-M1) — before any VPS 12-way sweep.** Decision bands locked in
 `prereg/c1-m1-v1-stage0-decision.yaml`: max≥0.60 → JOIN_BUG / full_corpus;
 0.10≤max<0.60 → PARTIAL (no auto-branch; `winner_match_distribution` by market/day);
