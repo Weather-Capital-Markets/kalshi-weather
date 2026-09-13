@@ -67,6 +67,13 @@ def test_null_recovery_matches_normalised_mids() -> None:
         assert abs(recovered[key] - expected[key]) < Decimal("1e-9")
     total = sum(recovered.values(), Decimal(0))
     assert abs(total - Decimal(1)) < Decimal("1e-9")
+    # Raw mid ladder does not already sum to 1 — mutation returning the raw
+    # ladder instead of the normalised one must fail this test.
+    raw = {row.market_id: row.implied_prob for row in ladder.brackets}
+    assert all(v is not None for v in raw.values())
+    raw_total = sum((v for v in raw.values() if v is not None), Decimal(0))
+    assert abs(raw_total - Decimal(1)) > Decimal("1e-6")
+    assert any(abs(recovered[k] - raw[k]) > Decimal("1e-9") for k in recovered)  # type: ignore[operator]
 
 
 def test_one_sided_bracket_stays_none() -> None:

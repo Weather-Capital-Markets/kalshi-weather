@@ -47,8 +47,15 @@ def _parse_date(value: str) -> date:
     return date.fromisoformat(value)
 
 
+def _rows_computed(rows: list[dict[str, Any]]) -> int:
+    return sum(1 for row in rows if int(row.get("boundaries_compared") or 0) > 0)
+
+
 def _branch_from_table(rows: list[dict[str, Any]]) -> tuple[str, bool, dict[str, Any] | None]:
-    """Return (branch, winning_convention_found, winner_row)."""
+    """Return (branch, winning_convention_found, winner_row).
+
+    Call only when all 12 conventions are computed. Branch is a finding.
+    """
     viable = [
         row
         for row in rows
@@ -58,8 +65,6 @@ def _branch_from_table(rows: list[dict[str, Any]]) -> tuple[str, bool, dict[str,
         winner = max(viable, key=lambda row: float(row["match_rate"]))
         return "full_corpus", True, winner
     best = max(rows, key=lambda row: float(row["match_rate"]))
-    if float(best["match_rate"]) < FEW_PERCENT:
-        return "forward_logger_only", False, best
     return "forward_logger_only", False, best
 
 
@@ -158,7 +163,8 @@ def sweep_conventions(
             }
         )
 
-    branch, winning_found, winner = _branch_from_table(table)
+    computed = _rows_computed(table)
+    complete = computed == len(CONVENTIONS) == 12 and not shortfall_notes
     measured_at = datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
@@ -166,23 +172,43 @@ def sweep_conventions(
         "data_dir": str(data_dir.resolve()),
         "start": start.isoformat(),
         "end": end.isoformat(),
+        "prose_crosscheck_window": {
+            "status": "DECLARE_EXPLICITLY",
+            "note": (
+                "Original 0.9%/2026 prose window is UNKNOWN_NOT_IN_PROJECT_RECORD. "
+                "Record the exact start/end used for this run; do not assume identity "
+                "with the prose figures solely because --start defaults to 2026-08-18."
+            ),
+        },
         "markets_discovered": len(tickers),
         "markets_compared": len(compare_tickers),
         "tickers_compared": compare_tickers,
         "shortfall_notes": shortfall_notes,
         "note": inputs_note or "",
+        "input_file_hashes": {},
     }
 
-    return {
+    report: dict[str, Any] = {
         "measured_at": measured_at,
-        "branch": branch,
-        "winning_convention_found": winning_found,
-        "winner": winner,
+        "sweep_status": "COMPLETE" if complete else "INCOMPLETE",
+        "rows_computed": f"{computed}/12",
         "table": table,
         "inputs_manifest": "analysis/out/emission_convention_sweep_inputs.json",
         "shortfall_notes": shortfall_notes,
         "manifest": manifest,
     }
+    # Branch is a finding: absent unless COMPLETE. Never default it.
+    if complete:
+        branch, winning_found, winner = _branch_from_table(table)
+        report["branch"] = branch
+        report["winning_convention_found"] = winning_found
+        report["winner"] = winner
+        report["reconstruction_error_bound"] = (
+            f"carry_forward_last_quote@{winner['key']}"
+            if winner is not None
+            else "carry_forward_last_quote"
+        )
+    return report
 
 
 def print_table(table: list[dict[str, Any]]) -> None:
@@ -212,10 +238,13 @@ def write_artifacts(report: dict[str, Any], out_dir: Path) -> tuple[Path, Path]:
         encoding="utf-8",
     )
     txt_path = out_dir / "emission_convention_sweep.txt"
+    branch = report.get("branch")
+    branch_txt = branch if branch is not None else "<absent; not COMPLETE>"
     lines = [
         "emission convention sweep (Stage 0 / B2 Phase 3)",
         f"measured_at={report['measured_at']}",
-        f"branch={report['branch']} winning_convention_found={report['winning_convention_found']}",
+        f"sweep_status={report['sweep_status']} rows_computed={report['rows_computed']}",
+        f"branch={branch_txt} winning_convention_found={report.get('winning_convention_found')}",
         "",
     ]
     if report.get("winner"):
@@ -224,6 +253,8 @@ def write_artifacts(report: dict[str, Any], out_dir: Path) -> tuple[Path, Path]:
             f"winner: {w['key']} match_rate={float(w['match_rate']):.6f} "
             f"silent={w['silent_count']} n={w['boundaries_compared']}"
         )
+        if report.get("reconstruction_error_bound"):
+            lines.append(f"reconstruction_error_bound={report['reconstruction_error_bound']}")
     lines.append("")
     for row in report["table"]:
         lines.append(
@@ -256,7 +287,11 @@ def run(
         inputs_note=inputs_note,
     )
     print_table(report["table"])
-    print(f"branch={report['branch']} winning_convention_found={report['winning_convention_found']}")
+    print(
+        f"sweep_status={report['sweep_status']} rows_computed={report['rows_computed']} "
+        f"branch={report.get('branch', '<absent>')} "
+        f"winning_convention_found={report.get('winning_convention_found')}"
+    )
     if report.get("winner"):
         w = report["winner"]
         print(

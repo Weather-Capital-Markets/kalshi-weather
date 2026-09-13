@@ -1,20 +1,26 @@
 emission convention sweep (Stage 0 / B2 Phase 3)
 measured_at=2026-09-04T12:00:00Z
-branch=forward_logger_only winning_convention_found=False
+sweep_status=INCOMPLETE rows_computed=1/12
+branch=<absent; finding not available until COMPLETE>
 
-winner: interval_start|UTC|+0 match_rate=0.009000 silent=2026 n=225111
+status-quo prose only (NOT a diagnostic reproduction):
+  interval_start|UTC|+0: match_rate=0.009 silent=2026 provenance=transcribed_not_computed
+  boundaries_compared: WITHDRAWN (n=225111 was fabricated, not in project record)
 
-interval_start|UTC|-1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_start|UTC|+0: match_rate=0.009000 silent=2026 n=225111 prose_baseline
-interval_start|UTC|+1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_start|ET|-1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_start|ET|+0: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_start|ET|+1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_end|UTC|-1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_end|UTC|+0: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_end|UTC|+1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_end|ET|-1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_end|ET|+0: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
-interval_end|ET|+1: match_rate=0.000000 silent=0 n=0 pending_vps_rerun
+interval_start|UTC|-1: not_computed
+interval_start|UTC|+0: transcribed_not_computed match_rate=0.009 silent=2026
+interval_start|UTC|+1: not_computed
+interval_start|ET|-1: not_computed
+interval_start|ET|+0: not_computed
+interval_start|ET|+1: not_computed
+interval_end|UTC|-1: not_computed
+interval_end|UTC|+0: not_computed
+interval_end|UTC|+1: not_computed
+interval_end|ET|-1: not_computed
+interval_end|ET|+0: not_computed
+interval_end|ET|+1: not_computed
 
-rerun: analysis/emission_convention_sweep.py --data-dir /var/lib/kalshi-weather/raw
+window: prose cross-check window UNKNOWN_NOT_IN_PROJECT_RECORD
+re-sweep CLI default start=2026-08-18 matches logger live-since, not verified identity with the 0.9% window
+
+rerun: analysis/emission_convention_sweep.py --data-dir <vps_logger> --start <declare> --end <declare>

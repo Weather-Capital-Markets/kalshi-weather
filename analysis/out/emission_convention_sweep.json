@@ -1,160 +1,153 @@
 {
   "measured_at": "2026-09-04T12:00:00Z",
-  "branch": "forward_logger_only",
+  "sweep_status": "INCOMPLETE",
+  "rows_computed": "1/12",
   "winning_convention_found": false,
   "inputs_manifest": "analysis/out/emission_convention_sweep_inputs.json",
-  "shortfall_notes": [],
-  "winner": {
-    "interval_anchor": "interval_start",
-    "timezone": "UTC",
-    "bucket_offset": 0,
-    "key": "interval_start|UTC|+0",
-    "boundaries_compared": 225111,
-    "matched": 2026,
-    "match_rate": 0.009,
-    "silent_count": 2026
-  },
+  "shortfall_notes": [
+    "Stage 0 has not run. Eleven of twelve diagnostic conventions are absent. The single status-quo row is transcribed, not computed."
+  ],
   "table": [
     {
       "interval_anchor": "interval_start",
       "timezone": "UTC",
       "bucket_offset": -1,
       "key": "interval_start|UTC|-1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_start",
       "timezone": "UTC",
       "bucket_offset": 0,
       "key": "interval_start|UTC|+0",
-      "boundaries_compared": 225111,
-      "matched": 2026,
+      "boundaries_compared": null,
+      "matched": null,
       "match_rate": 0.009,
       "silent_count": 2026,
-      "pending_vps_rerun": false,
-      "prose_baseline": true
+      "row_status": "transcribed_not_computed",
+      "provenance": "transcribed_not_computed",
+      "provenance_note": "match_rate=0.009 and silent_count=2026 transcribed from project-record prose (HYPOTHESIS_UNDER_TEST / plan). Not recomputed from named input files with hashes. boundaries_compared and matched are absent: n=225111 never appeared in the project record and was previously reverse-engineered as round(2026/0.009); that figure is withdrawn."
     },
     {
       "interval_anchor": "interval_start",
       "timezone": "UTC",
       "bucket_offset": 1,
       "key": "interval_start|UTC|+1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_start",
       "timezone": "ET",
       "bucket_offset": -1,
       "key": "interval_start|ET|-1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_start",
       "timezone": "ET",
       "bucket_offset": 0,
       "key": "interval_start|ET|+0",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_start",
       "timezone": "ET",
       "bucket_offset": 1,
       "key": "interval_start|ET|+1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_end",
       "timezone": "UTC",
       "bucket_offset": -1,
       "key": "interval_end|UTC|-1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_end",
       "timezone": "UTC",
       "bucket_offset": 0,
       "key": "interval_end|UTC|+0",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_end",
       "timezone": "UTC",
       "bucket_offset": 1,
       "key": "interval_end|UTC|+1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_end",
       "timezone": "ET",
       "bucket_offset": -1,
       "key": "interval_end|ET|-1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_end",
       "timezone": "ET",
       "bucket_offset": 0,
       "key": "interval_end|ET|+0",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     },
     {
       "interval_anchor": "interval_end",
       "timezone": "ET",
       "bucket_offset": 1,
       "key": "interval_end|ET|+1",
-      "boundaries_compared": 0,
-      "matched": 0,
-      "match_rate": 0.0,
-      "silent_count": 0,
-      "pending_vps_rerun": true
+      "boundaries_compared": null,
+      "matched": null,
+      "match_rate": null,
+      "silent_count": null,
+      "row_status": "not_computed"
     }
   ],
-  "prose_baseline": {
+  "status_quo_prose": {
     "convention": "interval_start|UTC|+0",
     "match_rate": 0.009,
     "silent_count": 2026,
-    "boundaries_compared": 225111,
-    "source": "project record; ratified as reproducible artifact with inputs manifest"
+    "source": "project record prose only; not a Stage 0 reproduction"
   },
-  "rerun_note": "Run analysis/emission_convention_sweep.py on VPS --data-dir to fill pending rows and possibly flip branch to full_corpus."
+  "rerun_note": "Run analysis/emission_convention_sweep.py on VPS with the same window the 0.9% cross-check covered (confirm before comparing). Do not set branch until sweep_status=COMPLETE."
 }

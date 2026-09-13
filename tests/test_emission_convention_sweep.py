@@ -136,5 +136,11 @@ def test_sweep_writes_twelve_rows(tmp_path: Path) -> None:
         client=client,
     )
     assert len(report["table"]) == 12
-    assert report["winner"] is not None
-    assert "branch" in report
+    assert report["sweep_status"] in {"COMPLETE", "INCOMPLETE"}
+    assert report["rows_computed"].endswith("/12")
+    if report["sweep_status"] == "COMPLETE":
+        assert report.get("winner") is not None
+        assert "branch" in report
+        assert report.get("reconstruction_error_bound")
+    else:
+        assert "branch" not in report
