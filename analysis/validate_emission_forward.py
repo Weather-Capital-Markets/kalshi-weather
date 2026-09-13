@@ -19,15 +19,15 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from analysis.emission_compare import book_at_or_before, compare_ticker_convention, prices_match
 from analysis.orderbook import top_of_book_from_payload
 from analysis.spread_census import candle_fields, parse_iso_utc
-from ingestion.client import KalshiClient
+from ingestion.client import KalshiClient, RequestResult
 from ingestion.config_loader import load_config
 from ingestion.writer import read_jsonl_gz
 
 logger = logging.getLogger(__name__)
 PERIOD_SEC = 60
-PRICE_TOLERANCE = 0.005
 MIN_DAYS = 3
 MIN_MARKETS = 3
 
@@ -77,24 +77,6 @@ def load_logger_books(
     return dict(by_ticker)
 
 
-def book_at_or_before(
-    rows: list[tuple[datetime, float | None, float | None]], boundary: datetime
-) -> tuple[float | None, float | None]:
-    eligible = [row for row in rows if row[0] <= boundary]
-    if not eligible:
-        return None, None
-    _, bid, ask = eligible[-1]
-    return bid, ask
-
-
-def _prices_match(a: float | None, b: float | None) -> bool:
-    if a is None and b is None:
-        return True
-    if a is None or b is None:
-        return False
-    return abs(a - b) <= PRICE_TOLERANCE
-
-
 def minute_boundaries(start: datetime, end: datetime) -> list[int]:
     """Inclusive end_period_ts values at 60s boundaries within [start, end]."""
     if start.tzinfo is None or end.tzinfo is None:
@@ -116,6 +98,10 @@ def discover_tickers(data_dir: Path, days: list[str]) -> list[str]:
     return sorted(tickers)
 
 
+class EmissionValidationError(Exception):
+    """API or parse failure during forward emission validation."""
+
+
 def fetch_candles(
     client: KalshiClient,
     ticker: str,
@@ -129,12 +115,21 @@ def fetch_candles(
         "end_ts": end_ts,
         "period_interval": 1,
     }
-    result = client.get(path, params=params)
-    if not result.ok or not isinstance(result.json_body, dict):
-        return []
+    result: RequestResult = client.get(path, params=params)
+    if not result.ok:
+        raise EmissionValidationError(
+            f"candlesticks fetch failed for {ticker}: status={result.status_code} "
+            f"error={result.error_text!r}"
+        )
+    if not isinstance(result.json_body, dict):
+        raise EmissionValidationError(
+            f"candlesticks response for {ticker} is not a JSON object"
+        )
     candles = result.json_body.get("candlesticks")
     if not isinstance(candles, list):
-        return []
+        raise EmissionValidationError(
+            f"candlesticks response for {ticker} missing candlesticks list"
+        )
     parsed = [candle_fields(c) for c in candles if isinstance(c, dict)]
     parsed.sort(key=lambda c: int(c["end_period_ts"]))
     return parsed
@@ -147,63 +142,16 @@ def compare_ticker(
     candles: list[dict[str, Any]],
     boundaries: list[int],
 ) -> dict[str, Any]:
-    candle_by_ts = {int(c["end_period_ts"]): c for c in candles}
-    candle_ts_set = set(candle_by_ts)
-    mismatches: list[dict[str, Any]] = []
-    silent_changes: list[dict[str, Any]] = []
-    compared = 0
-    matched = 0
-
-    previous: tuple[float | None, float | None] | None = None
-    for captured, bid, ask in logger_rows:
-        current = (bid, ask)
-        if previous is not None and current != previous:
-            boundary = int(captured.timestamp())
-            boundary -= boundary % PERIOD_SEC
-            if boundary not in candle_ts_set:
-                silent_changes.append(
-                    {
-                        "ticker": ticker,
-                        "ts_utc": captured.isoformat(),
-                        "boundary": boundary,
-                        "bid": bid,
-                        "ask": ask,
-                    }
-                )
-        previous = current
-
-    for boundary in boundaries:
-        candle = candle_by_ts.get(boundary)
-        if candle is None:
-            continue
-        boundary_dt = datetime.fromtimestamp(boundary, tz=timezone.utc)
-        logger_bid, logger_ask = book_at_or_before(logger_rows, boundary_dt)
-        if logger_bid is None and logger_ask is None:
-            continue
-        compared += 1
-        bid_ok = _prices_match(logger_bid, candle.get("bid_close"))
-        ask_ok = _prices_match(logger_ask, candle.get("ask_close"))
-        if bid_ok and ask_ok:
-            matched += 1
-        else:
-            mismatches.append(
-                {
-                    "ticker": ticker,
-                    "end_period_ts": boundary,
-                    "logger_bid": logger_bid,
-                    "logger_ask": logger_ask,
-                    "candle_bid": candle.get("bid_close"),
-                    "candle_ask": candle.get("ask_close"),
-                }
-            )
-
-    return {
-        "ticker": ticker,
-        "compared": compared,
-        "matched": matched,
-        "mismatches": mismatches,
-        "silent_changes": silent_changes,
-    }
+    """Legacy default: interval_start | UTC | offset 0 (prose baseline convention)."""
+    return compare_ticker_convention(
+        ticker=ticker,
+        logger_rows=logger_rows,
+        candles=candles,
+        boundaries=boundaries,
+        interval_anchor="interval_start",
+        timezone_mode="UTC",
+        bucket_offset=0,
+    )
 
 
 def _write_report(out_dir: Path, report: dict[str, Any]) -> Path:
@@ -288,6 +236,9 @@ def run(
             total_matched += int(result["matched"])
             all_mismatches.extend(result["mismatches"])
             all_silent.extend(result["silent_changes"])
+    except EmissionValidationError as exc:
+        print(f"API_FAILURE: {exc}")
+        return 4
     finally:
         if own_client:
             api.close()
@@ -332,6 +283,10 @@ def run(
         path = _write_report(out_dir, report)
         print(f"wrote {path}")
 
+    if shortfall_notes:
+        return 2
+    if total_compared == 0:
+        return 3
     return 0
 
 

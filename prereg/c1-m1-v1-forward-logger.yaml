@@ -1,0 +1,23 @@
+prereg_id: c1-m1-v1-forward-logger
+seed: 0
+universe:
+  - KXHIGHNY
+snapshot_id: FILL_IN
+branch: forward_logger_only
+precondition_emission_sweep:
+  branch: forward_logger_only
+  winning_convention_found: false
+  match_rate_ceiling: few_percent
+  artifact: analysis/out/emission_convention_sweep.json
+sample_note: >
+  Emit-on-change falsified for historical books. Fit on forward systemd logger
+  only from 2026-08-18; verify continuous coverage. ~150 bracket-days vs ~8000
+  historical; regularisation and conclusions shrink accordingly.
+go_no_go:
+  rps_vs_market_mid: FILL_IN
+  markout_capture_vs_mid: FILL_IN
+  min_fill_count: FILL_IN
+model_note: >
+  Book features and logit(q) offset share correlated measurement error from the
+  same reconstructed books. Errors-in-variables bias in beta is not signable
+  a priori.

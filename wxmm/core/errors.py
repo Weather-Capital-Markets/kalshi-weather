@@ -101,6 +101,10 @@ class HeldOutLockedError(WxmmError):
     """Held-out period was requested without an explicit loud unlock."""
 
 
+class ReconstructionBoundRequired(WxmmError):
+    """``model.fit`` and market-mid baseline refuse without a Phase 3 bound file."""
+
+
 class SizeUnknownFlag(WxmmError):
     """A size-dependent claim was attempted without ask/bid size.
 

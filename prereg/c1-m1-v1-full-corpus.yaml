@@ -1,0 +1,22 @@
+prereg_id: c1-m1-v1-full-corpus
+seed: 0
+universe:
+  - KXHIGHNY
+snapshot_id: FILL_IN
+branch: full_corpus
+precondition_emission_sweep:
+  branch: full_corpus
+  winning_convention_found: true
+  match_rate_band: "0.60-0.90"
+  artifact: analysis/out/emission_convention_sweep.json
+sample_note: >
+  Full historical corpus (~8000 bracket-days) once join convention resolves at
+  60-90% match. Carry-forward promoted to fact with named error bound from sweep.
+go_no_go:
+  rps_vs_market_mid: FILL_IN
+  markout_capture_vs_mid: FILL_IN
+  min_fill_count: FILL_IN
+model_note: >
+  Book features and logit(q) offset share correlated measurement error from the
+  same reconstructed books. Errors-in-variables bias in beta is not signable
+  a priori.

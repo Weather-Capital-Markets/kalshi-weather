@@ -83,8 +83,11 @@ POLYMARKET_FEE_SCHEDULE = VenueFact(
 KALSHI_CANDLE_EMIT_ON_CHANGE = VenueFact(
     name="kalshi_candlestick_emit_on_change",
     status=FactStatus.HYPOTHESIS_UNDER_TEST,
-    source="venue-facts.md §1.7; 0.9% forward match unresolved",
-    note="Carry-forward reconstruction is a named parameterized policy with staleness.",
+    source="venue-facts.md §1.7; analysis/out/emission_convention_sweep.json prose baseline",
+    note=(
+        "0.9% match / 2026 silent at interval_start|UTC|+0; branch forward_logger_only "
+        "until VPS re-sweep fills remaining conventions."
+    ),
 )
 
 # Bracket boundary convention by era: UNVERIFIED — enumerator, do not hard-code widths.
