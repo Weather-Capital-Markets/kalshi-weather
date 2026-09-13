@@ -54,6 +54,7 @@ def compare_ticker_convention(
     candle_ts_set = set(candle_by_ts)
     mismatches: list[dict[str, Any]] = []
     silent_changes: list[dict[str, Any]] = []
+    by_day: dict[str, dict[str, int]] = {}
     compared = 0
     matched = 0
 
@@ -88,10 +89,14 @@ def compare_ticker_convention(
         if logger_bid is None and logger_ask is None:
             continue
         compared += 1
+        day = boundary_dt.date().isoformat()
+        day_stats = by_day.setdefault(day, {"compared": 0, "matched": 0})
+        day_stats["compared"] += 1
         bid_ok = prices_match(logger_bid, candle.get("bid_close"))
         ask_ok = prices_match(logger_ask, candle.get("ask_close"))
         if bid_ok and ask_ok:
             matched += 1
+            day_stats["matched"] += 1
         else:
             mismatches.append(
                 {
@@ -108,6 +113,7 @@ def compare_ticker_convention(
         "ticker": ticker,
         "compared": compared,
         "matched": matched,
+        "by_day": by_day,
         "mismatches": mismatches,
         "silent_changes": silent_changes,
     }

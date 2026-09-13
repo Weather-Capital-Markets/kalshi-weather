@@ -21,7 +21,11 @@ from analysis.emission_bucketing import (
     iter_conventions,
 )
 from analysis.emission_compare import compare_ticker_convention
-from analysis.emission_decision import decide_from_table
+from analysis.emission_decision import (
+    decide_from_table,
+    finalize_stage0,
+    winner_match_distribution,
+)
 from analysis.validate_emission_forward import (
     MIN_DAYS,
     MIN_MARKETS,
@@ -154,10 +158,14 @@ def sweep_conventions(
             api.close()
 
     table: list[dict[str, Any]] = []
+    # key -> ticker -> per-ticker compare result (for PARTIAL market/day splits)
+    per_convention_tickers: dict[str, dict[str, dict[str, Any]]] = {}
     for interval_anchor, timezone_mode, bucket_offset in iter_conventions():
         total_compared = 0
         total_matched = 0
         all_silent: list[dict[str, Any]] = []
+        key = convention_key(interval_anchor, timezone_mode, bucket_offset)
+        ticker_results: dict[str, dict[str, Any]] = {}
         for ticker in compare_tickers:
             rows = books.get(ticker, [])
             if not rows:
@@ -172,17 +180,19 @@ def sweep_conventions(
                 timezone_mode=timezone_mode,
                 bucket_offset=bucket_offset,
             )
+            ticker_results[ticker] = result
             total_compared += int(result["compared"])
             total_matched += int(result["matched"])
             all_silent.extend(result["silent_changes"])
 
+        per_convention_tickers[key] = ticker_results
         match_rate = (total_matched / total_compared) if total_compared else 0.0
         table.append(
             {
                 "interval_anchor": interval_anchor,
                 "timezone": timezone_mode,
                 "bucket_offset": bucket_offset,
-                "key": convention_key(interval_anchor, timezone_mode, bucket_offset),
+                "key": key,
                 "boundaries_compared": total_compared,
                 "matched": total_matched,
                 "match_rate": match_rate,
@@ -199,6 +209,7 @@ def sweep_conventions(
         "+00:00", "Z"
     )
     decision = decide_from_table(table)
+    finalized = finalize_stage0(decision)
     manifest = {
         "data_dir": str(data_dir.resolve()),
         "declared_window": {
@@ -230,8 +241,13 @@ def sweep_conventions(
         "note": inputs_note or "",
         "input_file_hashes": {},
         "wellposedness_gate": (
-            "If decision.kind=LOW, run analysis/emission_wellposedness.py before "
-            "concluding emission-on-change falsified."
+            "If decision.kind=LOW, run analysis/emission_wellposedness.py, then "
+            "analysis.emission_decision.finalize_stage0(..., wellposedness_finding=...) "
+            "before concluding emission-on-change falsified vs CROSS_CHECK_ILL_POSED."
+        ),
+        "partial_adjudication_gate": (
+            "If decision.kind=PARTIAL, inspect winner_match_distribution by_market and "
+            "by_day; written adjudication required before any branch. Do not average."
         ),
     }
 
@@ -246,12 +262,21 @@ def sweep_conventions(
             "winning_key": decision.winning_key,
             "note": decision.note,
         },
+        "finalized": {
+            "decision_kind": finalized.decision_kind,
+            "wellposedness_finding": finalized.wellposedness_finding,
+            "branch": finalized.branch,
+            "reconstruction_error_bound": finalized.reconstruction_error_bound,
+            "corpus_consequence": finalized.corpus_consequence,
+            "note": finalized.note,
+        },
         "table": table,
         "inputs_manifest": "analysis/out/emission_convention_sweep_inputs.json",
         "shortfall_notes": shortfall_notes,
         "manifest": manifest,
     }
-    # Branch is a finding: only JOIN_BUG may set it, and only when COMPLETE.
+    # Branch is a finding: only JOIN_BUG may set it from the sweep alone, and only
+    # when COMPLETE. LOW may later set forward_logger_only after well-posedness.
     if complete and decision.kind == "JOIN_BUG":
         winner = next(row for row in table if row["key"] == decision.winning_key)
         report["branch"] = decision.branch
@@ -264,7 +289,12 @@ def sweep_conventions(
             report["winner"] = next(
                 row for row in table if row["key"] == decision.winning_key
             )
-        # branch intentionally absent for PARTIAL / LOW
+            report["winner_match_distribution"] = winner_match_distribution(
+                winning_key=decision.winning_key,
+                per_ticker=per_convention_tickers[decision.winning_key],
+            )
+        # branch intentionally absent for PARTIAL / LOW until adjudication /
+        # well-posedness finalizes a different path.
     return report
 
 
@@ -304,6 +334,12 @@ def write_artifacts(report: dict[str, Any], out_dir: Path) -> tuple[Path, Path]:
         f"branch={branch_txt} winning_convention_found={report.get('winning_convention_found')}",
         "",
     ]
+    finalized = report.get("finalized") or {}
+    if finalized:
+        lines.append(
+            f"finalized: corpus_consequence={finalized.get('corpus_consequence')} "
+            f"wellposedness={finalized.get('wellposedness_finding')}"
+        )
     if report.get("winner"):
         w = report["winner"]
         lines.append(
@@ -312,6 +348,16 @@ def write_artifacts(report: dict[str, Any], out_dir: Path) -> tuple[Path, Path]:
         )
         if report.get("reconstruction_error_bound"):
             lines.append(f"reconstruction_error_bound={report['reconstruction_error_bound']}")
+    dist = report.get("winner_match_distribution")
+    if dist:
+        lines.append(
+            "winner_match_distribution: "
+            f"markets={len(dist.get('by_market', {}))} "
+            f"days={len(dist.get('by_day', {}))} "
+            f"market_rate=[{dist.get('market_match_rate_min')}, "
+            f"{dist.get('market_match_rate_max')}] "
+            f"day_rate=[{dist.get('day_match_rate_min')}, {dist.get('day_match_rate_max')}]"
+        )
     lines.append("")
     for row in report["table"]:
         lines.append(

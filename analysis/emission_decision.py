@@ -28,6 +28,20 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 DecisionKind = Literal["JOIN_BUG", "PARTIAL", "LOW", "INCOMPLETE"]
+WellposednessFinding = Literal[
+    "WELL_POSED_SAME_OBJECT",
+    "CROSS_CHECK_ILL_POSED",
+    "INCONCLUSIVE",
+    "NOT_RUN",
+]
+CorpusConsequence = Literal[
+    "full_corpus_usable",
+    "partial_pending_adjudication",
+    "emission_on_change_falsified",
+    "cross_check_ill_posed_redesign_required",
+    "awaiting_wellposedness",
+    "incomplete",
+]
 
 JOIN_BUG_MIN = 0.60
 PARTIAL_MIN = 0.10
@@ -40,6 +54,18 @@ class SweepDecision:
     winning_key: str | None
     branch: str | None
     reconstruction_error_bound: str | None
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class FinalizedStage0:
+    """Stage 0 outcome after optional well-posedness (required when kind=LOW)."""
+
+    decision_kind: DecisionKind
+    wellposedness_finding: WellposednessFinding | None
+    branch: str | None
+    reconstruction_error_bound: str | None
+    corpus_consequence: CorpusConsequence
     note: str
 
 
@@ -106,3 +132,132 @@ def decide_from_table(table: list[dict[str, Any]]) -> SweepDecision:
             "(historical corpus unvalidated by this test), not falsified (degraded books)."
         ),
     )
+
+
+def finalize_stage0(
+    decision: SweepDecision,
+    *,
+    wellposedness_finding: WellposednessFinding | None = None,
+) -> FinalizedStage0:
+    """Lock corpus consequence. LOW requires a well-posedness finding first."""
+    if decision.kind == "INCOMPLETE":
+        return FinalizedStage0(
+            decision_kind=decision.kind,
+            wellposedness_finding=None,
+            branch=None,
+            reconstruction_error_bound=None,
+            corpus_consequence="incomplete",
+            note=decision.note,
+        )
+    if decision.kind == "JOIN_BUG":
+        return FinalizedStage0(
+            decision_kind=decision.kind,
+            wellposedness_finding=None,
+            branch=decision.branch,
+            reconstruction_error_bound=decision.reconstruction_error_bound,
+            corpus_consequence="full_corpus_usable",
+            note=decision.note,
+        )
+    if decision.kind == "PARTIAL":
+        return FinalizedStage0(
+            decision_kind=decision.kind,
+            wellposedness_finding=None,
+            branch=None,
+            reconstruction_error_bound=None,
+            corpus_consequence="partial_pending_adjudication",
+            note=(
+                f"{decision.note} Artifact must include winner_match_distribution "
+                "(by_market and by_day match rates) for written adjudication."
+            ),
+        )
+
+    # LOW
+    finding = wellposedness_finding or "NOT_RUN"
+    if finding in {None, "NOT_RUN", "INCONCLUSIVE"}:
+        return FinalizedStage0(
+            decision_kind="LOW",
+            wellposedness_finding=finding,
+            branch=None,
+            reconstruction_error_bound=None,
+            corpus_consequence="awaiting_wellposedness",
+            note=(
+                "LOW match rates alone do not falsify emit-on-change. "
+                "Complete the hand audit of ~10 logger book changes vs candles "
+                "(analysis/emission_wellposedness.py) and record WELL_POSED_SAME_OBJECT "
+                "or CROSS_CHECK_ILL_POSED."
+            ),
+        )
+    if finding == "WELL_POSED_SAME_OBJECT":
+        return FinalizedStage0(
+            decision_kind="LOW",
+            wellposedness_finding=finding,
+            branch="forward_logger_only",
+            reconstruction_error_bound=None,
+            corpus_consequence="emission_on_change_falsified",
+            note=(
+                "Cross-check is well posed (same object / granularity) and max match "
+                "< 0.10 → emission-on-change falsified for historical books. "
+                "Activate forward_logger_only; historical reconstructed books are degraded."
+            ),
+        )
+    # CROSS_CHECK_ILL_POSED
+    return FinalizedStage0(
+        decision_kind="LOW",
+        wellposedness_finding=finding,
+        branch=None,
+        reconstruction_error_bound=None,
+        corpus_consequence="cross_check_ill_posed_redesign_required",
+        note=(
+            "Logger books and candles do not describe the same object at the same "
+            "granularity. No join convention can align them; low match is expected, "
+            "not a defect. Historical corpus is unvalidated by this test (needs a "
+            "different cross-check), not proven degraded."
+        ),
+    )
+
+
+def winner_match_distribution(
+    *,
+    winning_key: str,
+    per_ticker: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Split one convention's match rate by market and by day (PARTIAL evidence)."""
+    by_market: dict[str, dict[str, Any]] = {}
+    by_day_agg: dict[str, dict[str, int]] = {}
+    for ticker, result in sorted(per_ticker.items()):
+        compared = int(result.get("compared", 0))
+        matched = int(result.get("matched", 0))
+        by_market[ticker] = {
+            "compared": compared,
+            "matched": matched,
+            "match_rate": (matched / compared) if compared else 0.0,
+        }
+        for day, stats in (result.get("by_day") or {}).items():
+            bucket = by_day_agg.setdefault(day, {"compared": 0, "matched": 0})
+            bucket["compared"] += int(stats.get("compared", 0))
+            bucket["matched"] += int(stats.get("matched", 0))
+    by_day = {
+        day: {
+            "compared": stats["compared"],
+            "matched": stats["matched"],
+            "match_rate": (
+                (stats["matched"] / stats["compared"]) if stats["compared"] else 0.0
+            ),
+        }
+        for day, stats in sorted(by_day_agg.items())
+    }
+    rates = [row["match_rate"] for row in by_market.values() if row["compared"] > 0]
+    day_rates = [row["match_rate"] for row in by_day.values() if row["compared"] > 0]
+    return {
+        "winning_key": winning_key,
+        "by_market": by_market,
+        "by_day": by_day,
+        "market_match_rate_min": min(rates) if rates else None,
+        "market_match_rate_max": max(rates) if rates else None,
+        "day_match_rate_min": min(day_rates) if day_rates else None,
+        "day_match_rate_max": max(day_rates) if day_rates else None,
+        "note": (
+            "Distribution required for PARTIAL (mixture / mid-period convention change). "
+            "Do not average into a single bound; written adjudication before any branch."
+        ),
+    }

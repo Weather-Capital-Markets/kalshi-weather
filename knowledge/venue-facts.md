@@ -349,7 +349,11 @@ including `interval_start|UTC|+0` — on one **declared** window (suggested star
 computed baseline row supersedes the transcribed one; transcribed figures remain only in
 the inputs manifest as historical provenance. Decision bands and the well-posedness gate
 are preregistered in `prereg/c1-m1-v1-stage0-decision.yaml` and
-`analysis/emission_decision.py` **before** the VPS sweep runs.
+`analysis/emission_decision.py` **before** the VPS sweep runs. Intermediate
+(`0.10 ≤ max < 0.60`) rates are `PARTIAL`: no auto-branch, no averaging; the sweep
+writes `winner_match_distribution` by market and by day for written adjudication.
+`max < 0.10` is `LOW` and requires the well-posedness hand audit before any
+falsification claim.
 
 **Hypothesis to check before reading twelve low rows as falsification.** Candles may be
 trade-derived while the logger records quote state. If so, no join convention can align

@@ -13,6 +13,14 @@
     "winning_key": null,
     "note": "only 0/12 computed rows; branch absent"
   },
+  "finalized": {
+    "decision_kind": "INCOMPLETE",
+    "wellposedness_finding": null,
+    "branch": null,
+    "reconstruction_error_bound": null,
+    "corpus_consequence": "incomplete",
+    "note": "only 0/12 computed rows; branch absent"
+  },
   "table": [
     {"interval_anchor": "interval_start", "timezone": "UTC", "bucket_offset": -1, "key": "interval_start|UTC|-1", "boundaries_compared": null, "matched": null, "match_rate": null, "silent_count": null, "row_status": "not_computed"},
     {"interval_anchor": "interval_start", "timezone": "UTC", "bucket_offset": 0, "key": "interval_start|UTC|+0", "boundaries_compared": null, "matched": null, "match_rate": null, "silent_count": null, "row_status": "not_computed", "note": "Will be freshly computed on the declared window; transcribed prose 0.9%/2026 does not occupy this row."},

@@ -27,6 +27,7 @@
   "shortfall_notes": [
     "No VPS logger JSONL in the agent environment. Stage 0 has not run."
   ],
-  "wellposedness_gate": "If decision.kind=LOW after the sweep, run analysis/emission_wellposedness.py before concluding emission-on-change falsified.",
+  "wellposedness_gate": "If decision.kind=LOW after the sweep, hand-audit ~10 book changes via analysis/emission_wellposedness.py, then --apply-finding WELL_POSED_SAME_OBJECT or CROSS_CHECK_ILL_POSED. Falsified vs ill-posed have different corpus consequences.",
+  "partial_adjudication_gate": "If decision.kind=PARTIAL, inspect winner_match_distribution by_market and by_day; written adjudication before any branch. Do not average.",
   "prereg": "prereg/c1-m1-v1-stage0-decision.yaml"
 }

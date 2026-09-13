@@ -25,7 +25,9 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
+
+from analysis.emission_decision import FinalizedStage0, finalize_stage0
 
 Finding = Literal[
     "WELL_POSED_SAME_OBJECT",
@@ -33,6 +35,17 @@ Finding = Literal[
     "INCONCLUSIVE",
     "NOT_RUN",
 ]
+
+CORPUS_CONSEQUENCE = {
+    "WELL_POSED_SAME_OBJECT": (
+        "emission_on_change_falsified — historical reconstructed books degraded; "
+        "activate forward_logger_only"
+    ),
+    "CROSS_CHECK_ILL_POSED": (
+        "cross_check_ill_posed_redesign_required — historical books unvalidated "
+        "by this test, not proven degraded; redesign the cross-check"
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +68,7 @@ class WellposednessReport:
     declared_window_start: str
     declared_window_end: str
     note: str
+    corpus_consequence: str | None = None
 
 
 def empty_report(*, start: str, end: str) -> WellposednessReport:
@@ -63,6 +77,7 @@ def empty_report(*, start: str, end: str) -> WellposednessReport:
         samples=[],
         declared_window_start=start,
         declared_window_end=end,
+        corpus_consequence=None,
         note=(
             "Hand audit not yet filled. Pick 10 logger book changes with timestamps "
             "in the declared window and check whether the corresponding candle could "
@@ -88,18 +103,73 @@ def adjudicate(samples: list[ChangeSample]) -> Finding:
     return "INCONCLUSIVE"
 
 
+def with_finding(report: WellposednessReport, finding: Finding) -> WellposednessReport:
+    return WellposednessReport(
+        finding=finding,
+        samples=report.samples,
+        declared_window_start=report.declared_window_start,
+        declared_window_end=report.declared_window_end,
+        note=report.note,
+        corpus_consequence=CORPUS_CONSEQUENCE.get(finding),
+    )
+
+
 def write_report(report: WellposednessReport, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    finding = report.finding
+    if report.samples and finding == "NOT_RUN":
+        finding = adjudicate(report.samples)
+    consequence = report.corpus_consequence or CORPUS_CONSEQUENCE.get(finding)
     payload = {
-        "finding": report.finding,
+        "finding": finding,
         "declared_window_start": report.declared_window_start,
         "declared_window_end": report.declared_window_end,
         "note": report.note,
+        "corpus_consequence": consequence,
         "samples": [asdict(s) for s in report.samples],
         "written_at": datetime.now().isoformat(),
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
+
+
+def apply_finding_to_sweep(
+    sweep_path: Path,
+    *,
+    finding: Finding,
+) -> FinalizedStage0:
+    """Patch Stage 0 sweep artifact after the hand well-posedness audit."""
+    raw = json.loads(sweep_path.read_text(encoding="utf-8"))
+    decision_raw = raw.get("decision") or {}
+    if decision_raw.get("kind") != "LOW":
+        raise ValueError(
+            f"well-posedness applies only when decision.kind=LOW; got {decision_raw.get('kind')}"
+        )
+    from analysis.emission_decision import SweepDecision
+
+    decision = SweepDecision(
+        kind="LOW",
+        max_match_rate=float(decision_raw.get("max_match_rate") or 0.0),
+        winning_key=decision_raw.get("winning_key"),
+        branch=None,
+        reconstruction_error_bound=None,
+        note=str(decision_raw.get("note") or ""),
+    )
+    finalized = finalize_stage0(decision, wellposedness_finding=finding)
+    raw["finalized"] = {
+        "decision_kind": finalized.decision_kind,
+        "wellposedness_finding": finalized.wellposedness_finding,
+        "branch": finalized.branch,
+        "reconstruction_error_bound": finalized.reconstruction_error_bound,
+        "corpus_consequence": finalized.corpus_consequence,
+        "note": finalized.note,
+    }
+    if finalized.branch is not None:
+        raw["branch"] = finalized.branch
+    elif "branch" in raw:
+        del raw["branch"]
+    sweep_path.write_text(json.dumps(raw, indent=2, default=str), encoding="utf-8")
+    return finalized
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +183,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("analysis/out/emission_wellposedness.json"),
     )
+    parser.add_argument(
+        "--apply-finding",
+        type=str,
+        choices=[
+            "WELL_POSED_SAME_OBJECT",
+            "CROSS_CHECK_ILL_POSED",
+            "INCONCLUSIVE",
+            "NOT_RUN",
+        ],
+        default=None,
+        help="After hand audit, patch the Stage 0 sweep artifact with this finding",
+    )
+    parser.add_argument(
+        "--sweep-artifact",
+        type=Path,
+        default=Path("analysis/out/emission_convention_sweep.json"),
+    )
     return parser
 
 
@@ -123,6 +210,15 @@ def main(argv: list[str] | None = None) -> int:
     path = write_report(report, args.out)
     print(f"wrote scaffold {path} finding={report.finding}")
     print(report.note)
+    if args.apply_finding is not None:
+        finalized = apply_finding_to_sweep(
+            args.sweep_artifact, finding=args.apply_finding
+        )
+        print(
+            f"patched {args.sweep_artifact}: "
+            f"corpus_consequence={finalized.corpus_consequence} "
+            f"branch={finalized.branch}"
+        )
     return 0
 
 

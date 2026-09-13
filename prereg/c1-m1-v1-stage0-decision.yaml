@@ -59,3 +59,13 @@ branches_after_decision:
 coverage_required:
   - per_market logger_rows and candles
   - per_day markets_with_books, logger_rows, candles
+  - on PARTIAL: winner_match_distribution.by_market and by_day match rates
+    (auto-written into the sweep artifact; written adjudication before branch)
+
+partial_artifact_field: winner_match_distribution
+low_finalization: >
+  After wellposedness hand audit, patch the sweep via
+  `python -m analysis.emission_wellposedness --start ... --end ...
+  --apply-finding WELL_POSED_SAME_OBJECT|CROSS_CHECK_ILL_POSED`.
+  Record corpus_consequence: emission_on_change_falsified vs
+  cross_check_ill_posed_redesign_required.
