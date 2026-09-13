@@ -226,4 +226,7 @@ __marimo__/
 .cursor/
 
 # Analysis outputs (generated)
-analysis/out/
+analysis/out/*
+!analysis/out/emission_convention_sweep.json
+!analysis/out/emission_convention_sweep_inputs.json
+!analysis/out/emission_convention_sweep.txt

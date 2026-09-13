@@ -79,12 +79,18 @@ POLYMARKET_FEE_SCHEDULE = VenueFact(
     note="Cost model must raise UnverifiedFeeSchedule until verified with date+source.",
 )
 
-# Emit-on-change candlesticks: hypothesis under test (0.9% forward match unresolved).
+# Emit-on-change candlesticks: hypothesis under test; prose 0.9% is unreproducible.
 KALSHI_CANDLE_EMIT_ON_CHANGE = VenueFact(
     name="kalshi_candlestick_emit_on_change",
     status=FactStatus.HYPOTHESIS_UNDER_TEST,
-    source="venue-facts.md §1.7; 0.9% forward match unresolved",
-    note="Carry-forward reconstruction is a named parameterized policy with staleness.",
+    source="venue-facts.md §1.12; analysis/out/emission_convention_sweep.json (INCOMPLETE)",
+    note=(
+        "Prose 0.9% match / 2026 silent are UNREPRODUCIBLE_ABANDONED (no window, no "
+        "inputs, no code). n=225111 was a confabulation (round(2026/0.009)) and is "
+        "withdrawn. Stage 0 sweep_status=INCOMPLETE (0/12 computed); branch absent. "
+        "Fresh 12-way sweep on declared window 2026-08-19..latest; see "
+        "prereg/c1-m1-v1-stage0-decision.yaml."
+    ),
 )
 
 # Bracket boundary convention by era: UNVERIFIED — enumerator, do not hard-code widths.

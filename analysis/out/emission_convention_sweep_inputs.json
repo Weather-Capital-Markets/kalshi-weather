@@ -1,0 +1,33 @@
+{
+  "data_dir": null,
+  "input_files": [],
+  "input_file_hashes": {},
+  "declared_window": {
+    "start": "2026-08-19",
+    "end": null,
+    "policy": "Suggested start 2026-08-19 through latest complete climate day on the VPS logger. End must be filled when the sweep runs. Do not recover the orphan prose window."
+  },
+  "orphan_prose_figures": {
+    "match_rate": 0.009,
+    "silent_count": 2026,
+    "status": "UNREPRODUCIBLE_ABANDONED",
+    "window": "UNKNOWN_NOT_IN_PROJECT_RECORD",
+    "n_225111": {
+      "value_previously_committed": 225111,
+      "status": "WITHDRAWN_CONFABULATION",
+      "note": "Manufactured as round(silent_count / match_rate) = round(2026 / 0.009), treating the silent-change count as if it were a match count. Near-complements; formula wrong twice. Never in the project record before the agent invented it."
+    },
+    "note": "Historical provenance only. Fresh computed interval_start|UTC|+0 on the declared window supersedes these figures in the artifact table. See knowledge/venue-facts.md §1.12."
+  },
+  "logger_live_since": "2026-08-18/19",
+  "markets_discovered": null,
+  "markets_compared": null,
+  "tickers_compared": [],
+  "coverage": {"by_market": {}, "by_day": {}},
+  "shortfall_notes": [
+    "No VPS logger JSONL in the agent environment. Stage 0 has not run."
+  ],
+  "wellposedness_gate": "If decision.kind=LOW after the sweep, hand-audit ~10 book changes via analysis/emission_wellposedness.py, then --apply-finding WELL_POSED_SAME_OBJECT or CROSS_CHECK_ILL_POSED. Falsified vs ill-posed have different corpus consequences.",
+  "partial_adjudication_gate": "If decision.kind=PARTIAL, inspect winner_match_distribution by_market and by_day; written adjudication before any branch. Do not average.",
+  "prereg": "prereg/c1-m1-v1-stage0-decision.yaml"
+}

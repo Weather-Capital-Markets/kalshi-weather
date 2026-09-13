@@ -88,6 +88,15 @@ def test_forward_validator_reports_shortfall_with_two_markets(tmp_path: Path, ca
         )
     writer.close()
 
+    client = MagicMock()
+    client.path.return_value = "/candles"
+    client.get.return_value = RequestResult(
+        status_code=200,
+        latency_ms=1,
+        json_body={"candlesticks": []},
+        error_text=None,
+        endpoint="/candles",
+    )
     assert (
         module.run(
             config={"api": {"base_url": "https://example.test", "max_requests_per_sec": 100}},
@@ -95,10 +104,10 @@ def test_forward_validator_reports_shortfall_with_two_markets(tmp_path: Path, ca
             start=datetime(2026, 8, 10).date(),
             end=datetime(2026, 8, 10).date(),
             markets=tickers,
-            client=MagicMock(),
+            client=client,
             out_dir=tmp_path / "out",
         )
-        == 0
+        == 2
     )
     out = capsys.readouterr().out
     assert "SHORTFALL" in out

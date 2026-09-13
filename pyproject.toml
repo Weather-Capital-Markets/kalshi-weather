@@ -57,3 +57,9 @@ name = "Measure cannot reach live transports"
 type = "forbidden"
 source_modules = ["wxmm.measure"]
 forbidden_modules = ["wxmm.live"]
+
+[[tool.importlinter.contracts]]
+name = "Fair value cannot reach execute"
+type = "forbidden"
+source_modules = ["wxmm.fairvalue", "wxmm.eval"]
+forbidden_modules = ["wxmm.execute"]
