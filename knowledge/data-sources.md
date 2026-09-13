@@ -88,6 +88,21 @@ the archive would mis-select the issuance for most market days — a 10 AM snaps
 CLINYC revision an 8 AM snapshot cannot. `[V-LOCAL]` — `python -m analysis.venue_eras` over
 all 9,364 markets, 2026-08-14. Tracked as O9.
 
+### 1.4 `taker_outcome_side` × `taker_book_side` (trade-derived anchor)
+
+C1-M1 addendum 2 must not assume `taker_book_side`'s frame of reference. The docs call it
+only "book side equivalent to `taker_outcome_side`". Direction for the YES-space estimator
+uses `taker_outcome_side` alone (`yes` → d=+1 / offer; `no` → d=−1 / bid). The cross-tab
+is a gate: it must be a clean one-to-one bijection or the estimator stops.
+
+| Item | Status |
+|---|---|
+| Observed mapping | **clean anti-diagonal** (2026-09-13). `yes → bid` (68,305), `no → ask` (47,082). `yes×ask` = 0, `no×bid` = 0. |
+| Sample | Live `GET /markets?series_ticker=KXHIGHNY` then per-ticker `GET /markets/trades?limit=1000`. n=115,387 non-block prints across 200 markets (page-capped at 1,000/ticker). 0 `is_block_trade` in this pull. 0 complement failures (`yes_price + no_price ≈ 1`). |
+| Gate | `wxmm.fairvalue.anchor_trades.assert_outcome_bookside_mapping` |
+| Direction | Still from `taker_outcome_side` only (`yes` → d=+1 / YES-space ask print; `no` → d=−1 / YES-space bid print). The cross-tab is a bijection, not a license to re-derive d from `taker_book_side`. |
+| Probe | `python -m analysis.probe_taker_mapping --series KXHIGHNY` |
+
 ---
 
 ## 2. NBM gridded archive (AWS)
