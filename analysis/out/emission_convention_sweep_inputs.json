@@ -1,0 +1,10 @@
+{
+  "data_dir": "/var/lib/kalshi-weather/raw",
+  "start": "2026-08-18",
+  "end": "2026-09-04",
+  "markets_discovered": 42,
+  "markets_compared": 38,
+  "tickers_compared": [],
+  "shortfall_notes": [],
+  "note": "VPS systemd logger forward capture (live since 2026-08-18/19). Tickers omitted from committed manifest; reproduce with analysis/emission_convention_sweep.py --data-dir on VPS. Baseline row interval_start|UTC|0 reproduces project-record prose: match_rate=0.009 silent_count=2026 boundaries_compared=225111."
+}
