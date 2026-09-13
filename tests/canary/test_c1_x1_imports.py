@@ -10,6 +10,7 @@ SCAN = (
     ROOT / "wxmm" / "analysis",
     ROOT / "wxmm" / "eval" / "flb.py",
 )
+FAIRVALUE = ROOT / "wxmm" / "fairvalue"
 FORBIDDEN_PREFIXES = (
     "wxmm.core.book",
     "wxmm.core.book_quality",
@@ -55,4 +56,16 @@ def test_c1_x1_has_no_book_imports_or_deprecated_aggressor_field() -> None:
             continue
         for path in target.rglob("*.py"):
             hits.extend(_scan_file(path))
+    assert hits == []
+
+
+def test_fairvalue_has_no_deprecated_aggressor_field() -> None:
+    hits: list[str] = []
+    for path in FAIRVALUE.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and node.id == DEPRECATED_NAME:
+                hits.append(f"{path}:{node.lineno} identifier {DEPRECATED_NAME}")
+            if isinstance(node, ast.Attribute) and node.attr == DEPRECATED_NAME:
+                hits.append(f"{path}:{node.lineno} attribute {DEPRECATED_NAME}")
     assert hits == []

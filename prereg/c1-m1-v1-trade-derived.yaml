@@ -1,0 +1,33 @@
+# C1-M1 trade-derived fit. Stage 0 does not block this path.
+# Go/no-go numbers come from the project root chat. Do not invent them.
+
+prereg_id: c1-m1-v1-trade-derived
+seed: 0
+universe:
+  - KXHIGHNY
+  - HIGHNY
+snapshot_id: FILL_IN
+locked: true
+anchor_provenance: TRADE_DERIVED
+note: >
+  logit(p_hat) = logit(q_trade) + beta · x with x from flow and calendar only.
+  This path never satisfies ReconstructionBoundRequired.
+
+sample:
+  era_filter: six_bracket
+  six_bracket_era_start: "2022-12-11"
+  block_trades: exclude_from_anchor
+
+flow_windows_seconds: [900, 3600, 14400]
+
+calendar:
+  season: meteorological_on_climate_day
+  values: [DJF, MAM, JJA, SON]
+  doy: true
+  hours_to_close: vintage_kalshi_last_trading_close_utc
+
+ridge_lambda: 1.0
+
+go_no_go:
+  rps_vs_trade_mid: FILL_IN
+  min_complete_ladders: FILL_IN

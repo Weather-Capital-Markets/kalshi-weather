@@ -105,6 +105,10 @@ class PriceComplementError(WxmmError):
     """A trade's yes_price + no_price is not ≈ 1.00. Silent acceptance inverts P&L."""
 
 
+class InconsistentTakerMapping(WxmmError):
+    """taker_outcome_side × taker_book_side is not a clean one-to-one map."""
+
+
 class HeldOutLockedError(WxmmError):
     """Held-out period was requested without an explicit loud unlock."""
 
