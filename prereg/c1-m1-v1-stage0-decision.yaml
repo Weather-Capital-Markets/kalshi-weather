@@ -59,7 +59,8 @@ branches_after_decision:
 coverage_required:
   - per_market logger_rows and candles
   - per_day markets_with_books, logger_rows, candles
-  - on PARTIAL: winner_match_distribution.by_market and by_day match rates
+  - >
+    on PARTIAL: winner_match_distribution.by_market and by_day match rates
     (auto-written into the sweep artifact; written adjudication before branch)
 
 partial_artifact_field: winner_match_distribution

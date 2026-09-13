@@ -97,6 +97,14 @@ class ConfigNotPreregistered(WxmmError):
     """Backtest ``run()`` saw a config hash that is not in ``prereg/``."""
 
 
+class GoNoGoNotFilled(WxmmError):
+    """A study ``run()`` was invoked while prereg go/no-go numbers are FILL_IN."""
+
+
+class PriceComplementError(WxmmError):
+    """A trade's yes_price + no_price is not ≈ 1.00. Silent acceptance inverts P&L."""
+
+
 class HeldOutLockedError(WxmmError):
     """Held-out period was requested without an explicit loud unlock."""
 

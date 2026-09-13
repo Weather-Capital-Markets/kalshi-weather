@@ -362,6 +362,20 @@ them, ~0.9% is the expected result rather than a defect, and the correct finding
 different consequences for the historical corpus: falsified ⇒ books degraded; ill-posed ⇒
 books merely unvalidated by this test. See `analysis/emission_wellposedness.py`.
 
+### 1.13 Trade record identifies the aggressor (corrected 2026-09-13)
+
+`[V-PRIMARY]` — re-fetch of `GET /markets/trades` and `GET /historical/trades` docs,
+2026-09-13. See `knowledge/06-kalshi-trades-api.md`.
+
+Both endpoints carry `taker_outcome_side` (`yes`/`no`) and `taker_book_side`
+(`bid`/`ask`), marked required. The deprecated `taker_side` field is not to be read.
+The 2026-08-14 extraction omitted these fields. **An extracted schema is a claim about
+a page at a point in time, not about the API.** Same failure class as the 441-minute
+NBM latency and the orphan 0.9%.
+
+Consequence: maker/taker attribution on `KXHIGHNY` runs on the full trade history with
+no book and no Lee-Ready classifier. C1-X1 (`prereg/c1-x1-v1.yaml`) is the study.
+
 ---
 
 ## 1.99 Open items (venue lane)
