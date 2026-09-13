@@ -1,0 +1,89 @@
+# C1-M1 v0: microstructure-only fair value. Hashed before the first fit.
+# Decision is a sign test on out-of-sample RPS vs the null (β = 0 = market).
+
+prereg_id: c1-m1-v0
+seed: 0
+universe:
+  - KXHIGHNY
+  - HIGHNY
+snapshot_id: FILL_IN
+locked: true
+anchor_provenance: TRADE_DERIVED
+note: >
+  logit(p_hat) = logit(q_trade) + beta · x with x from flow and calendar only.
+  β = 0 is the normalised trade-derived ladder. This run emits scores, never P&L.
+  nwp/obs are out. NBM baseline is UNAVAILABLE_INTERPOLATION_UNSPECIFIED.
+
+sample:
+  era_filter: six_bracket
+  six_bracket_era_start: "2022-12-11"
+  date_range:
+    start: "2022-12-11"
+    end: LATEST_SETTLED_CLIMATE_DAY_WITH_CLINYC_LABEL
+  labels: CLINYC_as_issued
+  label_forbidden:
+    - METAR_derived_maxima
+    - GHCN_D
+    - final_climate_data
+  block_trades: exclude_from_anchor
+
+feature_blocks:
+  enabled: [flow, calendar]
+  disabled: [book, nwp, obs]
+  flow_windows_seconds: [900, 3600, 14400]
+  calendar:
+    season: meteorological_on_climate_day
+    doy: true
+    hours_to_close: vintage_kalshi_last_trading_close_utc
+
+hours_to_close: [24, 12, 6, 3, 1]
+climatology_doy_window: 15
+coverage_floor: 0.15
+coverage_grid: hourly_hours_to_close_0_through_24
+
+ridge_lambda: 1.0
+ridge_penalty_selection: locked_in_prereg_no_search
+
+walk_forward:
+  scheme: expanding_window
+  min_train_days: 30
+  clustering_unit: climate_day
+  no_random_cv: true
+
+bootstrap:
+  n_resample: 1000
+  ci: 0.95
+  method: percentile
+  clustering_unit: climate_day
+
+primary_score: ranked_probability_score
+secondary_score: log_score
+brier_decomposition: per_bracket
+pairwise_bracket_ratio: true
+
+stratification:
+  season: [DJF, MAM, JJA, SON]
+  season_headline: JJA
+  hours_to_close_bucket: true
+  anchor_staleness_bucket: true
+  mm_program_era:
+    - pre_2024-03-11
+    - program_2024-03-11_to_2026-03-11
+    - post_2026-03-12_PROGRAM_STATUS_UNVERIFIED
+  era_comparisons: season_stratified_JJA_headline
+
+decision:
+  type: sign_test
+  primary: oos_rps_improvement_vs_null
+  clustering: climate_day
+  proceed_to_v1: clustered_ci_excludes_zero_and_positive
+  flow_adds_nothing: clustered_ci_includes_zero
+  harmful_check_sign: clustered_ci_excludes_zero_and_negative
+  watch_coefficient: signed_ofi
+  watch_note: >
+    Alb25 predicts viable maker strategies often counter-trade the prevailing
+    imbalance. This is the first test of that sign with authoritative direction.
+
+go_no_go:
+  rule: sign_test_oos_rps_improvement_vs_null
+  filled: true

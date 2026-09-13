@@ -6,6 +6,7 @@ K2 interpolation write-up. ``obs`` waits on C1-T1.
 Must never
     Read a reconstructed book. Impute missing staleness. Drop per-side
     staleness from the vector. Invent a book feature that looks like flow.
+    Build an nwp block before the interpolation method is written.
 """
 
 from __future__ import annotations
@@ -17,13 +18,14 @@ from typing import Mapping, Sequence
 
 from wxmm.analysis.maker_taker import season_of
 from wxmm.analysis.trades_ingest import RawTrade, parse_climate_day
-from wxmm.core.errors import ReconstructionBoundRequired
+from wxmm.core.errors import NwpInterpolationUnspecified, ReconstructionBoundRequired
 from wxmm.core.utc import require_utc
 from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
     TradeImpliedBook,
     YesSpacePrint,
     implied_book_from_trades,
+    trades_at_or_before,
     yes_space_print,
 )
 from wxmm.settlement.eras import kalshi_last_trading_close_utc
@@ -97,6 +99,14 @@ def book_features(*_args: object, **_kwargs: object) -> None:
     )
 
 
+def nwp_features(*_args: object, **_kwargs: object) -> None:
+    raise NwpInterpolationUnspecified(
+        "nwp block blocked on K2 decile-to-bracket interpolation "
+        f"({NwpInterpolationUnspecified.status}); write the method, then "
+        "verify a known Gaussian returns its own bracket masses"
+    )
+
+
 def _prints_in_window(
     trades: Sequence[RawTrade],
     *,
@@ -128,7 +138,8 @@ def flow_features(
     mapping: ObservedMapping | None = None,
 ) -> FlowFeatures:
     as_of_utc = require_utc(as_of)
-    prints = _prints_in_window(trades, as_of=as_of_utc, window=window, ticker=ticker)
+    safe = trades_at_or_before(trades, as_of_utc)
+    prints = _prints_in_window(safe, as_of=as_of_utc, window=window, ticker=ticker)
     signed = Decimal("0")
     gross = Decimal("0")
     notional = Decimal("0")
@@ -139,7 +150,7 @@ def flow_features(
     ofi = (signed / gross) if gross else None
     # Mapping is a corpus property. Do not re-assert on a ticker- or window-filter.
     snapshot = book or implied_book_from_trades(
-        trades, as_of=as_of_utc, ticker=ticker, mapping=mapping
+        safe, as_of=as_of_utc, ticker=ticker, mapping=mapping
     )
     bid_s = (
         snapshot.bid_staleness.total_seconds() if snapshot.bid_staleness is not None else None
