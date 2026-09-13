@@ -86,6 +86,12 @@ window_mismatch (K2 prep)
 validate_emission_forward (run when VPS alive; rsync or on-box)
 ```
 
+**Stage 0 (C1-M1) — before any VPS 12-way sweep.** Decision bands locked in
+`prereg/c1-m1-v1-stage0-decision.yaml`: max≥0.60 → JOIN_BUG / full_corpus;
+0.10≤max<0.60 → PARTIAL (no auto-branch); max<0.10 → LOW then well-posedness check
+before any falsification claim. Orphan prose 0.9%/2026 is unreproducible
+(`knowledge/venue-facts.md` §1.12); do not recover its window.
+
 **Code landed 2026-08-14** — 71 tests passing; census still not executed.
 
 ## 6. Session 3 — depth census (K1 2b) + forward emission + Polymarket logger

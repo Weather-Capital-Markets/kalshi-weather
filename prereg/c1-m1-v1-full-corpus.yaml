@@ -5,13 +5,17 @@ universe:
 snapshot_id: FILL_IN
 branch: full_corpus
 precondition_emission_sweep:
-  branch: full_corpus
-  winning_convention_found: true
-  match_rate_band: "0.60-0.90"
   artifact: analysis/out/emission_convention_sweep.json
+  decision_kind: JOIN_BUG
+  max_match_rate_min: 0.60
+  reconstruction_error_bound: "1 - match_rate of winning convention"
+  note: >
+    Activated only when Stage 0 decision_kind=JOIN_BUG per
+    prereg/c1-m1-v1-stage0-decision.yaml. PARTIAL does not activate this branch.
 sample_note: >
-  Full historical corpus (~8000 bracket-days) once join convention resolves at
-  60-90% match. Carry-forward promoted to fact with named error bound from sweep.
+  Full historical corpus (~8000 bracket-days) once a join convention resolves at
+  max match_rate >= 0.60. Carry-forward promoted to fact with named error bound
+  reconstruction_error_bound = 1 - match_rate.
 go_no_go:
   rps_vs_market_mid: FILL_IN
   markout_capture_vs_mid: FILL_IN

@@ -5,14 +5,19 @@ universe:
 snapshot_id: FILL_IN
 branch: forward_logger_only
 precondition_emission_sweep:
-  branch: forward_logger_only
-  winning_convention_found: false
-  match_rate_ceiling: few_percent
   artifact: analysis/out/emission_convention_sweep.json
+  decision_kind: LOW
+  wellposedness_finding: WELL_POSED_SAME_OBJECT
+  note: >
+    Activated only when Stage 0 decision_kind=LOW AND well-posedness finds the
+    cross-check compares the same object (quote state vs quote state) at the
+    same granularity, so emit-on-change is then falsified for history.
+    If wellposedness finds CROSS_CHECK_ILL_POSED, do NOT activate this branch;
+    redesign the cross-check instead. See prereg/c1-m1-v1-stage0-decision.yaml.
 sample_note: >
-  Emit-on-change falsified for historical books. Fit on forward systemd logger
-  only from 2026-08-18; verify continuous coverage. ~150 bracket-days vs ~8000
-  historical; regularisation and conclusions shrink accordingly.
+  Emit-on-change falsified for historical books after a well-posed low match.
+  Fit on forward systemd logger only from 2026-08-19; verify continuous coverage.
+  ~150 bracket-days vs ~8000 historical; regularisation and conclusions shrink.
 go_no_go:
   rps_vs_market_mid: FILL_IN
   markout_capture_vs_mid: FILL_IN

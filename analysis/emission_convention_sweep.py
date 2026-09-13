@@ -21,6 +21,7 @@ from analysis.emission_bucketing import (
     iter_conventions,
 )
 from analysis.emission_compare import compare_ticker_convention
+from analysis.emission_decision import decide_from_table
 from analysis.validate_emission_forward import (
     MIN_DAYS,
     MIN_MARKETS,
@@ -34,9 +35,9 @@ from ingestion.config_loader import load_config
 
 logger = logging.getLogger(__name__)
 
-MATCH_LOW = 0.60
-MATCH_HIGH = 0.90
-FEW_PERCENT = 0.05
+# Declared Stage 0 window. Do NOT recover the orphan prose 0.9% window.
+# Fresh computed interval_start|UTC|+0 supersedes the transcribed row.
+DEFAULT_WINDOW_START = date(2026, 8, 19)
 
 
 class EmissionSweepError(Exception):
@@ -48,24 +49,50 @@ def _parse_date(value: str) -> date:
 
 
 def _rows_computed(rows: list[dict[str, Any]]) -> int:
-    return sum(1 for row in rows if int(row.get("boundaries_compared") or 0) > 0)
-
-
-def _branch_from_table(rows: list[dict[str, Any]]) -> tuple[str, bool, dict[str, Any] | None]:
-    """Return (branch, winning_convention_found, winner_row).
-
-    Call only when all 12 conventions are computed. Branch is a finding.
-    """
-    viable = [
-        row
+    return sum(
+        1
         for row in rows
-        if MATCH_LOW <= float(row["match_rate"]) <= MATCH_HIGH and int(row["boundaries_compared"]) > 0
-    ]
-    if viable:
-        winner = max(viable, key=lambda row: float(row["match_rate"]))
-        return "full_corpus", True, winner
-    best = max(rows, key=lambda row: float(row["match_rate"]))
-    return "forward_logger_only", False, best
+        if isinstance(row.get("boundaries_compared"), int)
+        and int(row["boundaries_compared"]) > 0
+        and row.get("provenance") != "transcribed_not_computed"
+    )
+
+
+def _coverage_by_market_day(
+    books: dict[str, list[tuple[datetime, float | None, float | None]]],
+    candle_cache: dict[str, list[dict[str, Any]]],
+    days: list[str],
+) -> dict[str, Any]:
+    """Per-market and per-day logger/candle presence — not just pooled n."""
+    by_market: dict[str, dict[str, Any]] = {}
+    by_day: dict[str, dict[str, int]] = {
+        day: {"markets_with_books": 0, "logger_rows": 0, "candles": 0} for day in days
+    }
+    for ticker, rows in books.items():
+        day_counts: dict[str, int] = {}
+        for ts, _bid, _ask in rows:
+            day = ts.astimezone(timezone.utc).date().isoformat()
+            day_counts[day] = day_counts.get(day, 0) + 1
+            if day in by_day:
+                by_day[day]["logger_rows"] += 1
+        candles = candle_cache.get(ticker, [])
+        candle_days: dict[str, int] = {}
+        for candle in candles:
+            end_ts = int(candle["end_period_ts"])
+            day = datetime.fromtimestamp(end_ts, tz=timezone.utc).date().isoformat()
+            candle_days[day] = candle_days.get(day, 0) + 1
+            if day in by_day:
+                by_day[day]["candles"] += 1
+        for day, n in day_counts.items():
+            if day in by_day and n > 0:
+                by_day[day]["markets_with_books"] += 1
+        by_market[ticker] = {
+            "logger_rows": len(rows),
+            "candles": len(candles),
+            "days_with_books": sorted(day_counts),
+            "days_with_candles": sorted(candle_days),
+        }
+    return {"by_market": by_market, "by_day": by_day}
 
 
 def sweep_conventions(
@@ -160,54 +187,84 @@ def sweep_conventions(
                 "matched": total_matched,
                 "match_rate": match_rate,
                 "silent_count": len(all_silent),
+                "row_status": "computed",
+                "provenance": "computed",
             }
         )
 
+    coverage = _coverage_by_market_day(books, candle_cache, days)
     computed = _rows_computed(table)
     complete = computed == len(CONVENTIONS) == 12 and not shortfall_notes
     measured_at = datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace(
         "+00:00", "Z"
     )
+    decision = decide_from_table(table)
     manifest = {
         "data_dir": str(data_dir.resolve()),
-        "start": start.isoformat(),
-        "end": end.isoformat(),
-        "prose_crosscheck_window": {
-            "status": "DECLARE_EXPLICITLY",
+        "declared_window": {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "policy": (
+                "Declared Stage 0 window. Suggested start DEFAULT_WINDOW_START="
+                f"{DEFAULT_WINDOW_START.isoformat()} through latest complete climate day. "
+                "Do not recover the orphan prose 0.9% window — it is unreproducible."
+            ),
+        },
+        "orphan_prose_figures": {
+            "match_rate": 0.009,
+            "silent_count": 2026,
+            "status": "UNREPRODUCIBLE_ABANDONED",
             "note": (
-                "Original 0.9%/2026 prose window is UNKNOWN_NOT_IN_PROJECT_RECORD. "
-                "Record the exact start/end used for this run; do not assume identity "
-                "with the prose figures solely because --start defaults to 2026-08-18."
+                "Transcribed from project-record prose only. Window unknown. "
+                "n=225111 was confabulated as round(2026/0.009) treating silent_count "
+                "as if it were a match count; withdrawn. Fresh computed "
+                "interval_start|UTC|+0 on this declared window supersedes the "
+                "transcribed row; transcribed figures stay in this manifest only."
             ),
         },
         "markets_discovered": len(tickers),
         "markets_compared": len(compare_tickers),
         "tickers_compared": compare_tickers,
+        "coverage": coverage,
         "shortfall_notes": shortfall_notes,
         "note": inputs_note or "",
         "input_file_hashes": {},
+        "wellposedness_gate": (
+            "If decision.kind=LOW, run analysis/emission_wellposedness.py before "
+            "concluding emission-on-change falsified."
+        ),
     }
 
+    # Computed table only — no transcribed placeholder rows once a run produces numbers.
     report: dict[str, Any] = {
         "measured_at": measured_at,
         "sweep_status": "COMPLETE" if complete else "INCOMPLETE",
         "rows_computed": f"{computed}/12",
+        "decision": {
+            "kind": decision.kind,
+            "max_match_rate": decision.max_match_rate,
+            "winning_key": decision.winning_key,
+            "note": decision.note,
+        },
         "table": table,
         "inputs_manifest": "analysis/out/emission_convention_sweep_inputs.json",
         "shortfall_notes": shortfall_notes,
         "manifest": manifest,
     }
-    # Branch is a finding: absent unless COMPLETE. Never default it.
-    if complete:
-        branch, winning_found, winner = _branch_from_table(table)
-        report["branch"] = branch
-        report["winning_convention_found"] = winning_found
+    # Branch is a finding: only JOIN_BUG may set it, and only when COMPLETE.
+    if complete and decision.kind == "JOIN_BUG":
+        winner = next(row for row in table if row["key"] == decision.winning_key)
+        report["branch"] = decision.branch
+        report["winning_convention_found"] = True
         report["winner"] = winner
-        report["reconstruction_error_bound"] = (
-            f"carry_forward_last_quote@{winner['key']}"
-            if winner is not None
-            else "carry_forward_last_quote"
-        )
+        report["reconstruction_error_bound"] = decision.reconstruction_error_bound
+    elif complete:
+        report["winning_convention_found"] = False
+        if decision.winning_key is not None:
+            report["winner"] = next(
+                row for row in table if row["key"] == decision.winning_key
+            )
+        # branch intentionally absent for PARTIAL / LOW
     return report
 
 
@@ -289,6 +346,7 @@ def run(
     print_table(report["table"])
     print(
         f"sweep_status={report['sweep_status']} rows_computed={report['rows_computed']} "
+        f"decision={report.get('decision', {}).get('kind')} "
         f"branch={report.get('branch', '<absent>')} "
         f"winning_convention_found={report.get('winning_convention_found')}"
     )
@@ -317,8 +375,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="12-way emission convention sweep")
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--data-dir", type=Path, required=True)
-    parser.add_argument("--start", type=str, required=True)
-    parser.add_argument("--end", type=str, required=True)
+    parser.add_argument(
+        "--start",
+        type=str,
+        default=DEFAULT_WINDOW_START.isoformat(),
+        help=f"Declared window start (default {DEFAULT_WINDOW_START.isoformat()}; do not recover orphan prose window)",
+    )
+    parser.add_argument(
+        "--end",
+        type=str,
+        required=True,
+        help="Declared window end: latest complete climate day on the VPS logger",
+    )
     parser.add_argument("--markets", type=str, default=None)
     parser.add_argument("--out-dir", type=Path, default=Path("analysis/out"))
     parser.add_argument(
