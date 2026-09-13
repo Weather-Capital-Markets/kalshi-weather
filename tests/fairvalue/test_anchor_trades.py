@@ -433,7 +433,8 @@ def test_null_beta_recovers_normalised_trade_mids() -> None:
     )
     from wxmm.fairvalue.model_trades import trade_ladder_or_none
 
-    ladder = trade_ladder_or_none(a + b, ["KXHIGHNY-26AUG12-T90", "KXHIGHNY-26AUG12-T80"], as_of=AS_OF)
+    tickers = ["KXHIGHNY-26AUG12-T90", "KXHIGHNY-26AUG12-T80"]
+    ladder = trade_ladder_or_none(a + b, tickers, as_of=AS_OF)
     assert ladder is not None
     recovered = null_trade_recovery(ladder)
     assert abs(sum(recovered.values(), Decimal("0")) - Decimal("1")) < Decimal("1e-9")
