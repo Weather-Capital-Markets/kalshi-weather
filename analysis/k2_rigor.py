@@ -32,13 +32,13 @@ import pandas as pd
 
 from analysis.k2_diagnostics import pit_row
 from analysis.murphy import murphy_model_rows
+from analysis.emission_compare import PRICE_TOLERANCE
 from analysis.spread_census import (
     candle_fields,
     parse_iso_utc,
     season_of,
 )
 from analysis.validate_emission_forward import (
-    PRICE_TOLERANCE,
     compare_ticker,
     discover_tickers,
     load_logger_books,
