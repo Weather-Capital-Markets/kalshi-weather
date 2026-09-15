@@ -222,8 +222,10 @@ data/
 *.sqlite
 *.sqlite-journal
 
-# Cursor editor state
-.cursor/
+# Cursor editor state (but keep the versioned Cloud Agent environment config)
+.cursor/*
+!.cursor/environment.json
+!.cursor/install.sh
 
 # Analysis outputs (generated)
 analysis/out/
