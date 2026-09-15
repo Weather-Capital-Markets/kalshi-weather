@@ -327,6 +327,8 @@ def test_compact_path_matches_attributed_on_golden() -> None:
             trade_id="c",
             ticker="KXHIGHNY-26AUG13-T90",
             created="2026-08-13T14:00:00Z",
+            yes="0.2500",
+            no="0.7500",
         ),
     ]
     primary, blocks, n_unlabelled = select_primary(trades, labels)
