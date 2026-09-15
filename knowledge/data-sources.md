@@ -164,6 +164,39 @@ are majority-crossed.
 This was run before the first fit, and the fit path refuses to proceed on a
 `sign_inverted` verdict.
 
+#### 1.4.3 Result: C1-M1 v0-MINIMAL out of sample `[V-LOCAL]`
+
+Walk-forward expanding window over 1,352 climate days (2022-12-11 → 2026-09-13),
+prediction grid T−24h and T−12h, scored by ranked probability score against the
+β=0 null. `analysis/out/c1_m1_v0_min.json`, runner `python -m analysis.c1_m1_run`.
+
+| Quantity | Value |
+|---|---|
+| Anchor coverage | 0.2278 (616 / 2,704 grid points) |
+| Scored predictions | 615 |
+| Mean RPS improvement vs null | **−0.005568** |
+| Day-clustered 95% CI | **[−0.023587, +0.013150]** |
+| Contract-level 95% CI | [−0.024270, +0.013197] |
+| Verdict | **`flow_adds_nothing`** |
+
+The interval covers zero, so by the preregistered sign test flow carries no
+information at this horizon. It is not the `harmful_check_sign` branch either:
+the point estimate is a fifth of the interval half-width, and the crossed-state
+rate already ruled out an inverted anchor independently.
+
+`signed_ofi`, the coefficient the preregistration names as the one to watch,
+spans zero at all three windows (15m −0.037 [−0.288, +0.145], 1h −0.053
+[−0.309, +0.089], 4h +0.016 [−0.100, +0.174]). The only coefficients whose
+intervals exclude zero are staleness and liveness terms — per-side staleness,
+the staleness ratio, the 4h gap since last trade, and the 1h change in implied
+spread. Those describe how current the anchor is, not which way flow is pushing.
+
+Two limits on how far this generalises. Coverage is 23%, and the covered subset
+is selected on anchor completeness, so the estimate speaks to days where every
+bracket printed on both sides and not to thin ones. And `notional` is the only
+size term in the design; queue position and depth stay behind the Stage-0
+reconstruction gate.
+
 ---
 
 ## 2. NBM gridded archive (AWS)
