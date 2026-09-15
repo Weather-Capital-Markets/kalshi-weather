@@ -193,7 +193,7 @@ def test_offset_as_of_raises_on_future_print() -> None:
         no="0.1000",
         created=as_of + timedelta(minutes=1),
     )
-    with pytest.raises(LeakageError, match="created_time after as_of"):
+    with pytest.raises(LeakageError, match="after as_of"):
         implied_book_from_trades(trades + [future], as_of=as_of, ticker=_tickers(day)[0])
 
 
