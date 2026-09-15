@@ -49,6 +49,9 @@ class LabelReport:
     n_missing_high: int
     n_unparsed_strike: int
     n_days_labelled: int
+    n_days_no_cli: int
+    n_days_revised_cli: int
+    n_issuances: int
     n_venue_compared: int
     n_venue_disagree: int
     disagreements: tuple[str, ...]
@@ -115,6 +118,7 @@ def build_labels(
     end: date,
 ) -> tuple[dict[str, SettlementLabel], LabelReport]:
     highs: dict[date, int | None] = {}
+    later_by_day: dict[date, int] = {}
     labels: dict[str, SettlementLabel] = {}
     n_no_issuance = 0
     n_missing_high = 0
@@ -123,6 +127,7 @@ def build_labels(
     n_disagree = 0
     disagreements: list[str] = []
     considered = 0
+    scoped_days: set[date] = set()
 
     for market in markets:
         ticker = str(market.get("ticker") or "")
@@ -130,8 +135,11 @@ def build_labels(
         if climate is None:
             continue
         considered += 1
+        scoped_days.add(climate)
         if climate not in highs:
-            highs[climate] = high_at_snapshot(observations, climate)[0]
+            high, n_later = high_at_snapshot(observations, climate)
+            highs[climate] = high
+            later_by_day[climate] = n_later
         high = highs[climate]
         if high is None:
             if not any(o.climate_day == climate for o in observations):
@@ -158,6 +166,10 @@ def build_labels(
                 if len(disagreements) < 200:
                     disagreements.append(f"{ticker} clinyc={won} venue={venue} high={high}")
 
+    n_days_no_cli = sum(
+        1 for day in scoped_days if not any(o.climate_day == day for o in observations)
+    )
+    n_days_revised = sum(1 for day, n_later in later_by_day.items() if n_later > 0)
     report = LabelReport(
         n_markets=considered,
         n_labelled=len(labels),
@@ -165,6 +177,9 @@ def build_labels(
         n_missing_high=n_missing_high,
         n_unparsed_strike=n_unparsed,
         n_days_labelled=len({label.climate_day for label in labels.values()}),
+        n_days_no_cli=n_days_no_cli,
+        n_days_revised_cli=n_days_revised,
+        n_issuances=len(observations),
         n_venue_compared=n_compared,
         n_venue_disagree=n_disagree,
         disagreements=tuple(disagreements),
@@ -203,7 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--clinyc", type=Path, default=Path("data/labels/clinyc.csv"))
     parser.add_argument("--markets-json", type=Path, default=None)
-    parser.add_argument("--series", nargs="+", default=["KXHIGHNY"])
+    parser.add_argument("--series", nargs="+", default=["KXHIGHNY", "HIGHNY"])
     parser.add_argument("--start", type=date.fromisoformat, default=SIX_BRACKET_ERA_START)
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--out", type=Path, default=Path("data/labels/settlement.json"))
@@ -241,17 +256,23 @@ def main(argv: list[str] | None = None) -> int:
         "n_missing_high": report.n_missing_high,
         "n_unparsed_strike": report.n_unparsed_strike,
         "n_days_labelled": report.n_days_labelled,
+        "n_days_no_cli": report.n_days_no_cli,
+        "n_days_revised_cli": report.n_days_revised_cli,
+        "n_issuances": report.n_issuances,
         "n_venue_compared": report.n_venue_compared,
         "n_venue_disagree": report.n_venue_disagree,
         "venue_disagreement_rate": report.venue_disagreement_rate,
         "roles": dict(Counter(_role_of(m) for m in markets)),
     }
     print(json.dumps(payload, indent=2))
+    report_path = args.out.with_name("report.json")
+    report_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     if report.disagreements:
         print("\nfirst venue disagreements:")
         for line in report.disagreements[:10]:
             print(f"  {line}")
     print(f"\nwrote {args.out}")
+    print(f"wrote {report_path}")
     return 0 if report.n_labelled else 1
 
 

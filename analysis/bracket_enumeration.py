@@ -10,6 +10,7 @@ than assuming 2°F bins from the working record.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import sys
@@ -251,15 +252,19 @@ def verdict_on_two_degree_hypothesis(regimes: pd.DataFrame, daily: pd.DataFrame)
     return "era_dependent"
 
 
-def run(config: dict[str, Any], out_dir: Path) -> int:
+def run(config: dict[str, Any], out_dir: Path, *, markets_json: Path | None = None) -> int:
     storage = config["storage"]
     raw_dir = Path(storage["raw_dir"])
     cfg = config.get("bracket_enumeration") or {}
     start_date = date.fromisoformat(str(cfg.get("start_date") or "2021-08-05"))
 
-    markets = load_markets(raw_dir)
+    if markets_json is not None and markets_json.exists():
+        loaded = json.loads(markets_json.read_text(encoding="utf-8"))
+        markets = [m for m in loaded if isinstance(m, dict)] if isinstance(loaded, list) else []
+    else:
+        markets = load_markets(raw_dir)
     if not markets:
-        print("no markets_history data in raw_dir")
+        print("no markets_history data in raw_dir and no --markets-json")
         return 1
 
     daily = build_daily_table(markets, start_date=start_date)
@@ -298,6 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kalshi bracket structure by era")
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument(
+        "--markets-json",
+        type=Path,
+        default=None,
+        help="API-enumerated markets JSON from analysis.pull_corpus",
+    )
     return parser
 
 
@@ -308,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     default_out = (config.get("bracket_enumeration") or {}).get("out_dir") or "analysis/out"
     out_dir = args.out_dir or Path(default_out)
-    return run(config, out_dir)
+    return run(config, out_dir, markets_json=args.markets_json)
 
 
 if __name__ == "__main__":

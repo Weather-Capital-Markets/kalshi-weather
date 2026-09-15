@@ -30,9 +30,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from analysis.emission_compare import PRICE_TOLERANCE
 from analysis.k2_diagnostics import pit_row
 from analysis.murphy import murphy_model_rows
-from analysis.emission_compare import PRICE_TOLERANCE
 from analysis.spread_census import (
     candle_fields,
     parse_iso_utc,

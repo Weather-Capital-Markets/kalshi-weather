@@ -13,16 +13,18 @@ Must never
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Callable, Literal, Protocol
 
 import duckdb
 import polars as pl
 
+from wxmm.analysis.raw_store import CheckpointStore, EndpointCursor, TickerCheckpoint
 from wxmm.core.errors import PriceComplementError
 from wxmm.core.utc import require_utc
 from wxmm.settlement.eras import (
@@ -68,6 +70,12 @@ class TradesTransport(Protocol):
 class HistoricalCutoff:
     market_settled_ts: int
     raw: dict[str, Any]
+    trades_created_ts: int
+
+    @property
+    def trade_partition_ts(self) -> int:
+        """Trades are partitioned by fill time, not market settlement time."""
+        return self.trades_created_ts
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +107,64 @@ class MergeReport:
     gap_note: str
 
 
+@dataclass
+class ComplementTally:
+    """Count complement violations; never a reason to drop a ticker."""
+
+    n_checked: int = 0
+    n_violations: int = 0
+    worst_deviation: Decimal = Decimal("0")
+    worst_trade_id: str = ""
+    worst_ticker: str = ""
+    violating_ids: set[str] = field(default_factory=set)
+    samples: list[dict[str, str]] = field(default_factory=list)
+
+    def observe(self, yes_price: Decimal, no_price: Decimal, *, trade_id: str, ticker: str) -> bool:
+        self.n_checked += 1
+        deviation = abs(yes_price + no_price - Decimal("1"))
+        if deviation <= PRICE_COMPLEMENT_TOLERANCE:
+            return False
+        self.n_violations += 1
+        self.violating_ids.add(trade_id)
+        if deviation > self.worst_deviation:
+            self.worst_deviation = deviation
+            self.worst_trade_id = trade_id
+            self.worst_ticker = ticker
+        if len(self.samples) < 50:
+            self.samples.append(
+                {
+                    "trade_id": trade_id,
+                    "ticker": ticker,
+                    "yes_price": str(yes_price),
+                    "no_price": str(no_price),
+                    "deviation": str(deviation),
+                }
+            )
+        return True
+
+    def merge_from(self, other: ComplementTally) -> None:
+        self.n_checked += other.n_checked
+        self.n_violations += other.n_violations
+        self.violating_ids.update(other.violating_ids)
+        if other.worst_deviation > self.worst_deviation:
+            self.worst_deviation = other.worst_deviation
+            self.worst_trade_id = other.worst_trade_id
+            self.worst_ticker = other.worst_ticker
+        remaining = 50 - len(self.samples)
+        if remaining > 0:
+            self.samples.extend(other.samples[:remaining])
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "n_checked": self.n_checked,
+            "n_violations": self.n_violations,
+            "worst_deviation": str(self.worst_deviation),
+            "worst_trade_id": self.worst_trade_id,
+            "worst_ticker": self.worst_ticker,
+            "samples": list(self.samples),
+        }
+
+
 def parse_climate_day(ticker: str) -> date:
     match = TICKER_RE.match(ticker)
     if match is None:
@@ -122,12 +188,17 @@ def close_time_convention_for(climate_day: date) -> CloseTimeConvention:
 
 
 def assert_price_complement(yes_price: Decimal, no_price: Decimal, *, trade_id: str) -> None:
+    """Strict helper. Unit tests that expect a raise call this, not ingest."""
     total = yes_price + no_price
     if abs(total - Decimal("1")) > PRICE_COMPLEMENT_TOLERANCE:
         raise PriceComplementError(
             f"trade {trade_id}: yes_price={yes_price} + no_price={no_price} = {total} "
             f"(docs example 0.56+0.56 is placeholder text; refuse rather than invert P&L)"
         )
+
+
+def complement_deviation(yes_price: Decimal, no_price: Decimal) -> Decimal:
+    return abs(yes_price + no_price - Decimal("1"))
 
 
 def _parse_created_time(raw: str) -> datetime:
@@ -142,6 +213,8 @@ def parse_trade(
     payload: dict[str, Any],
     *,
     source_endpoint: Literal["historical", "live"],
+    strict_complement: bool = True,
+    complement_tally: ComplementTally | None = None,
 ) -> RawTrade:
     if "taker_outcome_side" not in payload or "taker_book_side" not in payload:
         raise ValueError(
@@ -157,8 +230,11 @@ def parse_trade(
     yes_price = Decimal(str(payload["yes_price_dollars"]))
     no_price = Decimal(str(payload["no_price_dollars"]))
     trade_id = str(payload["trade_id"])
-    assert_price_complement(yes_price, no_price, trade_id=trade_id)
     ticker = str(payload["ticker"])
+    if complement_tally is not None:
+        complement_tally.observe(yes_price, no_price, trade_id=trade_id, ticker=ticker)
+    if strict_complement:
+        assert_price_complement(yes_price, no_price, trade_id=trade_id)
     climate = parse_climate_day(ticker)
     created = _parse_created_time(str(payload["created_time"]))
     return RawTrade(
@@ -179,27 +255,72 @@ def parse_trade(
     )
 
 
-def parse_cutoff(payload: dict[str, Any]) -> HistoricalCutoff:
-    raw: Any = payload.get("market_settled_ts")
-    if raw is None:
-        raw = payload.get("marketSettledTs")
-    if raw is None:
-        nested = payload.get("cutoff") or payload.get("cutoffs") or {}
-        if isinstance(nested, dict):
-            raw = nested.get("market_settled_ts")
-    if raw is None:
-        raise ValueError("GET /historical/cutoff returned no market_settled_ts")
+def _cutoff_field(payload: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        if payload.get(name) is not None:
+            return payload[name]
+    nested = payload.get("cutoff") or payload.get("cutoffs") or {}
+    if isinstance(nested, dict):
+        for name in names:
+            if nested.get(name) is not None:
+                return nested[name]
+    return None
+
+
+def _as_unix_ts(raw: Any, *, field: str) -> int:
     if isinstance(raw, (int, float)):
-        ts = int(raw)
-    else:
-        text = str(raw).replace("Z", "+00:00")
-        ts = int(datetime.fromisoformat(text).timestamp())
-    return HistoricalCutoff(market_settled_ts=ts, raw=payload)
+        return int(raw)
+    text = str(raw).replace("Z", "+00:00")
+    try:
+        return int(datetime.fromisoformat(text).timestamp())
+    except ValueError as exc:
+        raise ValueError(f"GET /historical/cutoff {field} is not a timestamp: {raw!r}") from exc
+
+
+def parse_cutoff(payload: dict[str, Any]) -> HistoricalCutoff:
+    settled_raw = _cutoff_field(payload, "market_settled_ts", "marketSettledTs")
+    if settled_raw is None:
+        raise ValueError("GET /historical/cutoff returned no market_settled_ts")
+    market_settled_ts = _as_unix_ts(settled_raw, field="market_settled_ts")
+    trades_raw = _cutoff_field(payload, "trades_created_ts", "tradesCreatedTs")
+    trades_created_ts = (
+        _as_unix_ts(trades_raw, field="trades_created_ts")
+        if trades_raw is not None
+        else market_settled_ts
+    )
+    return HistoricalCutoff(
+        market_settled_ts=market_settled_ts,
+        trades_created_ts=trades_created_ts,
+        raw=payload,
+    )
 
 
 def fetch_cutoff(transport: TradesTransport) -> HistoricalCutoff:
     """Read the cutoff before any backfill. Do not assume it."""
     return parse_cutoff(transport.get_json("/historical/cutoff"))
+
+
+def _append_inflight(path: Path, trades: list[RawTrade]) -> None:
+    if not trades:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for trade in trades:
+            handle.write(json.dumps(raw_trade_to_record(trade), sort_keys=True) + "\n")
+
+
+def load_inflight_jsonl(path: Path) -> list[RawTrade]:
+    if not path.exists():
+        return []
+    out: list[RawTrade] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if not isinstance(row, dict):
+            raise ValueError(f"inflight row is not an object: {path}")
+        out.append(record_to_raw_trade(row, strict_complement=False))
+    return out
 
 
 def paginate_trades(
@@ -212,9 +333,26 @@ def paginate_trades(
     max_ts: int | None = None,
     limit: int = 1000,
     is_block_trade: bool | None = None,
+    start_cursor: str | None = None,
+    strict_complement: bool = True,
+    complement_tally: ComplementTally | None = None,
+    checkpoint: EndpointCursor | None = None,
+    checkpoint_store: CheckpointStore | None = None,
+    checkpoint_owner: TickerCheckpoint | None = None,
+    on_page: Callable[[int, list[RawTrade]], None] | None = None,
 ) -> list[RawTrade]:
-    cursor: str | None = None
+    cursor: str | None = start_cursor
+    if checkpoint is not None and checkpoint.cursor and not checkpoint.done:
+        cursor = checkpoint.cursor
     out: list[RawTrade] = []
+    inflight_path: Path | None = None
+    if checkpoint_store is not None and ticker is not None:
+        inflight_path = checkpoint_store.inflight_path(ticker, source_endpoint)
+        seen = {t.trade_id: t for t in load_inflight_jsonl(inflight_path)}
+        out.extend(seen.values())
+        if checkpoint is not None and checkpoint.done:
+            return out
+    pages = 0
     while True:
         params: dict[str, Any] = {"limit": limit}
         if ticker is not None:
@@ -231,12 +369,37 @@ def paginate_trades(
         rows = body.get("trades") or []
         if not isinstance(rows, list):
             raise ValueError(f"{path} trades field is not a list")
+        page_trades: list[RawTrade] = []
         for row in rows:
             if not isinstance(row, dict):
                 raise ValueError(f"{path} trade row is not an object")
-            out.append(parse_trade(row, source_endpoint=source_endpoint))
+            page_trades.append(
+                parse_trade(
+                    row,
+                    source_endpoint=source_endpoint,
+                    strict_complement=strict_complement,
+                    complement_tally=complement_tally,
+                )
+            )
+        existing_ids = {trade.trade_id for trade in out}
+        new_trades = [trade for trade in page_trades if trade.trade_id not in existing_ids]
+        out.extend(new_trades)
+        if inflight_path is not None:
+            _append_inflight(inflight_path, new_trades)
         nxt = body.get("cursor")
-        if not nxt or not rows:
+        done = not nxt or not rows
+        if checkpoint is not None:
+            checkpoint.cursor = None if done else str(nxt)
+            if page_trades:
+                checkpoint.last_created_time = page_trades[-1].created_time.isoformat()
+            checkpoint.n_trades = len(out)
+            checkpoint.done = done
+            if checkpoint_store is not None and checkpoint_owner is not None:
+                checkpoint_store.save(checkpoint_owner)
+        pages += 1
+        if on_page is not None:
+            on_page(pages, page_trades)
+        if done:
             break
         cursor = str(nxt)
     return out
@@ -248,22 +411,42 @@ def pull_ticker(
     cutoff: HistoricalCutoff,
     *,
     limit: int = 1000,
+    strict_complement: bool = True,
+    complement_tally: ComplementTally | None = None,
+    checkpoints: CheckpointStore | None = None,
+    on_page: Callable[[int, list[RawTrade]], None] | None = None,
 ) -> tuple[list[RawTrade], list[RawTrade]]:
+    owner = checkpoints.load(ticker) if checkpoints is not None else None
+    if owner is None:
+        owner = TickerCheckpoint.fresh(ticker)
+    partition = cutoff.trade_partition_ts
     historical = paginate_trades(
         transport,
         path="/historical/trades",
         source_endpoint="historical",
         ticker=ticker,
-        max_ts=cutoff.market_settled_ts,
+        max_ts=partition,
         limit=limit,
+        strict_complement=strict_complement,
+        complement_tally=complement_tally,
+        checkpoint=owner.historical,
+        checkpoint_store=checkpoints,
+        checkpoint_owner=owner,
+        on_page=on_page,
     )
     live = paginate_trades(
         transport,
         path="/markets/trades",
         source_endpoint="live",
         ticker=ticker,
-        min_ts=cutoff.market_settled_ts,
+        min_ts=partition,
         limit=limit,
+        strict_complement=strict_complement,
+        complement_tally=complement_tally,
+        checkpoint=owner.live,
+        checkpoint_store=checkpoints,
+        checkpoint_owner=owner,
+        on_page=on_page,
     )
     return historical, live
 
@@ -283,7 +466,7 @@ def merge_trades(
             continue
         duplicates.append(trade.trade_id)
     merged = sorted(by_id.values(), key=lambda t: (t.created_time, t.trade_id))
-    cutoff_dt = datetime.fromtimestamp(cutoff.market_settled_ts, tz=timezone.utc)
+    cutoff_dt = datetime.fromtimestamp(cutoff.trade_partition_ts, tz=timezone.utc)
     hist_after = [t for t in historical if t.created_time >= cutoff_dt]
     live_before = [t for t in live if t.created_time < cutoff_dt]
     overlap = len(hist_after) + len(live_before)
@@ -329,34 +512,72 @@ def boundary_audit_duckdb(
     return int(row[0]) if row else 0
 
 
-def read_trades_parquet(path: Any) -> list[RawTrade]:
+def raw_trade_to_record(trade: RawTrade) -> dict[str, Any]:
+    row = asdict(trade)
+    row["created_time"] = trade.created_time.isoformat()
+    row["climate_day"] = trade.climate_day.isoformat()
+    row["count"] = str(trade.count)
+    row["yes_price"] = str(trade.yes_price)
+    row["no_price"] = str(trade.no_price)
+    return row
+
+
+def record_to_raw_trade(
+    row: dict[str, Any],
+    *,
+    strict_complement: bool = True,
+    complement_tally: ComplementTally | None = None,
+) -> RawTrade:
+    yes_price = Decimal(str(row["yes_price"]))
+    no_price = Decimal(str(row["no_price"]))
+    trade_id = str(row["trade_id"])
+    ticker = str(row["ticker"])
+    if complement_tally is not None:
+        complement_tally.observe(yes_price, no_price, trade_id=trade_id, ticker=ticker)
+    if strict_complement:
+        assert_price_complement(yes_price, no_price, trade_id=trade_id)
+    return RawTrade(
+        trade_id=trade_id,
+        ticker=ticker,
+        count=Decimal(str(row["count"])),
+        yes_price=yes_price,
+        no_price=no_price,
+        taker_outcome_side=row["taker_outcome_side"],
+        taker_book_side=row["taker_book_side"],
+        created_time=_parse_created_time(str(row["created_time"])),
+        is_block_trade=bool(row["is_block_trade"]),
+        source_endpoint=row["source_endpoint"],
+        climate_day=date.fromisoformat(str(row["climate_day"])),
+        ladder_regime=row["ladder_regime"],
+        settlement_rule_id=str(row["settlement_rule_id"]),
+        close_time_convention=row["close_time_convention"],
+    )
+
+
+def read_trades_parquet(
+    path: Any,
+    *,
+    strict_complement: bool = True,
+    complement_tally: ComplementTally | None = None,
+) -> list[RawTrade]:
     """Round-trip of ``trades_to_parquet``. Accepts a file or a shard directory."""
     target = Path(path)
-    files = sorted(target.glob("*.parquet")) if target.is_dir() else [target]
+    if target.is_dir():
+        files = sorted(p for p in target.glob("*.parquet") if p.is_file())
+        if not files:
+            nested = target / "_tickers"
+            files = sorted(nested.glob("*.parquet")) if nested.is_dir() else []
+    else:
+        files = [target]
     out: list[RawTrade] = []
     for file in files:
         frame = pl.read_parquet(file)
         for row in frame.iter_rows(named=True):
-            yes_price = Decimal(str(row["yes_price"]))
-            no_price = Decimal(str(row["no_price"]))
-            trade_id = str(row["trade_id"])
-            assert_price_complement(yes_price, no_price, trade_id=trade_id)
             out.append(
-                RawTrade(
-                    trade_id=trade_id,
-                    ticker=str(row["ticker"]),
-                    count=Decimal(str(row["count"])),
-                    yes_price=yes_price,
-                    no_price=no_price,
-                    taker_outcome_side=row["taker_outcome_side"],
-                    taker_book_side=row["taker_book_side"],
-                    created_time=_parse_created_time(str(row["created_time"])),
-                    is_block_trade=bool(row["is_block_trade"]),
-                    source_endpoint=row["source_endpoint"],
-                    climate_day=date.fromisoformat(str(row["climate_day"])),
-                    ladder_regime=row["ladder_regime"],
-                    settlement_rule_id=str(row["settlement_rule_id"]),
-                    close_time_convention=row["close_time_convention"],
+                record_to_raw_trade(
+                    row,
+                    strict_complement=strict_complement,
+                    complement_tally=complement_tally,
                 )
             )
     out.sort(key=lambda t: (t.created_time, t.trade_id))
@@ -364,13 +585,7 @@ def read_trades_parquet(path: Any) -> list[RawTrade]:
 
 
 def trades_to_parquet(trades: list[RawTrade], path: Any) -> None:
-    records = []
-    for trade in trades:
-        row = asdict(trade)
-        row["created_time"] = trade.created_time.isoformat()
-        row["climate_day"] = trade.climate_day.isoformat()
-        row["count"] = str(trade.count)
-        row["yes_price"] = str(trade.yes_price)
-        row["no_price"] = str(trade.no_price)
-        records.append(row)
-    pl.DataFrame(records).write_parquet(path)
+    dest = Path(path)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    records = [raw_trade_to_record(trade) for trade in trades]
+    pl.DataFrame(records).write_parquet(dest)

@@ -64,6 +64,7 @@ class CrossedRate:
     n_touching: int
     rate: float | None
     mean_gap_cents: float | None
+    mean_uncrossed_gap_cents: float | None
     median_gap_cents: float | None
     n_tickers: int
     n_tickers_two_sided: int
@@ -137,6 +138,8 @@ def crossed_state_rate(
     n_crossed = 0
     n_touching = 0
     gap_hist: Counter[int] = Counter()
+    uncrossed_gap_sum = 0
+    n_uncrossed = 0
     ticker_rates: list[float] = []
     n_majority = 0
 
@@ -161,6 +164,9 @@ def crossed_state_rate(
                 local_crossed += 1
             elif ask == bid:
                 n_touching += 1
+            else:
+                n_uncrossed += 1
+                uncrossed_gap_sum += _gap_cents(ask, bid)
         n_two_sided += local_two_sided
         n_crossed += local_crossed
         if local_two_sided:
@@ -178,6 +184,7 @@ def crossed_state_rate(
         if gap_hist
         else None
     )
+    mean_uncrossed = (uncrossed_gap_sum / n_uncrossed) if n_uncrossed else None
     return CrossedRate(
         sign=sign,
         n_prints=n_prints,
@@ -186,6 +193,7 @@ def crossed_state_rate(
         n_touching=n_touching,
         rate=(n_crossed / n_two_sided) if n_two_sided else None,
         mean_gap_cents=mean_gap,
+        mean_uncrossed_gap_cents=mean_uncrossed,
         median_gap_cents=_median_from_histogram(gap_hist),
         n_tickers=len(by_ticker),
         n_tickers_two_sided=len(ticker_rates),
