@@ -14,7 +14,6 @@ import logging
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -24,121 +23,23 @@ import pandas as pd
 from analysis.spread_census import load_markets, ticker_climate_date
 from analysis.venue_eras import change_points
 from ingestion.config_loader import load_config
+from wxmm.settlement.brackets import (
+    SUBTITLE_KEYS,
+    ParsedStrike,
+    parse_market_strike,
+)
 
 logger = logging.getLogger(__name__)
 
-BETWEEN_SUBTITLE = re.compile(
-    r"(\d+)\s*(?:°|deg)?\s*to\s*(\d+)\s*(?:°|deg)?",
-    re.IGNORECASE,
-)
-TAIL_ABOVE = re.compile(
-    r"(\d+)\s*(?:°|deg)?\s*or\s*(?:above|higher)",
-    re.IGNORECASE,
-)
-TAIL_BELOW = re.compile(
-    r"(\d+)\s*(?:°|deg)?\s*or\s*(?:below|lower)",
-    re.IGNORECASE,
-)
 TICKER_SUFFIX = re.compile(r"-([TB][A-Z0-9.]+)$", re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class ParsedStrike:
-    role: str  # between | greater | less
-    floor_f: int | None
-    cap_f: int | None
-    width_f: int | None
-    strike_source: str
-
-
 def _label_text(market: dict[str, Any]) -> str:
-    for key in ("yes_sub_title", "subtitle", "title"):
+    for key in SUBTITLE_KEYS:
         raw = market.get(key)
         if isinstance(raw, str) and raw.strip():
             return raw.strip()
     return ""
-
-
-def _float_strike(value: Any) -> int | None:
-    if value is None or value == "":
-        return None
-    try:
-        return int(round(float(value)))
-    except (TypeError, ValueError):
-        return None
-
-
-def parse_strike_from_subtitle(text: str) -> ParsedStrike | None:
-    match = BETWEEN_SUBTITLE.search(text)
-    if match:
-        low = int(match.group(1))
-        high = int(match.group(2))
-        return ParsedStrike(
-            role="between",
-            floor_f=low,
-            cap_f=high,
-            width_f=high - low + 1,
-            strike_source="subtitle",
-        )
-    match = TAIL_ABOVE.search(text)
-    if match:
-        threshold = int(match.group(1))
-        return ParsedStrike(
-            role="greater",
-            floor_f=threshold,
-            cap_f=None,
-            width_f=None,
-            strike_source="subtitle",
-        )
-    match = TAIL_BELOW.search(text)
-    if match:
-        threshold = int(match.group(1))
-        return ParsedStrike(
-            role="less",
-            floor_f=None,
-            cap_f=threshold,
-            width_f=None,
-            strike_source="subtitle",
-        )
-    return None
-
-
-def parse_market_strike(market: dict[str, Any]) -> ParsedStrike | None:
-    strike_type = str(market.get("strike_type") or "").strip().lower()
-    floor_f = _float_strike(market.get("floor_strike"))
-    cap_f = _float_strike(market.get("cap_strike"))
-
-    if strike_type == "between" and floor_f is not None and cap_f is not None:
-        return ParsedStrike(
-            role="between",
-            floor_f=floor_f,
-            cap_f=cap_f,
-            width_f=cap_f - floor_f + 1,
-            strike_source="metadata",
-        )
-    if strike_type == "greater" and floor_f is not None:
-        return ParsedStrike(
-            role="greater",
-            floor_f=floor_f,
-            cap_f=None,
-            width_f=None,
-            strike_source="metadata",
-        )
-    if strike_type == "less" and cap_f is not None:
-        return ParsedStrike(
-            role="less",
-            floor_f=None,
-            cap_f=cap_f,
-            width_f=None,
-            strike_source="metadata",
-        )
-
-    subtitle = _label_text(market)
-    if subtitle:
-        parsed = parse_strike_from_subtitle(subtitle)
-        if parsed is not None:
-            return parsed
-    return None
 
 
 def classify_ticker_suffix(ticker: str) -> str:

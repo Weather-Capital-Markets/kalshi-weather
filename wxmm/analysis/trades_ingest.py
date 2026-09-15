@@ -17,6 +17,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Literal, Protocol
 
 import duckdb
@@ -326,6 +327,40 @@ def boundary_audit_duckdb(
     finally:
         con.close()
     return int(row[0]) if row else 0
+
+
+def read_trades_parquet(path: Any) -> list[RawTrade]:
+    """Round-trip of ``trades_to_parquet``. Accepts a file or a shard directory."""
+    target = Path(path)
+    files = sorted(target.glob("*.parquet")) if target.is_dir() else [target]
+    out: list[RawTrade] = []
+    for file in files:
+        frame = pl.read_parquet(file)
+        for row in frame.iter_rows(named=True):
+            yes_price = Decimal(str(row["yes_price"]))
+            no_price = Decimal(str(row["no_price"]))
+            trade_id = str(row["trade_id"])
+            assert_price_complement(yes_price, no_price, trade_id=trade_id)
+            out.append(
+                RawTrade(
+                    trade_id=trade_id,
+                    ticker=str(row["ticker"]),
+                    count=Decimal(str(row["count"])),
+                    yes_price=yes_price,
+                    no_price=no_price,
+                    taker_outcome_side=row["taker_outcome_side"],
+                    taker_book_side=row["taker_book_side"],
+                    created_time=_parse_created_time(str(row["created_time"])),
+                    is_block_trade=bool(row["is_block_trade"]),
+                    source_endpoint=row["source_endpoint"],
+                    climate_day=date.fromisoformat(str(row["climate_day"])),
+                    ladder_regime=row["ladder_regime"],
+                    settlement_rule_id=str(row["settlement_rule_id"]),
+                    close_time_convention=row["close_time_convention"],
+                )
+            )
+    out.sort(key=lambda t: (t.created_time, t.trade_id))
+    return out
 
 
 def trades_to_parquet(trades: list[RawTrade], path: Any) -> None:
