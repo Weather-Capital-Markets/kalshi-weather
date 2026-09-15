@@ -48,13 +48,31 @@ def cli_max_instant(
     return naive.replace(tzinfo=NY_CIVIL)
 
 
+def asos_max_in_window(
+    observations: list[AsosObservation],
+    window_start: datetime,
+    window_end: datetime,
+) -> tuple[float | None, datetime | None]:
+    """Return (max tmpf, time of max) over [window_start, window_end).
+
+    Ties break to the earliest observation.
+    """
+    in_window = [
+        obs for obs in observations if time_in_window(obs.valid_utc, window_start, window_end)
+    ]
+    if not in_window:
+        return None, None
+    best = max(in_window, key=lambda obs: (obs.tmpf, -obs.valid_utc.timestamp()))
+    return best.tmpf, best.valid_utc
+
+
 def asos_max_for_climate_day(
     observations: list[AsosObservation],
     climate_date: str | date,
 ) -> tuple[float | None, datetime | None]:
     """Return (max tmpf, time of max) over the LST climate day.
 
-  Ties break to the earliest observation.
+    Ties break to the earliest observation.
     """
     if isinstance(climate_date, str):
         day = date.fromisoformat(climate_date)

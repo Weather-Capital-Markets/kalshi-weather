@@ -251,9 +251,18 @@ This was run before the first fit, and the fit path refuses to proceed on a
 
 ### 2.3 Cycles & latency
 
-- Hourly cycles; text-bulletin publication ~30–50 min after nominal cycle time; primary
+- Hourly cycles; **text-bulletin** publication ~30–50 min after nominal cycle time; primary
   full-content cycles 01Z/07Z/13Z/19Z. `[REPORTED]` (VLab text-products page, quoted round 1)
-  `(verify against own logger timestamps once running)`.
+  — applies to **text bulletins only**, not qmd grib percentile products.
+- **qmd grib percentile products (CONUS window max/min):** measured prospective
+  first-availability on NOMADS across 3 cycles (404→200 polling, Session 6b-fix) with AWS
+  `Last-Modified` corroboration. `[V-LOCAL]` — 2026-08-21/22:
+  - median **435 min**, p90 **441 min**, max **453 min** after nominal cycle time
+  - Method: `analysis/nbm_availability_watch.py` on NOMADS; Panel A AWS Last-Modified ~438 min
+  - **Vintage rule (Session 7e):** T−24h snapshot selects latest 00Z/12Z cycle with
+    `publication_utc(nominal, 441) < snapshot` and idx-confirmed 12Z–06Z(+1) max window;
+    expected cycle **D−1 12Z / f042** (~24h forecast lead), verified empirically per day
+  - Prior 300-day backfill at 60 min / D 00Z f030 is **void** (future information at snapshot)
 
 ---
 

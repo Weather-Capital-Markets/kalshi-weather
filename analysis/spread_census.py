@@ -46,6 +46,7 @@ import pandas as pd
 from ingestion.climate_day import LST, MONTHS, climate_day_end, parse_lst_clock
 from ingestion.climate_time import CliTimeConvention, cli_max_instant, load_cli_time_convention
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_frame, price_as_dollars
 from ingestion.writer import read_jsonl_gz
 
 plt.switch_backend("Agg")
@@ -132,10 +133,14 @@ def _float(value: Any) -> float | None:
 def candle_fields(candle: dict[str, Any]) -> dict[str, Any]:
     bid = candle.get("yes_bid") if isinstance(candle.get("yes_bid"), dict) else {}
     ask = candle.get("yes_ask") if isinstance(candle.get("yes_ask"), dict) else {}
+    bid_raw = _float(bid.get("close_dollars", bid.get("close")))
+    ask_raw = _float(ask.get("close_dollars", ask.get("close")))
+    bid_close = price_as_dollars(bid_raw, label="yes_bid") if bid_raw is not None else None
+    ask_close = price_as_dollars(ask_raw, label="yes_ask") if ask_raw is not None else None
     return {
         "end_period_ts": candle.get("end_period_ts"),
-        "bid_close": _float(bid.get("close_dollars", bid.get("close"))),
-        "ask_close": _float(ask.get("close_dollars", ask.get("close"))),
+        "bid_close": bid_close,
+        "ask_close": ask_close,
         "volume": _float(candle.get("volume_fp", candle.get("volume"))),
     }
 
@@ -639,6 +644,7 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
     summary = summarize(snapshots, excl_noreconcile_tickers=excl_noreconcile)
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "spread_census.csv"
+    assert_non_empty_frame(summary, what="spread_census.csv")
     summary.to_csv(csv_path, index=False)
     pngs = write_figures(snapshots, out_dir)
     print(

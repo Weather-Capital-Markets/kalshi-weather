@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from ingestion.climate_time import (
     AsosObservation,
     asos_max_for_climate_day,
+    asos_max_in_window,
     cli_max_instant,
     load_cli_time_convention,
     nbm_max_window_utc,
@@ -34,7 +35,7 @@ def test_cli_max_instant_unknown_returns_none() -> None:
 
 
 def test_asos_max_picks_highest_tmpf_earliest_on_tie() -> None:
-  # LST day 2026-07-04 runs 2026-07-04 05:00Z to 2026-07-05 05:00Z.
+    # LST day 2026-07-04 runs 2026-07-04 05:00Z to 2026-07-05 05:00Z.
     obs = [
         AsosObservation(datetime(2026, 7, 4, 18, 0, tzinfo=timezone.utc), 80.0),
         AsosObservation(datetime(2026, 7, 4, 20, 0, tzinfo=timezone.utc), 85.0),
@@ -57,6 +58,18 @@ def test_time_in_window() -> None:
     outside = datetime(2026, 7, 4, 10, 0, tzinfo=timezone.utc)
     assert time_in_window(inside, start, end)
     assert not time_in_window(outside, start, end)
+
+
+def test_asos_max_in_nbm_window_excludes_pre_12z() -> None:
+    start, end = nbm_max_window_utc("2026-07-04")
+    obs = [
+        AsosObservation(datetime(2026, 7, 4, 10, 0, tzinfo=timezone.utc), 90.0),
+        AsosObservation(datetime(2026, 7, 4, 18, 0, tzinfo=timezone.utc), 84.0),
+        AsosObservation(datetime(2026, 7, 5, 4, 0, tzinfo=timezone.utc), 82.0),
+    ]
+    max_f, when = asos_max_in_window(obs, start, end)
+    assert max_f == 84.0
+    assert when == datetime(2026, 7, 4, 18, 0, tzinfo=timezone.utc)
 
 
 def test_load_cli_time_convention_defaults_unknown() -> None:
