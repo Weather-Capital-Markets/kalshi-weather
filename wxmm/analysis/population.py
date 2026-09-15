@@ -28,7 +28,7 @@ from typing import Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from wxmm.analysis.maker_taker import AttributedTrade, ReturnKind, _mean
+from wxmm.analysis.maker_taker import AttributedTrade, CompactFill, ReturnKind, _mean
 
 FLAT_THRESHOLDS: tuple[Decimal, ...] = (Decimal("0.10"), Decimal("0.25"), Decimal("0.50"))
 
@@ -142,8 +142,55 @@ def bracket_day_nets(rows: Sequence[AttributedTrade]) -> list[BracketDayNet]:
     return out
 
 
-def x1b_report(rows: Sequence[AttributedTrade]) -> X1bReport:
-    nets = bracket_day_nets(rows)
+def bracket_day_nets_compact(rows: Sequence[CompactFill]) -> list[BracketDayNet]:
+    buckets: dict[tuple[str, date], list[CompactFill]] = defaultdict(list)
+    for row in rows:
+        buckets[(row.ticker, row.climate_day)].append(row)
+    out: list[BracketDayNet] = []
+    for (ticker, climate_day), trades in sorted(buckets.items()):
+        bought = Decimal("0")
+        sold = Decimal("0")
+        paid = Decimal("0")
+        received = Decimal("0")
+        pnl_g = Decimal("0")
+        pnl_n = Decimal("0")
+        rets: list[Decimal] = []
+        for trade in trades:
+            contracts = Decimal(str(trade.contracts))
+            notional = Decimal(str(trade.maker_notional))
+            if trade.maker_buyer:
+                bought += contracts
+                paid += notional
+            else:
+                sold += contracts
+                received += notional
+            pnl_g += Decimal(str(trade.maker_gross_pnl))
+            pnl_n += Decimal(str(trade.maker_net_pnl))
+            rets.append(Decimal(str(trade.maker_net)))
+        gross = bought + sold
+        net = bought - sold
+        abs_ratio = (abs(net) / gross) if gross else Decimal("0")
+        out.append(
+            BracketDayNet(
+                ticker=ticker,
+                climate_day=climate_day,
+                contracts_bought=bought,
+                contracts_sold=sold,
+                net_contracts=net,
+                gross_contracts=gross,
+                abs_net_over_gross=abs_ratio,
+                premium_paid=paid,
+                premium_received=received,
+                net_premium=received - paid,
+                maker_gross_pnl=pnl_g,
+                maker_net_pnl=pnl_n,
+                maker_mean_net_return=_mean(rets),
+            )
+        )
+    return out
+
+
+def x1b_from_nets(nets: Sequence[BracketDayNet]) -> X1bReport:
     ratios = [row.abs_net_over_gross for row in nets]
     signed = [
         (row.net_contracts / row.gross_contracts) if row.gross_contracts else Decimal("0")
@@ -175,3 +222,7 @@ def x1b_report(rows: Sequence[AttributedTrade]) -> X1bReport:
         signed_net_p90=_quantile(signed, 0.90),
         thresholds=tuple(shares),
     )
+
+
+def x1b_report(rows: Sequence[AttributedTrade]) -> X1bReport:
+    return x1b_from_nets(bracket_day_nets(rows))

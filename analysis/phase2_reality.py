@@ -22,7 +22,7 @@ from analysis.bracket_enumeration import build_daily_table
 from analysis.build_labels import high_at_snapshot, read_clinyc, read_labels
 from analysis.trade_turnover import load_trade_frame
 from ingestion.climate_day import climate_dst_status, parse_lst_clock
-from wxmm.analysis.trades_ingest import SIX_BRACKET_ERA_START, RawTrade, read_trades_parquet
+from wxmm.analysis.trades_ingest import SIX_BRACKET_ERA_START
 from wxmm.backtest.ledger import refuse_unless_preregistered
 from wxmm.backtest.replay import MarketEvent, run
 from wxmm.core.errors import ConfigNotPreregistered, LeakageError
@@ -34,9 +34,6 @@ from wxmm.core.types import (
     InMemoryAsOfStore,
     published_record,
 )
-from wxmm.fairvalue.anchor_trades import assert_outcome_bookside_mapping
-from wxmm.fairvalue.coverage import trade_anchor_coverage
-from wxmm.fairvalue.crossed import crossed_diagnostic
 from wxmm.settlement.eras import kalshi_rule_for, kalshi_snapshot_utc
 from wxmm.strategy.view import MarketView, ProposedOrder
 from wxmm.venues.base import get_venue
@@ -44,12 +41,6 @@ from wxmm.venues.kalshi.fees import FeeRounding, taker_fee
 
 K2_LABEL_NOISE = {"numerator": 1, "denominator": 2416, "rate": 1 / 2416}
 ERA_BOUNDARIES = (date(2021, 12, 25), date(2021, 12, 26), date(2024, 9, 3), date(2024, 9, 4))
-
-
-def _coverage_payload(trades: Sequence[RawTrade]) -> dict[str, Any]:
-    mapping = assert_outcome_bookside_mapping([t for t in trades if not t.is_block_trade])
-    cov = trade_anchor_coverage(trades, mapping=mapping)
-    return cov.as_dict()
 
 
 def _settlement_census(
@@ -264,7 +255,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    trades = read_trades_parquet(args.parquet, strict_complement=False)
     labels = read_labels(args.labels) if args.labels.exists() else {}
     labelled_days = sorted({lab.climate_day for lab in labels.values()})
     observations = read_clinyc(args.clinyc) if args.clinyc.exists() else []
@@ -273,8 +263,28 @@ def main(argv: list[str] | None = None) -> int:
         with args.clinyc.open(encoding="utf-8", newline="") as handle:
             clinyc_rows = list(csv.DictReader(handle))
 
-    crossed = crossed_diagnostic(trades)
-    coverage = _coverage_payload(trades)
+    crossed_path = Path("analysis/out/crossed_rate.json")
+    if crossed_path.exists():
+        crossed_raw = json.loads(crossed_path.read_text(encoding="utf-8"))
+        crossed_payload = {
+            "rate": crossed_raw["as_specified"]["rate"],
+            "verdict": crossed_raw["verdict"],
+            "mean_gap_cents": crossed_raw["as_specified"]["mean_gap_cents"],
+            "mean_uncrossed_gap_cents": crossed_raw["as_specified"][
+                "mean_uncrossed_gap_cents"
+            ],
+        }
+        n_trades = int(crossed_raw["n_trades"])
+    else:
+        crossed_payload = {"status": "NOT_RUN", "reason": "run analysis.crossed_rate first"}
+        n_trades = None
+
+    cov_path = Path("analysis/out/trade_anchor_coverage.json")
+    if cov_path.exists():
+        coverage = json.loads(cov_path.read_text(encoding="utf-8"))
+    else:
+        coverage = {"status": "NOT_RUN", "reason": "run analysis.v0_coverage first"}
+
     settlement = _settlement_census(observations, labelled_days, clinyc_rows)
 
     venue_compared = 0
@@ -301,13 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     ledger = _ledger_checks(args.prereg_dir)
 
     payload = {
-        "n_trades": len(trades),
-        "crossed": {
-            "rate": crossed.as_specified.rate,
-            "verdict": crossed.verdict,
-            "mean_gap_cents": crossed.as_specified.mean_gap_cents,
-            "mean_uncrossed_gap_cents": crossed.as_specified.mean_uncrossed_gap_cents,
-        },
+        "n_trades": n_trades,
+        "crossed": crossed_payload,
         "coverage": coverage,
         "settlement": settlement,
         "label_noise": noise,

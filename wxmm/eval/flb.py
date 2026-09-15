@@ -22,7 +22,7 @@ from typing import Literal, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from wxmm.analysis.maker_taker import AttributedTrade, ReturnKind, _mean
+from wxmm.analysis.maker_taker import AttributedTrade, CompactFill, ReturnKind, _mean
 
 PUBLISHED_CLIMATE_WEATHER_PSI = Decimal("0.031")
 PUBLISHED_CLIMATE_WEATHER_PSI_SE = Decimal("0.005")
@@ -223,5 +223,70 @@ def x1c_report(rows: Sequence[AttributedTrade]) -> X1cReport:
         ),
         resting_offer_below_10c_maker_mean_gross=(
             _mean([row.maker.gross_return for row in wings]) if wings else None
+        ),
+    )
+
+
+def x1c_report_compact(rows: Sequence[CompactFill]) -> X1cReport:
+    y: list[float] = []
+    x: list[float] = []
+    clusters: list[str] = []
+    for row in rows:
+        p = row.yes_price * 100.0
+        won = 100.0 if row.yes_won else 0.0
+        y.append(won - p)
+        x.append(p)
+        clusters.append(row.climate_day.isoformat())
+    estimate = (
+        _ols_clustered(y, x, clusters)
+        if len(rows) >= 3
+        else FlbEstimate(
+            alpha=0.0,
+            alpha_se=0.0,
+            psi=0.0,
+            psi_se=0.0,
+            n=len(rows),
+            n_clusters=0,
+        )
+    )
+    ordered = sorted(rows, key=lambda r: r.maker_price)
+    n = len(ordered)
+    deciles: list[DecileRow] = []
+    if n:
+        for d in range(10):
+            start = (d * n) // 10
+            end = ((d + 1) * n) // 10
+            chunk = ordered[start:end]
+            if not chunk:
+                continue
+            prices = [Decimal(f"{row.maker_price:.4f}") for row in chunk]
+            deciles.append(
+                DecileRow(
+                    decile=d + 1,
+                    p_lo=min(prices),
+                    p_hi=max(prices),
+                    n_trades=len(chunk),
+                    maker_mean_net_return=_mean(
+                        [Decimal(str(row.maker_net)) for row in chunk]
+                    ),
+                    maker_mean_gross_return=_mean(
+                        [Decimal(str(row.maker_gross)) for row in chunk]
+                    ),
+                )
+            )
+    wings = [
+        row
+        for row in rows
+        if row.taker_book_side == "ask" and row.taker_price < 0.10
+    ]
+    return X1cReport(
+        estimate=estimate,
+        deciles=tuple(deciles),
+        resting_offer_below_10c_n=len(wings),
+        resting_offer_below_10c_maker_mean_net=(
+            _mean([Decimal(str(row.maker_net)) for row in wings]) if wings else None
+        ),
+        resting_offer_below_10c_maker_mean_gross=(
+            _mean([Decimal(str(row.maker_gross)) for row in wings]) if wings else None
         ),
     )

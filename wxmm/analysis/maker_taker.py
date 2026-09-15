@@ -260,6 +260,55 @@ def attribute_trade(
     )
 
 
+@dataclass(slots=True, frozen=True)
+class CompactFill:
+    """Attributed fill without nested Pydantic models. Shard-safe corpus path."""
+
+    climate_day: date
+    ticker: str
+    season: str
+    is_block: bool
+    taker_book_side: BookSide
+    yes_price: float
+    yes_won: bool
+    contracts: float
+    maker_buyer: bool
+    maker_price: float
+    maker_gross: float
+    maker_net: float
+    maker_notional: float
+    maker_gross_pnl: float
+    maker_net_pnl: float
+    taker_price: float
+    taker_gross: float
+    taker_net: float
+    taker_notional: float
+
+
+def compact_from_attributed(row: AttributedTrade) -> CompactFill:
+    return CompactFill(
+        climate_day=row.climate_day,
+        ticker=row.ticker,
+        season=row.season,
+        is_block=row.is_block_trade,
+        taker_book_side=row.taker_book_side,
+        yes_price=float(row.yes_price),
+        yes_won=row.yes_won,
+        contracts=float(row.contracts),
+        maker_buyer=row.maker.book_role == "buyer",
+        maker_price=float(row.maker.price),
+        maker_gross=float(row.maker.gross_return),
+        maker_net=float(row.maker.net_return),
+        maker_notional=float(row.maker.notional),
+        maker_gross_pnl=float(row.maker.gross_pnl),
+        maker_net_pnl=float(row.maker.net_pnl),
+        taker_price=float(row.taker.price),
+        taker_gross=float(row.taker.gross_return),
+        taker_net=float(row.taker.net_return),
+        taker_notional=float(row.taker.notional),
+    )
+
+
 class CellStats(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -379,18 +428,27 @@ def clustered_bootstrap_mean_ci(
     n_resample: int = 1000,
     ci: float = 0.95,
 ) -> tuple[Decimal, Decimal] | None:
-    """Resample climate days, not trades. Six brackets on one day are one draw."""
+    """Resample climate days, not trades. Six brackets on one day are one draw.
+
+    Day sums and counts are sufficient for the mean: drawing a day twice
+    includes its trades twice, which is ``(sum + sum) / (n + n)``.
+    """
     keys = list(groups)
     if len(keys) < 2:
         return None
+    day_sum = {key: float(sum(groups[key], Decimal("0"))) for key in keys}
+    day_n = {key: len(groups[key]) for key in keys}
     rng = _rng(seed)
     means: list[float] = []
+    n_keys = len(keys)
     for _ in range(n_resample):
-        drawn_days = [keys[rng.randrange(len(keys))] for _ in range(len(keys))]
-        sample: list[Decimal] = []
-        for day in drawn_days:
-            sample.extend(groups[day])
-        means.append(float(_mean(sample)))
+        tot = 0.0
+        n = 0
+        for _draw in range(n_keys):
+            day = keys[rng.randrange(n_keys)]
+            tot += day_sum[day]
+            n += day_n[day]
+        means.append(tot / n if n else 0.0)
     means.sort()
     alpha = (1.0 - ci) / 2.0
     lo = means[int(math.floor(alpha * n_resample))]
@@ -452,6 +510,71 @@ def select_primary(
     return primary, blocks, n_unlabelled
 
 
+def select_primary_compact(
+    trades: Sequence[RawTrade],
+    labels: Mapping[str, SettlementLabel],
+    *,
+    era_start: date = SIX_BRACKET_ERA_START,
+) -> tuple[list[CompactFill], list[CompactFill], int, int]:
+    """Same selection as ``select_primary``, dropping nested Pydantic models."""
+    primary: list[CompactFill] = []
+    blocks: list[CompactFill] = []
+    n_unlabelled = 0
+    n_skipped = 0
+    for trade in trades:
+        if ladder_regime_for(trade.climate_day) != "six_bracket":
+            continue
+        if trade.climate_day < era_start:
+            continue
+        label = labels.get(trade.ticker)
+        if label is None:
+            n_unlabelled += 1
+            continue
+        try:
+            attributed = attribute_trade(trade, label)
+        except ValueError:
+            n_skipped += 1
+            continue
+        compact = compact_from_attributed(attributed)
+        if trade.is_block_trade:
+            blocks.append(compact)
+        else:
+            primary.append(compact)
+    return primary, blocks, n_unlabelled, n_skipped
+
+
+def _compact_returns(
+    rows: Sequence[CompactFill],
+    *,
+    side: Literal["maker", "taker"],
+    net: bool,
+) -> list[Decimal]:
+    out: list[Decimal] = []
+    for row in rows:
+        if side == "maker":
+            value = row.maker_net if net else row.maker_gross
+        else:
+            value = row.taker_net if net else row.taker_gross
+        out.append(Decimal(str(value)))
+    return out
+
+
+def _group_compact_by_day(
+    rows: Sequence[CompactFill],
+    *,
+    side: Literal["maker", "taker"],
+    net: bool,
+) -> dict[date, list[Decimal]]:
+    out: dict[date, list[Decimal]] = {}
+    for row in rows:
+        if side == "maker":
+            value = row.maker_net if net else row.maker_gross
+        else:
+            value = row.taker_net if net else row.taker_gross
+        out.setdefault(row.climate_day, []).append(Decimal(str(value)))
+    return out
+
+
 def x1a_report(
     primary: Sequence[AttributedTrade],
     blocks: Sequence[AttributedTrade],
@@ -503,6 +626,84 @@ def x1a_report(
                     )
     block_mean = (
         _mean(_returns(blocks, side="maker", net=True)) if blocks else None
+    )
+    return X1aReport(
+        n_primary_trades=len(primary),
+        n_block_trades=len(blocks),
+        n_unlabelled=n_unlabelled,
+        maker_mean_gross=_mean(maker_g),
+        maker_mean_net=_mean(maker_n),
+        maker_median_gross=_median(maker_g),
+        maker_median_net=_median(maker_n),
+        taker_mean_gross=_mean(taker_g),
+        taker_mean_net=_mean(taker_n),
+        taker_median_gross=_median(taker_g),
+        taker_median_net=_median(taker_n),
+        maker_ci_net=maker_ci,
+        taker_ci_net=taker_ci,
+        gap_gross=gap_gross,
+        gap_net=gap_net,
+        fee_attributable_gap=gap_net - gap_gross,
+        slices=tuple(slices),
+        block_maker_mean_net=block_mean,
+    )
+
+
+def x1a_report_compact(
+    primary: Sequence[CompactFill],
+    blocks: Sequence[CompactFill],
+    *,
+    n_unlabelled: int,
+    seed: int,
+    n_resample: int = 1000,
+) -> X1aReport:
+    maker_g = _compact_returns(primary, side="maker", net=False)
+    maker_n = _compact_returns(primary, side="maker", net=True)
+    taker_g = _compact_returns(primary, side="taker", net=False)
+    taker_n = _compact_returns(primary, side="taker", net=True)
+    maker_ci = clustered_bootstrap_mean_ci(
+        _group_compact_by_day(primary, side="maker", net=True),
+        seed=seed,
+        n_resample=n_resample,
+    )
+    taker_ci = clustered_bootstrap_mean_ci(
+        _group_compact_by_day(primary, side="taker", net=True),
+        seed=seed + 1,
+        n_resample=n_resample,
+    )
+    gap_gross = _mean(maker_g) - _mean(taker_g)
+    gap_net = _mean(maker_n) - _mean(taker_n)
+    buckets: dict[tuple[str, str, str], list[CompactFill]] = {}
+    for row in primary:
+        maker_band = price_band_of(Decimal(f"{row.maker_price:.4f}"))
+        taker_band = price_band_of(Decimal(f"{row.taker_price:.4f}"))
+        buckets.setdefault((maker_band, row.season, "maker"), []).append(row)
+        buckets.setdefault((taker_band, row.season, "taker"), []).append(row)
+    slices: list[SliceRow] = []
+    for band, _lo, _hi in PRICE_BANDS:
+        for season in ("DJF", "MAM", "JJA", "SON"):
+            for side in ("maker", "taker"):
+                cell_rows = buckets.get((band, season, side), [])
+                for net in (False, True):
+                    rets = _compact_returns(cell_rows, side=side, net=net)
+                    contracts = [Decimal(str(row.contracts)) for row in cell_rows]
+                    notionals = [
+                        Decimal(
+                            str(row.maker_notional if side == "maker" else row.taker_notional)
+                        )
+                        for row in cell_rows
+                    ]
+                    slices.append(
+                        SliceRow(
+                            price_band=band,
+                            season=season,
+                            side=side,
+                            net_of_fee=net,
+                            stats=_cell(rets, contracts, notionals, None),
+                        )
+                    )
+    block_mean = (
+        _mean(_compact_returns(blocks, side="maker", net=True)) if blocks else None
     )
     return X1aReport(
         n_primary_trades=len(primary),

@@ -14,9 +14,11 @@ from wxmm.analysis.trades_ingest import (
     ComplementTally,
     fetch_cutoff,
     paginate_trades,
+    parquet_shard_paths,
     parse_cutoff,
     parse_trade,
     pull_ticker,
+    trades_to_parquet,
 )
 from wxmm.core.errors import PriceComplementError
 
@@ -152,3 +154,23 @@ def test_pull_ticker_uses_trades_created_ts() -> None:
     assert cutoff.trade_partition_ts == 200
     assert ("/historical/trades", 200) in seen
     assert ("/markets/trades", 200) in seen
+
+
+def test_parquet_shard_paths_prefers_monthly_files(tmp_path: Path) -> None:
+    from tests.unit.wxmm.test_c1_x1 import _trade
+
+    trade = _trade()
+    monthly = tmp_path / "climate_month=2024-01.parquet"
+    other = tmp_path / "other.parquet"
+    trades_to_parquet([trade], monthly)
+    trades_to_parquet([trade], other)
+    paths = parquet_shard_paths(tmp_path)
+    assert paths == [monthly]
+    nested = tmp_path / "nested"
+    tickers = nested / "_tickers"
+    tickers.mkdir(parents=True)
+    shard = tickers / "KXHIGHNY-24JAN01-T90.parquet"
+    trades_to_parquet([trade], shard)
+    assert parquet_shard_paths(nested) == [shard]
+    assert parquet_shard_paths(monthly) == [monthly]
+    assert parquet_shard_paths(tmp_path / "missing") == []

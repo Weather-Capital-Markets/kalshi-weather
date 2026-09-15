@@ -16,17 +16,14 @@ from typing import Any
 
 import polars as pl
 
-from wxmm.analysis.trades_ingest import SIX_BRACKET_ERA_START
+from wxmm.analysis.trades_ingest import SIX_BRACKET_ERA_START, parquet_shard_paths
 
 MID_BAND_LO = 0.10
 MID_BAND_HI = 0.90
 
 
 def load_trade_frame(parquet_dir: Path) -> pl.DataFrame:
-    files = sorted(p for p in parquet_dir.glob("*.parquet") if p.is_file())
-    if not files:
-        nested = parquet_dir / "_tickers"
-        files = sorted(nested.glob("*.parquet")) if nested.is_dir() else []
+    files = parquet_shard_paths(parquet_dir)
     if not files:
         raise FileNotFoundError(f"no parquet in {parquet_dir}")
     frame = pl.concat([pl.read_parquet(path) for path in files], how="vertical")

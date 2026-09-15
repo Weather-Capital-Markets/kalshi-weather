@@ -554,6 +554,25 @@ def record_to_raw_trade(
     )
 
 
+def parquet_shard_paths(path: Any) -> list[Path]:
+    """Monthly ``climate_month=*.parquet`` shards, else a single file, else ``_tickers``."""
+    target = Path(path)
+    if target.is_file():
+        return [target]
+    if not target.is_dir():
+        return []
+    monthly = sorted(p for p in target.glob("climate_month=*.parquet") if p.is_file())
+    if monthly:
+        return monthly
+    top = sorted(p for p in target.glob("*.parquet") if p.is_file())
+    if top:
+        return top
+    nested = target / "_tickers"
+    if nested.is_dir():
+        return sorted(nested.glob("*.parquet"))
+    return []
+
+
 def read_trades_parquet(
     path: Any,
     *,

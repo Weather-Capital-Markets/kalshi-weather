@@ -121,84 +121,118 @@ def _median_from_histogram(hist: Counter[int]) -> float | None:
     return None
 
 
+class CrossedAccumulator:
+    """Shard-safe replay. A ticker lives on one climate day, hence one month shard."""
+
+    def __init__(self, *, sign: Sign) -> None:
+        self.sign: Sign = sign
+        self.n_prints = 0
+        self.n_two_sided = 0
+        self.n_crossed = 0
+        self.n_touching = 0
+        self.n_tickers = 0
+        self.n_block_excluded = 0
+        self.gap_hist: Counter[int] = Counter()
+        self.uncrossed_gap_sum = 0
+        self.n_uncrossed = 0
+        self.ticker_rates: list[float] = []
+        self.n_majority = 0
+
+    def add(self, trades: Sequence[RawTrade]) -> None:
+        by_ticker: dict[str, list[RawTrade]] = {}
+        for trade in trades:
+            if trade.is_block_trade:
+                self.n_block_excluded += 1
+                continue
+            by_ticker.setdefault(trade.ticker, []).append(trade)
+        self.n_tickers += len(by_ticker)
+        for ticker_trades in by_ticker.values():
+            ordered = sorted(ticker_trades, key=lambda t: (t.created_time, t.trade_id))
+            bid: Decimal | None = None
+            ask: Decimal | None = None
+            local_two_sided = 0
+            local_crossed = 0
+            for trade in ordered:
+                price = yes_space_print(trade).yes_price
+                if _direction_for(trade.taker_outcome_side, self.sign) == 1:
+                    ask = price
+                else:
+                    bid = price
+                self.n_prints += 1
+                if bid is None or ask is None:
+                    continue
+                local_two_sided += 1
+                self.gap_hist[_gap_cents(ask, bid)] += 1
+                if ask < bid:
+                    local_crossed += 1
+                elif ask == bid:
+                    self.n_touching += 1
+                else:
+                    self.n_uncrossed += 1
+                    self.uncrossed_gap_sum += _gap_cents(ask, bid)
+            self.n_two_sided += local_two_sided
+            self.n_crossed += local_crossed
+            if local_two_sided:
+                rate = local_crossed / local_two_sided
+                self.ticker_rates.append(rate)
+                if rate > 0.5:
+                    self.n_majority += 1
+
+    def finish(self) -> CrossedRate:
+        rates = sorted(self.ticker_rates)
+        median_ticker = rates[len(rates) // 2] if rates else None
+        mean_gap = (
+            sum(key * count for key, count in self.gap_hist.items()) / sum(self.gap_hist.values())
+            if self.gap_hist
+            else None
+        )
+        mean_uncrossed = (
+            (self.uncrossed_gap_sum / self.n_uncrossed) if self.n_uncrossed else None
+        )
+        return CrossedRate(
+            sign=self.sign,
+            n_prints=self.n_prints,
+            n_two_sided=self.n_two_sided,
+            n_crossed=self.n_crossed,
+            n_touching=self.n_touching,
+            rate=(self.n_crossed / self.n_two_sided) if self.n_two_sided else None,
+            mean_gap_cents=mean_gap,
+            mean_uncrossed_gap_cents=mean_uncrossed,
+            median_gap_cents=_median_from_histogram(self.gap_hist),
+            n_tickers=self.n_tickers,
+            n_tickers_two_sided=len(self.ticker_rates),
+            n_tickers_majority_crossed=self.n_majority,
+            median_ticker_rate=median_ticker,
+        )
+
+
 def crossed_state_rate(
     trades: Sequence[RawTrade],
     *,
     sign: Sign = 1,
 ) -> CrossedRate:
     """Naive replay with no crossed-state repair. Block trades never print."""
-    by_ticker: dict[str, list[RawTrade]] = {}
-    for trade in trades:
-        if trade.is_block_trade:
-            continue
-        by_ticker.setdefault(trade.ticker, []).append(trade)
+    acc = CrossedAccumulator(sign=sign)
+    acc.add(trades)
+    return acc.finish()
 
-    n_prints = 0
-    n_two_sided = 0
-    n_crossed = 0
-    n_touching = 0
-    gap_hist: Counter[int] = Counter()
-    uncrossed_gap_sum = 0
-    n_uncrossed = 0
-    ticker_rates: list[float] = []
-    n_majority = 0
 
-    for ticker_trades in by_ticker.values():
-        ordered = sorted(ticker_trades, key=lambda t: (t.created_time, t.trade_id))
-        bid: Decimal | None = None
-        ask: Decimal | None = None
-        local_two_sided = 0
-        local_crossed = 0
-        for trade in ordered:
-            price = yes_space_print(trade).yes_price
-            if _direction_for(trade.taker_outcome_side, sign) == 1:
-                ask = price
-            else:
-                bid = price
-            n_prints += 1
-            if bid is None or ask is None:
-                continue
-            local_two_sided += 1
-            gap_hist[_gap_cents(ask, bid)] += 1
-            if ask < bid:
-                local_crossed += 1
-            elif ask == bid:
-                n_touching += 1
-            else:
-                n_uncrossed += 1
-                uncrossed_gap_sum += _gap_cents(ask, bid)
-        n_two_sided += local_two_sided
-        n_crossed += local_crossed
-        if local_two_sided:
-            rate = local_crossed / local_two_sided
-            ticker_rates.append(rate)
-            if rate > 0.5:
-                n_majority += 1
-
-    ticker_rates.sort()
-    median_ticker = (
-        ticker_rates[len(ticker_rates) // 2] if ticker_rates else None
-    )
-    mean_gap = (
-        sum(key * count for key, count in gap_hist.items()) / sum(gap_hist.values())
-        if gap_hist
-        else None
-    )
-    mean_uncrossed = (uncrossed_gap_sum / n_uncrossed) if n_uncrossed else None
-    return CrossedRate(
-        sign=sign,
-        n_prints=n_prints,
-        n_two_sided=n_two_sided,
-        n_crossed=n_crossed,
-        n_touching=n_touching,
-        rate=(n_crossed / n_two_sided) if n_two_sided else None,
-        mean_gap_cents=mean_gap,
-        mean_uncrossed_gap_cents=mean_uncrossed,
-        median_gap_cents=_median_from_histogram(gap_hist),
-        n_tickers=len(by_ticker),
-        n_tickers_two_sided=len(ticker_rates),
-        n_tickers_majority_crossed=n_majority,
-        median_ticker_rate=median_ticker,
+def crossed_diagnostic_from_shards(shards: Sequence[Sequence[RawTrade]]) -> CrossedDiagnostic:
+    """Same diagnostic as ``crossed_diagnostic`` without concatenating shards."""
+    specified = CrossedAccumulator(sign=1)
+    inverted = CrossedAccumulator(sign=-1)
+    for shard in shards:
+        specified.add(shard)
+        inverted.add(shard)
+    as_specified = specified.finish()
+    inv = inverted.finish()
+    verdict, note = _verdict(as_specified, inv)
+    return CrossedDiagnostic(
+        as_specified=as_specified,
+        inverted=inv,
+        verdict=verdict,
+        note=note,
+        n_block_excluded=specified.n_block_excluded,
     )
 
 
@@ -238,16 +272,7 @@ def _verdict(as_specified: CrossedRate, inverted: CrossedRate) -> tuple[Verdict,
 
 def crossed_diagnostic(trades: Sequence[RawTrade]) -> CrossedDiagnostic:
     """Paired replay under d and −d. Report before anything is fitted."""
-    as_specified = crossed_state_rate(trades, sign=1)
-    inverted = crossed_state_rate(trades, sign=-1)
-    verdict, note = _verdict(as_specified, inverted)
-    return CrossedDiagnostic(
-        as_specified=as_specified,
-        inverted=inverted,
-        verdict=verdict,
-        note=note,
-        n_block_excluded=sum(1 for t in trades if t.is_block_trade),
-    )
+    return crossed_diagnostic_from_shards((trades,))
 
 
 def crossed_by_climate_day(

@@ -396,3 +396,85 @@ def test_climatology_nearby_doy() -> None:
     )
     assert clim is not None
     assert clim[tickers[0]] == Decimal("1")
+
+
+def test_shard_coverage_does_not_multiply_grid() -> None:
+    days = [date(2026, 8, d) for d in range(10, 16)]
+    trades = [t for day in days for t in _pair_for_day(day)]
+    labels = _labels_for_days(days)
+    hours = (24, 12)
+    full = trade_anchor_coverage(trades, labels, hours_to_close=hours, mapping=None)  # type: ignore[arg-type]
+    first_days = set(days[:3])
+    second_days = set(days[3:])
+    first_trades = [t for t in trades if t.climate_day in first_days]  # type: ignore[attr-defined]
+    second_trades = [t for t in trades if t.climate_day in second_days]  # type: ignore[attr-defined]
+    first_labels = {k: v for k, v in labels.items() if v.climate_day in first_days}
+    second_labels = {k: v for k, v in labels.items() if v.climate_day in second_days}
+    part_a = trade_anchor_coverage(
+        first_trades, first_labels, hours_to_close=hours, mapping=None  # type: ignore[arg-type]
+    )
+    part_b = trade_anchor_coverage(
+        second_trades, second_labels, hours_to_close=hours, mapping=None  # type: ignore[arg-type]
+    )
+    assert part_a.n_grid + part_b.n_grid == full.n_grid
+    assert (
+        part_a.n_both_sides_uncrossed + part_b.n_both_sides_uncrossed
+        == full.n_both_sides_uncrossed
+    )
+
+
+def test_cache_ingest_release_matches_in_memory(tmp_path: Path) -> None:
+    days = [date(2026, 8, d) for d in range(10, 18)]
+    trades = [t for day in days for t in _pair_for_day(day)]
+    labels = _labels_for_days(days, winner="T90")
+    payload = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "prereg" / "c1-m1-v0-min.yaml").read_text()
+    )
+    payload["prereg_id"] = "c1-m1-v0-min-cache"
+    payload["walk_forward"]["min_train_days"] = 2
+    payload["bootstrap"]["n_resample"] = 20
+    payload["ridge_lambda_grid"] = [1.0]
+    (tmp_path / "c1-m1-v0-min-cache.yaml").write_text(yaml.safe_dump(payload))
+    from wxmm.fairvalue.anchor_trades import assert_outcome_bookside_mapping
+    from wxmm.fairvalue.crossed import crossed_diagnostic
+    from wxmm.fairvalue.v0_min import ObservationCache
+
+    mapping = assert_outcome_bookside_mapping(trades)  # type: ignore[arg-type]
+    crossed = crossed_diagnostic(trades)  # type: ignore[arg-type]
+    hours = tuple(int(h) for h in payload["hours_to_close"])
+    cache = ObservationCache([], labels, hours_to_close=hours, mapping=mapping)
+    by_day: dict[date, list[object]] = {}
+    for trade in trades:
+        by_day.setdefault(trade.climate_day, []).append(trade)  # type: ignore[attr-defined]
+    for climate, rows in by_day.items():
+        cache.ingest(rows)  # type: ignore[arg-type]
+        cache.warm([climate])
+        cache.release_days([climate])
+    coverage = trade_anchor_coverage(
+        trades, labels, hours_to_close=hours, mapping=mapping  # type: ignore[arg-type]
+    )
+    packed = run_c1_m1_v0_min(
+        None,
+        labels,
+        prereg=payload,
+        prereg_dir=tmp_path,
+        ledger=Ledger(),
+        n_resample=20,
+        mapping=mapping,
+        crossed=crossed,
+        cache=cache,
+        coverage=coverage,
+    )
+    direct = run_c1_m1_v0_min(
+        trades,  # type: ignore[arg-type]
+        labels,
+        prereg=payload,
+        prereg_dir=tmp_path,
+        ledger=Ledger(),
+        n_resample=20,
+    )
+    assert packed.n_predictions == direct.n_predictions
+    assert packed.mean_rps_improvement == direct.mean_rps_improvement
+    assert packed.n_climate_day_clusters == direct.n_climate_day_clusters
+    assert packed.coverage.n_grid == direct.coverage.n_grid
+    assert cache.n_cached > 0

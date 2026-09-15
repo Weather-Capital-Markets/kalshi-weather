@@ -125,11 +125,15 @@ class V0MinReport:
     crossed: CrossedDiagnostic
     coverage: AnchorCoverage
     n_predictions: int
+    n_climate_day_clusters: int
     mean_rps_improvement: float
     clustered_ci: tuple[float, float] | None
     contract_ci: tuple[float, float] | None
     decision: V0MinDecision
     by_season: tuple[SliceScore, ...]
+    by_horizon: tuple[SliceScore, ...]
+    vs_climatology: SliceScore | None
+    by_horizon_vs_climatology: tuple[SliceScore, ...]
     beta: tuple[BetaInterval, ...]
     nbm_status: Literal["NOT_IN_V0_MIN"] = "NOT_IN_V0_MIN"
     is_strategy_pnl: Literal[False] = False
@@ -142,14 +146,21 @@ class V0MinReport:
             "crossed_verdict": self.crossed.verdict,
             "coverage": asdict(self.coverage),
             "n_predictions": self.n_predictions,
+            "n_climate_day_clusters": self.n_climate_day_clusters,
             "mean_rps_improvement": self.mean_rps_improvement,
             "clustered_ci": self.clustered_ci,
             "contract_ci": self.contract_ci,
             "decision": asdict(self.decision),
             "by_season": [asdict(row) for row in self.by_season],
+            "by_horizon": [asdict(row) for row in self.by_horizon],
+            "vs_climatology": asdict(self.vs_climatology) if self.vs_climatology else None,
+            "by_horizon_vs_climatology": [
+                asdict(row) for row in self.by_horizon_vs_climatology
+            ],
             "beta": [asdict(row) for row in self.beta],
             "nbm_status": self.nbm_status,
             "is_strategy_pnl": False,
+            "glm_at_limit": self.n_climate_day_clusters <= 400,
         }
 
     def canonical_bytes(self) -> bytes:
@@ -454,6 +465,18 @@ class ObservationCache:
                 self.names = sorted(feats)
         return self._cache[key]
 
+    @property
+    def n_cached(self) -> int:
+        return len(self._cache)
+
+    def ingest(self, trades: Sequence[RawTrade]) -> None:
+        for trade in trades:
+            self._by_day.setdefault(trade.climate_day, []).append(trade)
+
+    def release_days(self, days: Sequence[date]) -> None:
+        for climate in days:
+            self._by_day.pop(climate, None)
+
     def warm(self, days: Sequence[date]) -> None:
         for climate in days:
             for hours in self._hours:
@@ -579,6 +602,49 @@ def _improvements(rows: Sequence[V0MinPrediction]) -> list[Decimal]:
     return [row.rps_null - row.rps_model for row in rows]
 
 
+def _improvements_clim(rows: Sequence[V0MinPrediction]) -> list[Decimal]:
+    return [
+        row.rps_climatology - row.rps_model
+        for row in rows
+        if row.rps_climatology is not None
+    ]
+
+
+def _pooled_slice(
+    rows: Sequence[V0MinPrediction],
+    *,
+    key: str,
+    vs_clim: bool,
+    seed: int,
+    n_resample: int,
+) -> SliceScore | None:
+    by_day: dict[date, list[Decimal]] = {}
+    if vs_clim:
+        items = [row for row in rows if row.rps_climatology is not None]
+        values = _improvements_clim(items)
+        for row in items:
+            assert row.rps_climatology is not None
+            by_day.setdefault(row.climate_day, []).append(
+                row.rps_climatology - row.rps_model
+            )
+    else:
+        items = list(rows)
+        values = _improvements(items)
+        for row in items:
+            by_day.setdefault(row.climate_day, []).append(row.rps_null - row.rps_model)
+    if not items:
+        return None
+    ci = clustered_bootstrap_mean_ci(by_day, seed=seed, n_resample=n_resample)
+    mean = float(sum(values) / len(values)) if values else 0.0
+    return SliceScore(
+        key=key,
+        n=len(items),
+        mean_rps_improvement=mean,
+        ci_low=float(ci[0]) if ci else None,
+        ci_high=float(ci[1]) if ci else None,
+    )
+
+
 def _verdict(mean: float, ci: tuple[float, float] | None) -> V0MinDecision:
     if ci is None:
         return V0MinDecision(
@@ -612,28 +678,22 @@ def _slice_scores(
     *,
     seed: int,
     n_resample: int,
+    vs_clim: bool = False,
 ) -> tuple[SliceScore, ...]:
     grouped: dict[str, list[V0MinPrediction]] = {}
     for row in rows:
         grouped.setdefault(key_of(row), []).append(row)
     out: list[SliceScore] = []
     for key in sorted(grouped):
-        items = grouped[key]
-        values = _improvements(items)
-        by_day: dict[date, list[Decimal]] = {}
-        for row in items:
-            by_day.setdefault(row.climate_day, []).append(row.rps_null - row.rps_model)
-        ci = clustered_bootstrap_mean_ci(by_day, seed=seed, n_resample=n_resample)
-        mean = float(sum(values) / len(values)) if values else 0.0
-        out.append(
-            SliceScore(
-                key=key,
-                n=len(items),
-                mean_rps_improvement=mean,
-                ci_low=float(ci[0]) if ci else None,
-                ci_high=float(ci[1]) if ci else None,
-            )
+        slice_score = _pooled_slice(
+            grouped[key],
+            key=key,
+            vs_clim=vs_clim,
+            seed=seed,
+            n_resample=n_resample,
         )
+        if slice_score is not None:
+            out.append(slice_score)
     return tuple(out)
 
 
@@ -794,23 +854,30 @@ def _beta_intervals(
 
 
 def run_c1_m1_v0_min(
-    trades: Sequence[RawTrade],
+    trades: Sequence[RawTrade] | None,
     labels: Mapping[str, SettlementLabel],
     *,
     prereg: Mapping[str, Any],
     prereg_dir: Path,
     ledger: Ledger,
     n_resample: int | None = None,
+    mapping: ObservedMapping | None = None,
+    crossed: CrossedDiagnostic | None = None,
+    cache: ObservationCache | None = None,
+    coverage: AnchorCoverage | None = None,
 ) -> V0MinReport:
     """Cross-tab → crossed rate → coverage → walk-forward scores. Never P&L."""
     registered = refuse_unless_preregistered(dict(prereg), prereg_dir)
-    mapping = assert_outcome_bookside_mapping(
-        [trade for trade in trades if not trade.is_block_trade]
-    )
-    # The cross-tab's off-diagonal is exactly zero, so it verified nothing about
-    # direction. The crossed-state rate is the independent check, and it runs
-    # before the first fit.
-    crossed = crossed_diagnostic(trades)
+    if mapping is None:
+        if trades is None:
+            raise ValueError("mapping or trades is required")
+        mapping = assert_outcome_bookside_mapping(
+            [trade for trade in trades if not trade.is_block_trade]
+        )
+    if crossed is None:
+        if trades is None:
+            raise ValueError("crossed or trades is required")
+        crossed = crossed_diagnostic(trades)
     if crossed.verdict == "sign_inverted":
         raise InconsistentTakerMapping(
             f"crossed-state rate says the direction sign is backwards: {crossed.note}"
@@ -830,19 +897,25 @@ def run_c1_m1_v0_min(
     )
     clim_window = int(registered.get("climatology_doy_window") or 15)
     days = sorted({label.climate_day for label in labels.values()})
-    coverage = trade_anchor_coverage(
-        trades, labels, hours_to_close=hours, mapping=mapping
-    )
+    if coverage is None:
+        if trades is None:
+            raise ValueError("coverage or trades is required")
+        coverage = trade_anchor_coverage(
+            trades, labels, hours_to_close=hours, mapping=mapping
+        )
     origins = list(
         expanding_origins(days, min_train_days=min_train, hours_to_close=hours)
     )
     if origins:
         assert_schedule_integrity(origins)
 
-    cache = ObservationCache(
-        trades, labels, hours_to_close=hours, mapping=mapping
-    )
-    cache.warm(days)
+    if cache is None:
+        if trades is None:
+            raise ValueError("cache or trades is required")
+        cache = ObservationCache(
+            trades, labels, hours_to_close=hours, mapping=mapping
+        )
+        cache.warm(days)
     names, warm_obs = _collect_observations(cache, days)
     if names is not None and warm_obs:
         assert_design_is_identified(
@@ -925,12 +998,33 @@ def run_c1_m1_v0_min(
         crossed=crossed,
         coverage=coverage,
         n_predictions=len(predictions),
+        n_climate_day_clusters=len(by_day),
         mean_rps_improvement=mean_imp,
         clustered_ci=clustered_t,
         contract_ci=contract_t,
         decision=_verdict(mean_imp, clustered_t),
         by_season=_slice_scores(
             predictions, lambda row: row.season, seed=seed, n_resample=n_boot
+        ),
+        by_horizon=_slice_scores(
+            predictions,
+            lambda row: f"T-{row.hours_to_close}h",
+            seed=seed,
+            n_resample=n_boot,
+        ),
+        vs_climatology=_pooled_slice(
+            predictions,
+            key="vs_climatology",
+            vs_clim=True,
+            seed=seed,
+            n_resample=n_boot,
+        ),
+        by_horizon_vs_climatology=_slice_scores(
+            predictions,
+            lambda row: f"T-{row.hours_to_close}h",
+            seed=seed,
+            n_resample=n_boot,
+            vs_clim=True,
         ),
         beta=beta_iv,
     )

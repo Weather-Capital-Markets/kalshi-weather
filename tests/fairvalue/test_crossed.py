@@ -162,7 +162,23 @@ def test_per_ticker_spread_is_reported() -> None:
     assert result.n_tickers_majority_crossed == 1
 
 
-def test_by_climate_day_buckets() -> None:
+def test_shard_accumulator_matches_concatenated_tape() -> None:
+    tape = _run_tape(400)
+    mid = len(tape) // 2
+    from wxmm.fairvalue.crossed import crossed_diagnostic_from_shards
+
+    whole = crossed_diagnostic(tape)
+    split = crossed_diagnostic_from_shards((tape[:mid], tape[mid:]))
+    assert split.as_specified.rate == pytest.approx(whole.as_specified.rate)
+    assert split.inverted.rate == pytest.approx(whole.inverted.rate)
+    assert split.n_block_excluded == whole.n_block_excluded
+
     by_day = crossed_by_climate_day(_oriented_tape(10, crossed_every=5))
     assert list(by_day) == ["2026-08-12"]
     assert 0.0 <= by_day["2026-08-12"] <= 1.0
+
+
+def test_mean_uncrossed_gap_is_reported() -> None:
+    result = crossed_state_rate(_oriented_tape(20, crossed_every=10), sign=1)
+    assert result.mean_uncrossed_gap_cents is not None
+    assert result.mean_uncrossed_gap_cents > 0

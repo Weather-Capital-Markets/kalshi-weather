@@ -15,8 +15,11 @@ from wxmm.analysis.maker_taker import (
     attribute_trade,
     bootstrap_mean_ci,
     clustered_bootstrap_mean_ci,
+    compact_from_attributed,
     select_primary,
+    select_primary_compact,
     x1a_report,
+    x1a_report_compact,
 )
 from wxmm.analysis.population import x1b_report
 from wxmm.analysis.study import run_c1_x1
@@ -310,3 +313,44 @@ def test_prereg_id_is_registered() -> None:
 
     registered = refuse_unless_preregistered(payload, PREREG)
     assert registered["prereg_id"] == "c1-x1-v1"
+
+
+def test_compact_path_matches_attributed_on_golden() -> None:
+    labels = {
+        "KXHIGHNY-26AUG12-T90": _label("KXHIGHNY-26AUG12-T90"),
+        "KXHIGHNY-26AUG13-T90": _label("KXHIGHNY-26AUG13-T90", yes_won=False),
+    }
+    trades = [
+        _trade(trade_id="a"),
+        _trade(trade_id="b", created="2026-08-12T15:00:00Z", book="bid"),
+        _trade(
+            trade_id="c",
+            ticker="KXHIGHNY-26AUG13-T90",
+            created="2026-08-13T14:00:00Z",
+        ),
+    ]
+    primary, blocks, n_unlabelled = select_primary(trades, labels)
+    compact_p, compact_b, compact_u, skipped = select_primary_compact(trades, labels)
+    assert skipped == 0
+    assert compact_u == n_unlabelled
+    assert len(compact_p) == len(primary)
+    assert len(compact_b) == len(blocks)
+    a = x1a_report(primary, blocks, n_unlabelled=n_unlabelled, seed=7, n_resample=80)
+    b = x1a_report_compact(
+        compact_p, compact_b, n_unlabelled=compact_u, seed=7, n_resample=80
+    )
+    assert a.n_primary_trades == b.n_primary_trades
+    assert float(a.maker_mean_net) == pytest.approx(float(b.maker_mean_net), rel=1e-9)
+    assert a.maker_ci_net is not None and b.maker_ci_net is not None
+    assert float(a.maker_ci_net[0]) == pytest.approx(float(b.maker_ci_net[0]), rel=1e-6)
+    from wxmm.analysis.population import bracket_day_nets, bracket_day_nets_compact
+    from wxmm.eval.flb import x1c_report, x1c_report_compact
+
+    nets_a = bracket_day_nets(primary)
+    nets_b = bracket_day_nets_compact(compact_p)
+    assert len(nets_a) == len(nets_b)
+    assert x1b_report(primary).n_bracket_days == len(nets_b)
+    xc_a = x1c_report(primary)
+    xc_b = x1c_report_compact(compact_p)
+    assert xc_a.estimate.n == xc_b.estimate.n
+    assert compact_from_attributed(primary[0]).ticker == primary[0].ticker

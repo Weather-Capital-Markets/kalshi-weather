@@ -1,10 +1,10 @@
 {
-  "n_trades": 3405461,
-  "span": "2022-12-10T15:37:12.271175+00:00 .. 2026-09-15T01:45:48.342558+00:00",
+  "n_trades": 3405724,
+  "span": "2022-12-10T15:37:12.271175+00:00 .. 2026-09-15T03:17:31.348599+00:00",
   "cross_tab": {
     "yesxask": 0,
-    "yesxbid": 1899605,
-    "noxask": 1505856,
+    "yesxbid": 1899828,
+    "noxask": 1505896,
     "noxbid": 0
   },
   "outcome_to_book": {
@@ -13,12 +13,13 @@
   },
   "as_specified": {
     "sign": 1,
-    "n_prints": 3405461,
-    "n_two_sided": 3368606,
-    "n_crossed": 195892,
-    "n_touching": 384667,
-    "rate": 0.05815224457832112,
-    "mean_gap_cents": 3.8635800684318675,
+    "n_prints": 3405724,
+    "n_two_sided": 3368869,
+    "n_crossed": 195894,
+    "n_touching": 384733,
+    "rate": 0.058148298434875324,
+    "mean_gap_cents": 3.8633752158365313,
+    "mean_uncrossed_gap_cents": 4.933907099885878,
     "median_gap_cents": 2.0,
     "n_tickers": 7693,
     "n_tickers_two_sided": 6974,
@@ -27,19 +28,21 @@
   },
   "inverted": {
     "sign": -1,
-    "n_prints": 3405461,
-    "n_two_sided": 3368606,
-    "n_crossed": 2788047,
-    "n_touching": 384667,
-    "rate": 0.8276560096372209,
-    "mean_gap_cents": -3.8635800684318675,
+    "n_prints": 3405724,
+    "n_two_sided": 3368869,
+    "n_crossed": 2788242,
+    "n_touching": 384733,
+    "rate": 0.8276492793278694,
+    "mean_gap_cents": -3.8633752158365313,
+    "mean_uncrossed_gap_cents": 3.7863436348229143,
     "median_gap_cents": -2.0,
     "n_tickers": 7693,
     "n_tickers_two_sided": 6974,
     "n_tickers_majority_crossed": 6074,
-    "median_ticker_rate": 0.8227438284095507
+    "median_ticker_rate": 0.8227334235453315
   },
   "verdict": "sign_confirmed",
-  "note": "as-specified crossed 0.0582 <= 0.35; ask sits above bid (median implied spread +2.0c), crossing is staleness",
-  "n_block_excluded": 0
+  "note": "as-specified crossed 0.0581 <= 0.35; ask sits above bid (median implied spread +2.0c), crossing is staleness",
+  "n_block_excluded": 0,
+  "halt_if_rate_gt_50pct": false
 }
