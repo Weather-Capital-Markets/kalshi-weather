@@ -10,7 +10,10 @@ headers to UTC. See knowledge/data-sources.md §1.1.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo
+
+ClimateDstStatus = Literal["edt", "est", "transition"]
 
 LST = timezone(timedelta(hours=-5))
 NY_CIVIL = ZoneInfo("America/New_York")
@@ -49,6 +52,27 @@ def climate_day_start(climate_date: date) -> datetime:
 
 def climate_day_end(climate_date: date) -> datetime:
     return climate_day_start(climate_date) + timedelta(days=1)
+
+
+def climate_dst_status(climate_date: str | date) -> ClimateDstStatus:
+    """Classify a climate day for Clock B / last-trading-time identification.
+
+    EDT days: LST and civil (LDT) offsets disagree — hypotheses are separable.
+    EST days: offsets agree — LST vs LDT map the same instant (non-identifying).
+    Transition days: offset changes inside the LST day; excluded from EDT pools.
+    """
+    if isinstance(climate_date, str):
+        day = date.fromisoformat(climate_date)
+    else:
+        day = climate_date
+    start = climate_day_end(day) - timedelta(days=1)
+    end = climate_day_end(day)
+    if start.astimezone(NY_CIVIL).utcoffset() != end.astimezone(NY_CIVIL).utcoffset():
+        return "transition"
+    midday = datetime(day.year, day.month, day.day, 12, 0, tzinfo=LST)
+    if midday.astimezone(NY_CIVIL).utcoffset() != midday.utcoffset():
+        return "edt"
+    return "est"
 
 
 def parse_nws_issuance_ts(header_time: str) -> datetime | None:

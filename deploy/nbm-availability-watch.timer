@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll NBM AWS/NOMADS idx every 5 minutes for first availability
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

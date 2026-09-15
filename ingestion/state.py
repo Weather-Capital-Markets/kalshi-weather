@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS history_markets (
   series_ticker TEXT,
   open_time TEXT,
   close_time TEXT,
+  settlement_ts TEXT,
   status TEXT,
   enumerated_utc TEXT NOT NULL
 );
@@ -191,11 +192,86 @@ CREATE TABLE IF NOT EXISTS cli_month_progress (
   complete INTEGER NOT NULL DEFAULT 0,
   updated_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS asos_month_progress (
+  station TEXT NOT NULL,
+  month TEXT NOT NULL,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL,
+  PRIMARY KEY (station, month)
+);
+CREATE TABLE IF NOT EXISTS nbm_climate_day_progress (
+  climate_date TEXT PRIMARY KEY,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
 """
+
+
+BACKFILL_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("history_markets", "settlement_ts", "TEXT"),
+)
+
+
+def _migrate_asos_month_progress(conn: sqlite3.Connection) -> None:
+    """Upgrade legacy month-only progress rows to (station, month) keys."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(asos_month_progress)")}
+    if not columns:
+        return
+    if "station" in columns:
+        return
+    conn.execute(
+        """
+        CREATE TABLE asos_month_progress_v2 (
+          station TEXT NOT NULL,
+          month TEXT NOT NULL,
+          complete INTEGER NOT NULL DEFAULT 0,
+          updated_utc TEXT NOT NULL,
+          PRIMARY KEY (station, month)
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO asos_month_progress_v2 (station, month, complete, updated_utc)
+        SELECT 'NYC', month, complete, updated_utc FROM asos_month_progress
+        """
+    )
+    conn.execute("DROP TABLE asos_month_progress")
+    conn.execute("ALTER TABLE asos_month_progress_v2 RENAME TO asos_month_progress")
+    conn.commit()
 
 
 def init_backfill_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(BACKFILL_SCHEMA_SQL)
+    _migrate_asos_month_progress(conn)
+    # CREATE TABLE IF NOT EXISTS is a no-op on a database written by an earlier
+    # schema, so columns added later need an explicit ALTER.
+    for table, column, decl in BACKFILL_MIGRATIONS:
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    conn.commit()
+
+
+def nbm_day_complete(conn: sqlite3.Connection, climate_date: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM nbm_climate_day_progress WHERE climate_date = ?",
+        (climate_date,),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_nbm_day_complete(conn: sqlite3.Connection, climate_date: str, updated_utc: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO nbm_climate_day_progress (climate_date, complete, updated_utc)
+        VALUES (?, 1, ?)
+        ON CONFLICT(climate_date) DO UPDATE SET
+            complete = 1,
+            updated_utc = excluded.updated_utc
+        """,
+        (climate_date, updated_utc),
+    )
     conn.commit()
 
 
@@ -208,27 +284,39 @@ def upsert_history_market(
     close_time: str | None,
     status: str | None,
     enumerated_utc: str,
+    settlement_ts: str | None = None,
 ) -> None:
     conn.execute(
         """
         INSERT INTO history_markets (
-            ticker, series_ticker, open_time, close_time, status, enumerated_utc
-        ) VALUES (?, ?, ?, ?, ?, ?)
+            ticker, series_ticker, open_time, close_time, settlement_ts,
+            status, enumerated_utc
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ticker) DO UPDATE SET
             series_ticker = excluded.series_ticker,
-            open_time = excluded.open_time,
-            close_time = excluded.close_time,
+            open_time = COALESCE(excluded.open_time, history_markets.open_time),
+            close_time = COALESCE(excluded.close_time, history_markets.close_time),
+            settlement_ts = COALESCE(excluded.settlement_ts, history_markets.settlement_ts),
             status = excluded.status,
             enumerated_utc = excluded.enumerated_utc
         """,
-        (ticker, series_ticker, open_time, close_time, status, enumerated_utc),
+        (
+            ticker,
+            series_ticker,
+            open_time,
+            close_time,
+            settlement_ts,
+            status,
+            enumerated_utc,
+        ),
     )
     conn.commit()
 
 
 def list_history_markets(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT ticker, series_ticker, open_time, close_time, status FROM history_markets"
+        "SELECT ticker, series_ticker, open_time, close_time, settlement_ts, status "
+        "FROM history_markets"
     ).fetchall()
 
 
@@ -278,5 +366,32 @@ def set_month_complete(conn: sqlite3.Connection, month: str, updated_utc: str) -
         ON CONFLICT(month) DO UPDATE SET complete = 1, updated_utc = excluded.updated_utc
         """,
         (month, updated_utc),
+    )
+    conn.commit()
+
+
+def asos_month_complete(conn: sqlite3.Connection, station: str, month: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM asos_month_progress WHERE station = ? AND month = ?",
+        (station, month),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_asos_month_complete(
+    conn: sqlite3.Connection,
+    station: str,
+    month: str,
+    updated_utc: str,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO asos_month_progress (station, month, complete, updated_utc)
+        VALUES (?, ?, 1, ?)
+        ON CONFLICT(station, month) DO UPDATE SET
+            complete = 1,
+            updated_utc = excluded.updated_utc
+        """,
+        (station, month, updated_utc),
     )
     conn.commit()

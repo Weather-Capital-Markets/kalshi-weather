@@ -242,6 +242,7 @@ class HistoryBackfill:
                 series_ticker=str(market.get("_series_ticker") or ""),
                 open_time=str(market.get("open_time") or "") or None,
                 close_time=str(market.get("close_time") or "") or None,
+                settlement_ts=str(market.get("settlement_ts") or "") or None,
                 status=str(market.get("status") or "") or None,
                 enumerated_utc=ts_utc,
             )
@@ -468,6 +469,9 @@ class HistoryBackfill:
                 "_series_ticker": row["series_ticker"],
                 "open_time": row["open_time"],
                 "close_time": row["close_time"],
+                # Without this, _use_historical falls back to close_time and
+                # routes markets settling near the cutoff to the wrong tier.
+                "settlement_ts": row["settlement_ts"],
                 "status": row["status"],
             }
             open_ts = _unix(_parse_iso(row["open_time"]))

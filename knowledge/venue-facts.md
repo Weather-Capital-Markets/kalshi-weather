@@ -1,7 +1,7 @@
 # venue-facts.md — Kalshi venue mechanics (settlement, fees, API)
 
-**Status:** PARTIAL — §1 populated from live and historical API payloads; the rest is
-placeholder.
+**Status:** PARTIAL — §1 populated from Kalshi backfill; §3 from live Polymarket Gamma/CLOB
+probe (2026-08-18); §2.1 fees verified 2026-08-15.
 **Owner:** the **venue research lane**. Entries below are contributed observations, not
 lane-ratified facts; the venue lane ratifies, amends, or rejects each one and owns this file.
 **Scope:** venue matters — settlement rules, fees, API endpoint specs, collateral netting.
@@ -33,36 +33,49 @@ python -m ingestion.kalshi_history --probe    # 2026-08-14T14:54Z
 Source market: `KXHIGHNY-26AUG12-T90` (event `KXHIGHNY-26AUG12`), status `finalized`, from
 `GET /markets?series_ticker=KXHIGHNY&status=settled`.
 
-§1.6 comes from `--dry-run` (2026-08-14); §1.7–§1.9 from
+§1.6 comes from `--dry-run` (2026-08-14); §1.8–§1.9 from
 `--probe --ticker HIGHNY-24AUG15-T83` (2026-08-14), which exercised the historical tier.
 
 Raw JSON for each was pasted in full to the session-2 chat. These are verbatim payload
 fields, not recall or documentation.
 
-### 1.1 Last trading minute aligns to the LST climate-day end
+§1.1, §1.7, §1.8, §1.10 and §1.11 were subsequently revised or established from the
+**completed backfill** — all 9,364 markets and 5.25 M candles, 2026-08-14 — via
+`python -m analysis.venue_eras` and `python -m analysis.validate_candles`. Where a
+single-market probe reading disagreed with the population, the population wins and the
+superseded reading is called out in place.
 
-`[V-LOCAL]` — `--probe` payload, 2026-08-14.
+### 1.1 Last trading minute aligns to the LST climate-day end — from 2026-03-18 only
+
+`[V-LOCAL]` — `--probe` payload, 2026-08-14; era bounds from
+`python -m analysis.venue_eras` over the full 9,364-market index, 2026-08-14.
 
 ```
 "close_time": "2026-08-13T04:59:00Z"
 ```
 
 04:59:00Z is 11:59 PM **EST** — one minute before the 05:00Z LST climate-day boundary, on a
-date when New York civil time was EDT (00:59 AM EDT). Kalshi's last trading minute therefore
-tracks local *standard* time year-round, not civil midnight.
+date when New York civil time was EDT (00:59 AM EDT).
+
+The earlier `(verify)` is **resolved, and the original claim was too broad**. LST alignment is
+not year-round behaviour; it is the current era only. Across all 1,829 climate days the close
+sits 61 minutes before the LST day end on 1,054 of them and 1 minute before on 774, and that
+swing is daylight saving rather than a venue decision: a close pinned to 11:59 PM *civil* ET
+lands 61 minutes early under EDT and 1 minute early under EST. Testing on EDT days only —
+where the two candidate rules name different instants — gives one changeover across five
+years, **between climate days 2026-03-17 and 2026-03-18** (1,049 identifying days before,
+148 after). See §1.8.
 
 Two consequences:
 
 - Independent corroboration of the fixed-offset UTC−5 climate day in `data-sources.md` §1.1,
-  from the venue side rather than the NWS side.
-- The spread-census anchor **T = next LST midnight (05:00Z)** sits inside the venue's own
-  trading window at every horizon measured. The tightest horizon, T−1h = 04:00Z, is an hour
-  before close — a real tradeable moment, not a post-close artifact.
+  from the venue side rather than the NWS side — but only for the post-2026-03-18 era.
+- The spread-census anchor **T = next LST midnight (05:00Z)** sits inside the venue's trading
+  window at every horizon **only in the current era**. Before 2026-03-18, T−1h = 04:00Z falls
+  after the 03:59Z close on every EDT day, which is 1,054 of 1,829 climate days (58%). The
+  census reports `outside_trading_window_share` so that column is never misread as illiquidity.
 
-`(verify)` — single market, single date. Confirm the 04:59Z close holds across a winter (EST)
-market-day before treating the EST alignment as year-round.
-
-### 1.2 Settlement lands on the first 7/8 AM ET report
+### 1.2 Settlement lands on the first 7/8 AM ET report — current era only
 
 `[V-LOCAL]` payload fields + `[V-PRIMARY]` contract text, both 2026-08-14.
 
@@ -79,6 +92,9 @@ market-day before treating the EST alignment as year-round.
 12:04:54Z is 8:04 AM ET, consistent with the stated settle-on-first-7-or-8-AM rule. Note
 `expiration_time` is the one-week backstop (2026-08-19) while `expected_expiration_time` is
 the same-day 14:00Z expectation; actual settlement preceded both.
+
+This wording holds from 2024-09-04 onward only; earlier eras name 10:00 AM or nothing at all.
+See §1.10 before applying it to a historical market day.
 
 ### 1.3 Settlement source is the NWS Climatological Report (Daily), named verbatim
 
@@ -168,49 +184,79 @@ still strings; `end_period_ts` is unchanged. `price.*` is `null` for periods wit
 }
 ```
 
-**Candles are sparse, not a dense 1-minute series.** With `period_interval=1` over a
-24-hour window from market open, the endpoint returned **5 candles spanning 11.7 h**, with
-inter-candle gaps of 600 s, 1,680 s, 1,800 s, and 38,040 s — 3 of 4 gaps exceed 15 minutes.
-Two of five candles had non-zero volume; the others recorded quote changes only. The endpoint
-appears to emit a candle when the book or price changed, and to omit unchanged periods.
+**Both tiers emit candles on change; sparseness is a property of quiet markets, not of the
+historical tier.** The `(verify)` on this entry is now **resolved, and the original reading
+was wrong.** The probe market was nearly dead (`volume_fp` 63.00 lifetime) and returned
+5 candles spanning 11.7 h, which was read as a tier property. Across the completed backfill —
+5.25 M candles over all 9,364 markets — the two tiers are almost indistinguishable:
 
-Two consequences, both measurement-critical:
+| tier | markets | candles | modal gap | median gap | p90 gap | gaps > 1 min | gaps > 15 min |
+|---|---|---|---|---|---|---|---|
+| live (`/series/.../candlesticks`) | 366 | 430,195 | 60 s | 60 s | 180 s | 22.8% | 1.04% |
+| historical (`/historical/...`) | 8,998 | 4,820,806 | 60 s | 60 s | 240 s | 22.1% | 3.07% |
 
-- A 15-minute staleness rule designed for dense live candles will discard most historical
-  snapshots even though the quote it discards was the live book. `spread_census.py` therefore
-  reports both the 15-minute-fresh statistics and carry-forward statistics with a quote-age
-  distribution; which one is load-bearing is a ratification decision.
-- Volume estimates built on "one candle per open minute" are large overestimates for this
-  tier. The 2026-08-14 dry-run projected ~21.3 M candles / 9.94 GB assuming density; the
-  realized historical-tier footprint should be far smaller.
+`[V-LOCAL]` — `python -m analysis.validate_candles`, 2026-08-14, after the full backfill.
 
-`(verify)` — one market, and a nearly dead one (`volume_fp` 63.00 lifetime). Candle density
-plausibly scales with activity; confirm against a liquid market once bulk data exists.
+The live tier skips 22.8% of its own minute boundaries, so it is **not** a dense
+one-candle-per-minute series either, and cannot serve as a dense control. The historical tier
+is modestly quieter (higher p90, 3× the share of >15-minute gaps), which is what an older and
+less liquid market population predicts — not a different emission mechanism.
 
-### 1.8 Last trading time changed convention between 2024 and 2026
+Three consequences, all measurement-critical:
 
-`[V-LOCAL]` payloads (2026-08-14) + `[V-PRIMARY]` contract text.
+- A 15-minute staleness rule discards live books on **both** tiers. The count of long gaps is
+  small but their time coverage is not: at T−6h on the live tier, 24.6% of in-window snapshots
+  have a last quote older than 15 minutes even though 99% of gaps are under it. Carry-forward
+  is the ratified primary statistic in `spread_census.py`, with the 15-minute rule retained as
+  `_strict15` robustness.
+- Volume estimates built on "one candle per open minute" are large overestimates. The
+  2026-08-14 dry-run projected ~21.3 M candles / 9.94 GB; realized is **5.25 M candles and
+  87 MB on disk**, 0.9% of the projection. Density and per-candle bytes both came in low.
+- Emission-on-change is safe for carry-forward only if omitted periods carry no trades. That
+  holds for 9,317 of 9,364 markets exactly; see §1.11 for the 47 that do not.
 
-| Market | `close_time` | Local equivalent | vs LST day end (05:00Z) |
+### 1.8 Last trading time changed once, between climate days 2026-03-17 and 2026-03-18
+
+`[V-LOCAL]` — `python -m analysis.venue_eras` over all 9,364 enumerated markets
+(1,829 climate days, 2021-08-06 → 2026-08-12), 2026-08-14. Supersedes the earlier
+two-market reading of this entry, which put the change "between 2024 and 2026".
+
+Measured naively, the offset from the LST climate-day end flips twice a year and would
+suggest thirteen changeovers:
+
+| `close_time` offset | climate days | first | last |
 |---|---|---|---|
-| `HIGHNY-24AUG15-T83` | `2024-08-16T03:59:00Z` | 11:59 PM **EDT** (civil ET) | 61 min **before** |
-| `KXHIGHNY-26AUG12-T90` | `2026-08-13T04:59:00Z` | 11:59 PM **EST** | 1 min before |
+| 61 min before day end | 1,054 | 2021-08-06 | 2026-03-17 |
+| 1 min before day end | 774 | 2021-11-07 | 2026-08-12 |
+| 721 min before day end | 1 | 2021-11-27 | 2021-11-27 |
 
-Both contracts *say* "11:59 PM ET", but the 2024 timestamp is civil-ET midnight while the
-2026 timestamp is LST midnight. The effective last trading minute moved one hour later, in
-UTC terms, between the two eras.
+Every one of those flips lands on a daylight-saving boundary. A close pinned to 11:59 PM
+civil ET *is* 61 minutes before the LST day end under EDT and 1 minute before it under EST,
+so the seasonal swing is the null hypothesis, not a finding. **Under EST the two candidate
+rules name the same instant and identify nothing**; only EDT days carry information. Excluding
+the 10 daylight-saving transition climate days — where the venue's own close sits an hour from
+both rules (2021-11-07, 2022-03-13, 2022-11-06, 2023-03-12, 2023-11-05, 2024-03-10,
+2024-11-03, 2025-03-09, 2025-11-02, 2026-03-08) — leaves one change across 1,197 identifying
+days:
 
-Census consequence: for pre-change markets the **T−1h snapshot (04:00Z) falls after close**,
-so that column is structurally empty for the older era — the same class of artifact as T−48h
-predating market open. `spread_census.py` records `in_trading_window` per snapshot and reports
-`outside_trading_window_share` so "shut" is never read as "unquoted".
+| last-trading-time rule | climate days | first | last |
+|---|---|---|---|
+| 11:59 PM civil ET | 1,049 | 2021-08-06 | 2026-03-17 |
+| 11:59 PM LST (fixed 04:59Z) | 148 | 2026-03-18 | 2026-08-12 |
+| both (EST, non-identifying) | 621 | 2021-11-08 | 2026-03-07 |
+| other (11:59 LST) | 1 | 2021-11-27 | 2021-11-27 |
 
-Settlement timing also differs: the 2024 contract expires on "the first 10:00 AM following
-the release of the data", the 2026 contract on "the first 7:00 or 8:00 AM ET" (§1.2).
+**The contract text did not follow the timestamp.** `early_close_condition` still reads
+"The Last Trading Time will be 11:59 PM ET" on post-change markets whose `close_time` is
+04:59Z — 12:59 AM EDT, an hour after the stated time. `[V-PRIMARY]` (`KXHIGHNY-26AUG12-T90`
+text) against `[V-LOCAL]` (its own `close_time`). Trust the timestamp, not the prose, and do
+not re-derive the last trading minute from contract wording.
 
-`(verify)` — two markets, two dates. The changeover date is unknown and is computable from
-`close_time` across the persisted market index once bulk enumeration lands; do that before
-any era-spanning liquidity comparison.
+Census consequence: for pre-2026-03-18 EDT markets the **T−1h snapshot (04:00Z) falls after
+close** — 1,054 of 1,829 climate days — so that column is structurally empty there, the same
+class of artifact as T−48h predating market open. `spread_census.py` records
+`in_trading_window` per snapshot and reports `outside_trading_window_share` so "shut" is never
+read as "unquoted".
 
 ### 1.9 Legacy tickers are not resolvable via the live single-market endpoint
 
@@ -224,8 +270,171 @@ Note the historical market object also lacks the live tier's `floor_strike`-styl
 this contract (it carries `cap_strike: 83`, `strike_type: "less"`), and `expiration_value` is
 an empty string rather than a number.
 
+### 1.10 Settlement-time regime history
+
+`[V-LOCAL]` + `[V-PRIMARY]` — `python -m analysis.venue_eras`, contract text of all 9,364
+markets, 2026-08-14.
+
+The snapshot after which expiration occurs is stated in `early_close_condition` /
+`rules_secondary` and moved twice:
+
+| contract phrase | climate days | first | last |
+|---|---|---|---|
+| unspecified (Rule 100.19 reference only) | 141 | 2021-08-06 | 2021-12-25 |
+| "the first 10:00 AM following the release of the data" | 980 | 2021-12-28 | 2024-09-03 |
+| "the first 7:00 or 8:00 AM ET following the release of the data" | 708 | 2024-09-04 | 2026-08-12 |
+
+Changeovers: between climate days **2021-12-25 and 2021-12-28** (no market days in the gap),
+and between **2024-09-03 and 2024-09-04**. §1.2's 7/8 AM finding is therefore the current era
+only, not a property of the series.
+
+**Unspecified era (2021-08-06 → 2021-12-25):** contract text defers to Rulebook Rule 100.19
+with no snapshot hour named. Until Rule 100.19 is read from the archived 2021 PDF (open item
+V1), label selection for those 141 climate days **defaults to the first 10:00 AM rule**, tagged
+as an assumption — not a ratified fact.
+
+Note the legacy wording omits "ET"; a regex requiring it silently reclassifies the entire
+10 AM era as unspecified.
+
+This is measurement-critical for labels, not just trivia: a 10 AM snapshot can see a CLINYC
+revision that a 7/8 AM snapshot cannot. `data-sources.md` §1.3 defines the label as the latest
+issuance visible at the settlement snapshot, so the snapshot time is era-dependent and the
+label rule cannot be applied with a single fixed hour across the archive.
+
+### 1.11 Candle volume does not always reconcile to the market's lifetime volume
+
+`[V-LOCAL]` — `python -m analysis.validate_candles` over the completed backfill, 2026-08-14.
+
+Summing every candle's `volume` for a market should reproduce that market's `volume_fp`. It
+does exactly for **9,317 of 9,364 markets**. The 47 that miss account for 7,225 of
+138,212,600.30 contracts — **0.0052%** — spread over 34 of 1,829 climate days.
+
+The residual is **not** simply missing capture:
+
+- 40 markets fall short of the lifetime volume, but **7 exceed it**. A candle sum above the
+  market total cannot be produced by omitting candles, so at least part of this is venue-side
+  bookkeeping disagreement between two fields.
+- Re-fetching the single live-tier mismatch (`KXHIGHNY-26JUN18-T83`, short 15.00 of 54,302.97)
+  over a window widened by a day on each side returned a byte-identical candle set. The gap is
+  in the venue's data, not in our chunking.
+- Mismatches cluster on a few dates (2025-03-10 accounts for 6 markets and 2,788 contracts),
+  which points at venue incidents rather than a systematic tier property.
+
+Consequence: the emission-validation gate as pre-registered ("any mismatch fails") **fails**
+on exact equality. K1 v3 (see `knowledge/plan.md` §3) accepts capture at 9,317/9,364 exact
+(0.0052% residual volume, 7 over-reconciliations inconsistent with capture loss) and treats
+the residual as venue bookkeeping. Primary census includes all markets; robustness column
+`_exclnoreconcile` excludes the 47 markets. Quote-only emission completeness is unverifiable
+for history; a forward VPS cross-check is a standing obligation that caveats prospective use
+but does not retroactively void a K1 verdict.
+
+---
+
+## 1.99 Open items (venue lane)
+
+| # | Item | Blocking? | Resolution path |
+|---|---|---|---|
+| V1 | Settlement-time regime history: the 2021-08-06 → 2021-12-25 era (141 climate days) names no snapshot time, deferring to Rulebook Rule 100.19. Those days cannot have `data-sources.md` §1.3 applied from contract text alone. | Before labelling 2021 market days | Read Rule 100.19 as it stood in 2021 from the archived rulebook PDF |
+| V2 | The contract prose ("11:59 PM ET") contradicts `close_time` (04:59Z) after 2026-03-18 (§1.8). Whether the venue changed policy or has a stale template is unknown. | No — the timestamp is authoritative for measurement | Venue support, or watch whether the prose catches up |
+| V3 | 47 markets across 34 climate days whose candle volume does not reconcile to `volume_fp`, in both directions (§1.11). 0.0052% of total volume. K1 v3: primary includes all days; robustness column `_exclnoreconcile` drops these 47 markets; kill-direction disagreement → written discussion. Venue-lane bookkeeping explanation, not a census blocker. | No | Explain via venue support if needed; forward VPS quote check is the standing obligation for quote-only emission |
+| V4 | Weather-series maker fee for KXHIGHNY / KXHIGH* | No — **closed 2026-08-15** | §2.1; re-check before any capital commitment |
+
 ---
 
 ## 2. Fees, collateral, order types
 
-**PLACEHOLDER** — venue lane. Nothing observed yet; do not fill from recall.
+### 2.1 Weather-series trading fees (KXHIGHNY)
+
+`[V-LOCAL]` — Kalshi live fee schedule page, 2026-08-15 (screenshot retained).
+
+- **KXHIGHNY** and no **KXHIGH\*** series appear in the venue's 161-series non-standard fee
+  table. The page states **"No upcoming fee changes scheduled."**
+- **Weather maker fee: $0.00** — upgraded from inference to verified against the live fee
+  list. Both API-tier PDFs and the live page now agree.
+- **Census readout:** a 2–4¢ spread result can be read as **maker-only live** without an
+  asterisk on fees, subject to the re-check obligation below.
+
+**Re-check before any capital commitment** — fee schedules are time-sensitive (see project file
+02's time-sensitivity note). The live list must be re-verified before deploying capital, even
+though no change is scheduled today.
+
+### 2.2 Collateral, order types
+
+**PLACEHOLDER** — venue lane. Not yet observed from primary sources.
+
+---
+
+## 3. Polymarket NYC daily-high (Gamma `nyc-daily-weather`)
+
+`[V-LOCAL]` — `python -m ingestion.polymarket_logger --probe` and `--once` against live Gamma +
+CLOB, 2026-08-18. Supersedes any earlier gateway-probe claim that Polymarket settled on the same
+NWS Central Park report as Kalshi.
+
+### 3.1 Market structure — exhaustive disjoint bracket ladder
+
+`[V-LOCAL]` + `[V-PRIMARY]` — Gamma event payloads (`groupItemTitle`, `question`, `negRisk`).
+
+Polymarket's NYC daily-high series is an **exhaustive bracket ladder**, not a set of cumulative
+`≥X` threshold binaries:
+
+- Tails: `≤75°F` (`tail_below`) and `≥94°F` (`tail_above`).
+- Interior: disjoint 2°F bins (`between 76-77°F`, `between 78-79°F`, …).
+- `negRisk: true` on every open bracket — the venue links them as a **mutually exclusive** set.
+- The probability law is **Σp ≈ 1 across the ~11 brackets**, identical to Kalshi's ladder form.
+  Monotonicity laws for cumulative thresholds (P(≥87) ≥ P(≥89)) **do not apply**.
+
+Cross-venue S2 comparison is therefore **bracket-to-bracket** (same bin label), not threshold-to-
+threshold.
+
+Logger metadata encodes `bracket_kind`, `bracket_low_f`, `bracket_high_f`, `bracket_label`, and
+`neg_risk` — not `strike_f` / `direction` cumulative reframing.
+
+### 3.2 Settlement station and data source — KLGA, not KNYC
+
+`[V-PRIMARY]` — Polymarket contract / resolution rules (market questions and resolution criteria
+on Gamma); `[CORR]` — station climatology (LaGuardia vs Central Park summer bias).
+
+**Hard finding:** Polymarket resolves NYC daily-high on **LaGuardia (KLGA)** using **Weather
+Underground's Daily Observations** table. Kalshi resolves on **Central Park (KNYC)** via the
+**NWS Climate Report** (CLINYC). Different station, different data provider, different revision
+rule:
+
+| | Polymarket | Kalshi |
+|---|---|---|
+| Station | KLGA (LaGuardia) | KNYC (Central Park) |
+| Source | Weather Underground Daily Observations | NWS Climate Report |
+| Revision | Accepts revisions until the next day's first datapoint | Settles on first 7/8 AM ET snapshot; ignores later revisions |
+
+LaGuardia routinely runs **1–3°F warmer** than Central Park in summer — enough to land in a
+different 2°F bracket on most warm days.
+
+**Consequence:** cross-venue price differences are **mostly basis** (KLGA–KNYC spread), not
+mispricing. Any naive "arbitrage" between venues is a bet on the station spread, not free money.
+This **kills naive cross-venue arb** as a thesis.
+
+### 3.3 Order-book depth and fees — materially deeper than Kalshi
+
+`[V-LOCAL]` — CLOB `/book` dumps from `--probe`, 2026-08-18; compared to Kalshi depth census
+(~$14 within 2¢ on KXHIGHNY).
+
+Polymarket's resting liquidity on NYC weather brackets is **an order of magnitude deeper** than
+Kalshi's observed books:
+
+- ~100 contracts resting at nearly every penny from 3¢ to 35¢ on sample brackets; thousands at
+  tails; `liquidityNum` ~$20–38k per bracket; daily volume ~$10–50k per bracket on active days.
+- `feeSchedule`: **`takerOnly: true`**, rate **0.05**, **`rebateRate: 0.25`** — taker-only fees
+  with a maker rebate.
+- `rewardsMinSize` / `rewardsMaxSpread: 4.5` fields indicate a **liquidity-rewards** program.
+
+**Consequence for maker thesis:** shallow Kalshi books may be a **Kalshi-specific** depth
+problem, not a weather-market problem. Polymarket appears to have depth, volume, and a maker-
+friendly fee structure — with the tradeoff that it settles on a different station (§3.2).
+Depth and fee findings should be reported **venue-split** in any census readout.
+
+### 3.99 Open items (Polymarket)
+
+| # | Item | Blocking? | Resolution path |
+|---|---|---|---|
+| P1 | Exact Polymarket revision cutoff rule in contract text (Wunderground table row selection) | Before label backfill | Read resolution criteria from Gamma / primary contract |
+| P2 | Liquidity-rewards economics (maker rebate + rewards program) | Before capital on Polymarket | Fee schedule doc + live account terms |
+| P3 | KLGA–KNYC spread distribution by season (basis sizing) | Before cross-venue analysis | ASOS / CLI archive comparison |

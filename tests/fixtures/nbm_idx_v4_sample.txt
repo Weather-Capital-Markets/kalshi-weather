@@ -1,0 +1,8 @@
+1:0:d=2022070412:TMP:2 m above ground:0-18 hour max fcst:1% level
+2:12345:d=2022070412:TMP:2 m above ground:0-18 hour max fcst:2% level
+3:24690:d=2022070412:TMP:2 m above ground:0-18 hour max fcst:50% level
+4:37035:d=2022070412:TMP:2 m above ground:0-18 hour max fcst:99% level
+5:49380:d=2022070412:TMP:2 m above ground:0-18 hour max fcst:
+6:61725:d=2022070412:TMP:2 m above ground:0-18 hour StdDev fcst:
+7:74070:d=2022070412:TMP:2 m above ground:0-18 hour min fcst:prob <233:prob fcst 255/255
+8:86415:d=2022070412:TMP:2 m above ground:3-21 hour max fcst:1% level

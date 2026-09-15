@@ -124,28 +124,63 @@ sqlite3 data/heartbeat.sqlite "SELECT key, value FROM kv_state WHERE key LIKE 't
 
 ## Deploy to Ubuntu VPS (user-level systemd)
 
+Target: both loggers on one box (`kalshi-logger` + `polymarket-logger`), surviving logout.
+
+### Automated (on the VPS, from repo root)
+
 ```bash
-# On the VPS, after cloning and setting up the venv (see Quick start)
+git clone https://github.com/Weather-Capital-Markets/kalshi-weather.git
+cd kalshi-weather
+./scripts/vps-setup.sh
+```
+
+`vps-setup.sh` creates the venv, installs deps, runs `--once` smoke tests, installs user
+systemd units from `deploy/`, enables lingering, and starts both services plus the
+NBM availability-watch timer (Session 6b-fix).
+
+**NBM first-availability watch (blocking K2):** after `git pull`, confirm the timer is active:
+
+```bash
+systemctl --user status nbm-availability-watch.timer
+journalctl --user -u nbm-availability-watch -f
+python -m analysis.nbm_availability_watch --mode report
+```
+
+Output CSV: `analysis/out/nbm_availability_watch.csv` (polls every 5 min until 6 cycles
+per source witness 404→200). Do not re-run `nbm_archive` until this report settles.
+
+### Manual equivalent
+
+```bash
+# After clone + venv (see Quick start)
 mkdir -p ~/.config/systemd/user
-cp deploy/kalshi-logger.service ~/.config/systemd/user/
-# Edit WorkingDirectory/ExecStart paths if not using ~/kalshi-weather
+cp deploy/kalshi-logger.service deploy/polymarket-logger.service ~/.config/systemd/user/
+# Edit WorkingDirectory/ExecStart if not using ~/kalshi-weather
 
 systemctl --user daemon-reload
-systemctl --user enable kalshi-logger
-systemctl --user start kalshi-logger
+systemctl --user enable --now kalshi-logger polymarket-logger
+sudo loginctl enable-linger $USER
 
 # Verify
-systemctl --user status kalshi-logger
-journalctl --user -u kalshi-logger -f
+systemctl --user status kalshi-logger polymarket-logger
 python -m ingestion.kalshi_logger --status
-sqlite3 ~/kalshi-weather/data/heartbeat.sqlite "SELECT COUNT(*) FROM poll_attempts;"
+python -m ingestion.polymarket_logger --status
+journalctl --user -u kalshi-logger -f
+journalctl --user -u polymarket-logger -f
 ```
 
-Enable lingering so the user service survives logout:
+Kalshi heartbeat: `data/heartbeat.sqlite`. Polymarket heartbeat:
+`data/polymarket_heartbeat.sqlite`. Both write under `data/raw/` (Kalshi
+`orderbook/`, Polymarket `pm_orderbook/` + `pm_markets/`).
+
+### Local verification (laptop or CI-style)
 
 ```bash
-sudo loginctl enable-linger $USER
+./scripts/verify-setup.sh
 ```
+
+Runs `ruff`, `pytest`, live `--once` for both loggers, `--status`, and a Kalshi
+`depth_census` sanity check.
 
 ## Tests
 
@@ -161,7 +196,7 @@ Tests mock HTTP; no live API calls in CI.
 knowledge/          Source-of-truth docs (weather, venue facts)
 ingestion/          Kalshi market-data logger
 tests/              Unit tests
-deploy/             systemd unit file
+deploy/             systemd unit files + VPS scripts in scripts/
 data/               Runtime captures (gitignored)
 ```
 
@@ -207,13 +242,41 @@ python -m ingestion.kalshi_history --probe --ticker KXHIGHNY-24JUL04-T90
 # 4. Bulk history — only after both probe readouts are confirmed
 python -m ingestion.kalshi_history
 
-# CLINYC labels (independent of Kalshi candles; can overlap with step 4)
+# 5. CLINYC labels — run after step 4, not alongside it
 python -m ingestion.cli_labels
 
-# Census on whatever data exists (partial is valid)
-# Do not run this until kill thresholds are ratified in the root chat.
+# 6. Validate that change-emitted candles omit only uneventful periods
+python -m analysis.validate_candles
+
+# 7. Locate the venue convention changeover dates
+python -m analysis.venue_eras
+
+# 8. Census — gated on K1 v3 ratified in the root chat (date filled in); not on the
+#    pre-registered exact-equality VOLUME_RECONCILE FAIL (v3 accepts capture at 99.995%)
 python -m analysis.spread_census
 ```
+
+Steps 4 and 5 share `data/backfill.sqlite`, which is opened with plain
+`sqlite3.connect` — no WAL, no `busy_timeout`. Two writers risk
+`database is locked`, and serialising costs about two minutes since CLINYC is
+roughly 80 monthly requests at 1 rps.
+
+Step 8 is gated on **K1 v3 ratified in the root chat** (see [`knowledge/plan.md`](knowledge/plan.md)
+§3), not on the pre-registered exact-equality `VOLUME_RECONCILE` FAIL. v3 accepts capture at
+9,317/9,364 markets and names two robustness columns: `_strict15` (15-minute staleness) and
+`_exclnoreconcile` (47 volume-mismatch markets excluded). The census makes **carry-forward the
+primary statistic**: every metric that depends on the staleness rule appears as
+`*_carryforward` (primary), `*_strict15` (robustness a), and `*_exclnoreconcile` (robustness b).
+That is only sound if a tier omits a period because nothing happened rather than because data is
+missing. `validate_candles.py` tests that with two gates and prints PASS/FAIL for each; v3
+records the VOLUME_RECONCILE residual as venue bookkeeping, not a census blocker. If either
+robustness column disagrees with the primary on kill-direction, the verdict is deferred.
+
+Run step 6 only after step 4 finishes. A market whose candles are still being
+fetched is indistinguishable there from one whose candles are missing.
+
+Steps 6 and 7 read raw JSONL only and open no database, so they are safe to
+re-run at any time.
 
 `--probe` prints raw `/historical/cutoff`, one market object, and one candlestick
 page, then stops after a single markets page.
@@ -241,4 +304,93 @@ against IEM ASOS hourly KNYC (~3 summer days).
 The census counts a snapshot two-sided only when bid ≥ $0.01 and ask ≤ $0.99.
 Kalshi renders an empty book as bid 0.00 / ask 1.00; see
 [`knowledge/venue-facts.md`](knowledge/venue-facts.md) §1.4.
+
+`venue_eras.py` reports the two convention changeovers that bound era-spanning
+comparisons: the last trading time moved from 11:59 PM civil ET to a fixed
+04:59Z between climate days 2026-03-17 and 2026-03-18
+([`venue-facts.md`](knowledge/venue-facts.md) §1.8), and the settlement snapshot
+moved from 10:00 AM to 7/8 AM ET between 2024-09-03 and 2024-09-04 (§1.10).
+Before the first change the T−1h census column falls after close on every EDT
+day, which is 58% of climate days — structurally empty, not illiquid.
+
+## Session 2.5 — instrument calibration + forward validation (laptop only)
+
+```bash
+# A1. ASOS observations for Clock B calibration (sample from 2025-05-01)
+python -m ingestion.asos_obs
+
+# A2. Clock B measurement table (LST vs LDT hypotheses; no verdict in code)
+python -m analysis.clockb_check
+
+# B. Window-vs-climate-day mismatch rate (K2 prep)
+python -m analysis.window_mismatch
+
+# C. Forward quote-emission cross-check — run when VPS logger is alive
+python -m analysis.validate_emission_forward \
+  --data-dir /path/to/data/raw --start 2026-08-01 --end 2026-08-03
+```
+
+Item C reads `data/raw` orderbook JSONL only and never opens `heartbeat.sqlite`.
+Set `climate.cli_time_convention` in `ingestion/config.yaml` (`lst`, `ldt`, or
+`unknown`, default) before relying on Clock B or window-mismatch headline numbers.
+Census execution remains gated on K1 v3 ratification in the root chat.
+
+## Session 3 — depth census (K1 2b), forward emission, Polymarket logger
+
+```bash
+# A. Prospective depth census from logger orderbook JSONL (not candlesticks)
+python -m analysis.depth_census --data-dir data/raw
+
+# B. Forward quote-emission cross-check (v3 standing obligation)
+python -m analysis.validate_emission_forward \
+  --data-dir data/raw --start 2026-08-01 --end 2026-08-03
+
+# C. Polymarket NYC daily-high ladder logger (Gamma + CLOB; isolated heartbeat)
+python -m ingestion.polymarket_logger --probe   # series discovery + strike ladder + sample book
+python -m ingestion.polymarket_logger --once    # all open thresholds × horizon_days
+python -m ingestion.polymarket_logger --status
+```
+
+Discovery uses `polymarket.markets.series_slug` (`nyc-daily-weather`), not per-market
+slugs. Each `--once` writes one `pm_markets` file per calendar day (full ladder with
+`pm_meta.strike_f` and `pm_meta.direction`) and one `pm_orderbook` file per open strike
+(CLOB `/book?token_id=...`). Orderbooks are on `clob.polymarket.com`, not the US sports
+gateway.
+
+Depth census history is **logger-length only** (days). Re-run as the VPS logger accrues.
+Polymarket writes to `data/polymarket_heartbeat.sqlite` and `pm_orderbook` / `pm_markets`
+under `data/raw/` — it does not touch the Kalshi heartbeat DB.
+
+On VPS, enable both units after `git pull` and venv setup:
+
+```bash
+systemctl --user enable --now kalshi-logger polymarket-logger
+systemctl --user status kalshi-logger polymarket-logger
+```
+
+After deploying the Kalshi logger with deeper books, consider raising `api.orderbook_depth`
+in `ingestion/config.yaml` so multi-level depth metrics are meaningful.
+
+## Session 6a — K2 prerequisites (window mismatch K2 + NBM archive)
+
+```bash
+# A. Extended window mismatch (CLI lst/ldt + ASOS KNYC; window_mismatch_k2.csv)
+python -m analysis.window_mismatch
+
+# B. NBM qmd archive probe (paste output before bulk backfill)
+python -m ingestion.nbm_archive --probe
+python -m ingestion.nbm_archive --dry-run
+python -m ingestion.nbm_archive
+```
+
+NBM ingestion uses HTTP byte-range requests via `.idx` sidecars only — never downloads
+whole 283 MB grib2 files. Requires `requirements-analysis.txt` (cfgrib, pyarrow).
+
+```bash
+# Session 6b — K2 blocking prerequisites (measurement only; 6c gated)
+python -m analysis.bracket_enumeration
+python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > 60 min
+python -m analysis.nbm_availability_watch --mode tick   # VPS timer: first-availability poll
+python -m analysis.nbm_availability_watch --mode report   # summarize CSV
+```
 
