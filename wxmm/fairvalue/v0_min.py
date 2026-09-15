@@ -701,15 +701,11 @@ def run_c1_m1_v0_min(
             continue
         if last_fit is None:
             p_hat = dict(q_map)
-            beta: Sequence[float] = ()
-            mean: Sequence[float] = ()
-            std: Sequence[float] = ()
         else:
-            beta = last_fit.beta
-            mean = last_fit.feat_mean
-            std = last_fit.feat_std
-            scaled, _, _ = _standardize(x_rows, mean=mean, std=std)
-            p_hat = predict_adjusted(q_map, tickers, scaled, beta)
+            scaled, _, _ = _standardize(
+                x_rows, mean=last_fit.feat_mean, std=last_fit.feat_std
+            )
+            p_hat = predict_adjusted(q_map, tickers, scaled, last_fit.beta)
         clim = climatology_forecast(
             origin.train_days,
             labels,
@@ -739,7 +735,7 @@ def run_c1_m1_v0_min(
         )
 
     improvements = _improvements(predictions)
-    mean = float(sum(improvements) / len(improvements)) if improvements else 0.0
+    mean_imp = float(sum(improvements) / len(improvements)) if improvements else 0.0
     by_day: dict[date, list[Decimal]] = {}
     for row in predictions:
         by_day.setdefault(row.climate_day, []).append(row.rps_null - row.rps_model)
@@ -765,10 +761,10 @@ def run_c1_m1_v0_min(
         prereg_id=str(registered["prereg_id"]),
         coverage=coverage,
         n_predictions=len(predictions),
-        mean_rps_improvement=mean,
+        mean_rps_improvement=mean_imp,
         clustered_ci=clustered_t,
         contract_ci=contract_t,
-        decision=_verdict(mean, clustered_t),
+        decision=_verdict(mean_imp, clustered_t),
         by_season=_slice_scores(
             predictions, lambda row: row.season, seed=seed, n_resample=n_boot
         ),
