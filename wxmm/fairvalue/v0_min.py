@@ -131,6 +131,13 @@ class V0MinReport:
     decision: V0MinDecision
     by_season: tuple[SliceScore, ...]
     beta: tuple[BetaInterval, ...]
+    fit: OffsetLogitFit | None = None
+    """The last walk-forward fit, kept so the shadow can deploy this exact model.
+
+    The ``beta`` intervals alone do not identify it: the coefficients are in
+    standardised units, so a consumer also needs ``feat_mean`` and ``feat_std``
+    to build the same feature vector the fit saw.
+    """
     nbm_status: Literal["NOT_IN_V0_MIN"] = "NOT_IN_V0_MIN"
     is_strategy_pnl: Literal[False] = False
 
@@ -148,6 +155,7 @@ class V0MinReport:
             "decision": asdict(self.decision),
             "by_season": [asdict(row) for row in self.by_season],
             "beta": [asdict(row) for row in self.beta],
+            "fit": None if self.fit is None else asdict(self.fit),
             "nbm_status": self.nbm_status,
             "is_strategy_pnl": False,
         }
@@ -933,6 +941,7 @@ def run_c1_m1_v0_min(
             predictions, lambda row: row.season, seed=seed, n_resample=n_boot
         ),
         beta=beta_iv,
+        fit=last_fit,
     )
     ledger.record(
         "C1_M1_V0_MIN",
