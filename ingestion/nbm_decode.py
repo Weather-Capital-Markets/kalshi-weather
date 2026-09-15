@@ -130,18 +130,29 @@ def decode_message_at_gridpoint(
     row: int,
     col: int,
 ) -> float | None:
+    decoded = decode_grid_cells(grib_bytes, [("cell", row, col)])
+    return decoded.get("cell")
+
+
+def decode_grid_cells(
+    grib_bytes: bytes,
+    cells: list[tuple[str, int, int]],
+) -> dict[str, float | None]:
+    """Decode named (row, col) cells from one grib message (opens cfgrib once)."""
+    out: dict[str, float | None] = {name: None for name, _row, _col in cells}
     with open_grib_datasets(grib_bytes) as datasets:
         if not datasets:
-            return None
+            return out
         ds = datasets[0]
         var = next(iter(ds.data_vars))
         values = ds[var].values
-        if values.ndim == 2:
-            return validate_temperature_f(
-                kelvin_to_fahrenheit(float(values[row, col])),
-                label="NBM TMP",
-            )
-        return validate_temperature_f(
-            kelvin_to_fahrenheit(float(values.flatten()[0])),
-            label="NBM TMP",
-        )
+        for name, row, col in cells:
+            try:
+                if values.ndim == 2:
+                    raw = kelvin_to_fahrenheit(float(values[row, col]))
+                else:
+                    raw = kelvin_to_fahrenheit(float(values.flatten()[0]))
+                out[name] = validate_temperature_f(raw, label="NBM TMP")
+            except (IndexError, TypeError):
+                out[name] = None
+    return out

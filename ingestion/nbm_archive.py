@@ -13,6 +13,7 @@ import argparse
 import logging
 import random
 import sys
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -24,7 +25,7 @@ import pandas as pd
 from ingestion.climate_day import climate_day_end
 from ingestion.config_loader import load_config
 from ingestion.heartbeat import connect, init_schema
-from ingestion.nbm_decode import decode_message_at_gridpoint, nearest_gridpoint_from_grib
+from ingestion.nbm_decode import decode_grid_cells, nearest_gridpoint_from_grib
 from ingestion.nbm_idx import (
     QMD_WINDOW_FORECAST_HOURS,
     ByteRange,
@@ -161,24 +162,38 @@ def select_forecast_hours(cycle_hour: int) -> list[int]:
 
 
 class NbmArchiveClient:
-    def __init__(self, base_url: str, timeout_sec: float = 60.0) -> None:
+    def __init__(self, base_url: str, timeout_sec: float = 120.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.client = httpx.Client(timeout=timeout_sec, follow_redirects=True)
         self.bytes_transferred = 0
+        self.max_retries = 4
 
     def close(self) -> None:
         self.client.close()
 
     def fetch_text(self, url: str) -> tuple[int, str]:
-        response = self.client.get(url)
+        response = self._get(url)
         self.bytes_transferred += len(response.content)
         return response.status_code, response.text
 
     def fetch_range(self, url: str, byte_range: ByteRange) -> tuple[int, bytes]:
-        response = self.client.get(url, headers={"Range": byte_range.header_value()})
+        response = self._get(url, headers={"Range": byte_range.header_value()})
         content = response.content
         self.bytes_transferred += len(content)
         return response.status_code, content
+
+    def _get(self, url: str, headers: dict[str, str] | None = None) -> httpx.Response:
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                return self.client.get(url, headers=headers)
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_exc = exc
+                sleep_s = 2.0 * (attempt + 1)
+                logger.warning("nbm HTTP retry %s/%s after %s", attempt + 1, self.max_retries, exc)
+                time.sleep(sleep_s)
+        assert last_exc is not None
+        raise last_exc
 
 
 class NbmArchiveBackfill:
@@ -214,15 +229,23 @@ class NbmArchiveBackfill:
         self.http = NbmArchiveClient(self.base_url)
         self._grid_row_col: tuple[int, int] | None = None
         self._grid_meta: tuple[float, float, float] | None = None
+        self.decode_neighbors = bool(nbm.get("decode_neighbors") or False)
+        self.max_days = nbm.get("max_days")
+        if self.max_days is not None:
+            self.max_days = int(self.max_days)
 
     def sampled_climate_dates(self) -> list[date]:
-        return stratified_sample_climate_dates(
+        dates = stratified_sample_climate_dates(
             self.start_date,
             self.end_date,
             target_n=self.sample_size,
             sub_era_split=self.sub_era_split,
             seed=self.sample_seed,
         )
+        if self.max_days is not None and self.max_days < len(dates):
+            rng = random.Random(self.sample_seed + 99)
+            dates = sorted(rng.sample(dates, self.max_days))
+        return dates
 
     def _expected_ladder_levels(self) -> int:
         return len(self.percentile_levels)
@@ -340,7 +363,18 @@ class NbmArchiveBackfill:
             if row_col is None:
                 row_col = self._ensure_grid(grib_bytes)
             row, col = row_col
-            value_f = decode_message_at_gridpoint(grib_bytes, row=row, col=col)
+            cells: list[tuple[str, int, int]] = [("nearest", row, col)]
+            if self.decode_neighbors:
+                cells.extend(
+                    [
+                        ("n", row - 1, col),
+                        ("s", row + 1, col),
+                        ("w", row, col - 1),
+                        ("e", row, col + 1),
+                    ]
+                )
+            decoded = decode_grid_cells(grib_bytes, cells)
+            value_f = decoded.get("nearest")
             if value_f is None:
                 logger.warning(
                     "decode failed at gridpoint row=%s col=%s offset=%s",
@@ -349,15 +383,17 @@ class NbmArchiveBackfill:
                     byte_range.start,
                 )
                 continue
-            ladder.append(
-                {
-                    "percentile_level": byte_range.idx_line.percentile_level,
-                    "value_f": value_f,
-                    "byte_offset": byte_range.start,
-                    "byte_size": byte_range.size,
-                    "idx_line": byte_range.idx_line.raw_line,
-                }
-            )
+            entry: dict[str, Any] = {
+                "percentile_level": byte_range.idx_line.percentile_level,
+                "value_f": value_f,
+                "byte_offset": byte_range.start,
+                "byte_size": byte_range.size,
+                "idx_line": byte_range.idx_line.raw_line,
+            }
+            if self.decode_neighbors:
+                for name in ("n", "s", "w", "e"):
+                    entry[f"value_f_{name}"] = decoded.get(name)
+            ladder.append(entry)
         bytes_used = self.http.bytes_transferred - bytes_before
         return ladder, ranges, bytes_used
 
@@ -591,8 +627,10 @@ class NbmArchiveBackfill:
         total_grib = int(avg_grib * len(dates))
         total_idx = int(avg_idx * len(dates))
         total_bytes = total_grib + total_idx
-        print(f"\nbytes_per_day~={int(avg_grib + avg_idx):,} "
-              f"(avg {len(self.percentile_levels)} grib ranges + idx)")
+        print(
+            f"\nbytes_per_day~={int(avg_grib + avg_idx):,} "
+            f"(avg {len(self.percentile_levels)} grib ranges + idx)"
+        )
         print(f"estimated_grib_bytes~={total_grib:,}")
         print(f"estimated_idx_bytes~={total_idx:,}")
         print(f"estimated_total_bytes~={total_bytes:,} ({total_bytes / 1e9:.2f} GB)")
@@ -613,6 +651,38 @@ class NbmArchiveBackfill:
         return 0
 
 
+def parse_percentile_levels(raw: str) -> list[int]:
+    text = raw.strip()
+    if "-" in text and "," not in text:
+        start_s, end_s = text.split("-", 1)
+        start_n, end_n = int(start_s), int(end_s)
+        if end_n < start_n:
+            raise ValueError(f"invalid percentile range {raw}")
+        return list(range(start_n, end_n + 1))
+    return [int(part) for part in text.split(",") if part.strip()]
+
+
+def apply_archive_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    nbm = dict(config.get("nbm_archive") or {})
+    storage = dict(config.get("storage") or {})
+    if args.decoded_dir is not None:
+        nbm["decoded_dir"] = str(args.decoded_dir)
+    if args.horizon_h is not None:
+        nbm["snapshot_horizon_h"] = int(args.horizon_h)
+    if args.percentile_levels:
+        nbm["percentile_levels"] = parse_percentile_levels(args.percentile_levels)
+    if args.max_days is not None:
+        nbm["max_days"] = int(args.max_days)
+    if args.neighbor_cells:
+        nbm["decode_neighbors"] = True
+    if args.backfill_db is not None:
+        storage["backfill_db"] = str(args.backfill_db)
+    config = dict(config)
+    config["nbm_archive"] = nbm
+    config["storage"] = storage
+    return config
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="NBM qmd archive backfill (byte-range only)")
     parser.add_argument("--config", type=Path, default=None)
@@ -620,6 +690,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--probe-date", type=str, default=None)
     parser.add_argument("--vintage-calibrate", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--decoded-dir", type=Path, default=None)
+    parser.add_argument("--horizon-h", type=int, default=None)
+    parser.add_argument("--backfill-db", type=Path, default=None)
+    parser.add_argument("--percentile-levels", type=str, default=None)
+    parser.add_argument("--max-days", type=int, default=None)
+    parser.add_argument("--neighbor-cells", action="store_true")
     return parser
 
 
@@ -627,7 +703,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr)
-    config = load_config(args.config)
+    config = apply_archive_overrides(load_config(args.config), args)
     app = NbmArchiveBackfill(config)
     try:
         probe_date = date.fromisoformat(args.probe_date) if args.probe_date else None
