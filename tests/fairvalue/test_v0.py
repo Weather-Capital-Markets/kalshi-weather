@@ -345,6 +345,17 @@ def test_rps_orders_by_ladder_not_ticker_string() -> None:
     assert ranked_probability_score(forecast, less) != _rps_on_ladder(forecast, less)
 
 
+def test_logit_adjustment_does_not_overflow_on_large_beta() -> None:
+    from wxmm.fairvalue.anchor import apply_logit_adjustment
+
+    q = {"a": Decimal("0.5"), "b": Decimal("0.5")}
+    huge = {"a": Decimal("1e6"), "b": Decimal("-1e6")}
+    out = apply_logit_adjustment(q, huge)
+    assert out["a"] > Decimal("0.99")
+    assert out["b"] < Decimal("0.01")
+    assert abs(sum(out.values(), Decimal("0")) - Decimal("1")) < Decimal("1e-9")
+
+
 def test_null_t_tail_is_less_not_greater() -> None:
     from analysis.v0_labels import labels_from_clinyc, resolve_strike
 

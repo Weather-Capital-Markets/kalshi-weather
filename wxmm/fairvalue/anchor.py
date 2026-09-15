@@ -121,9 +121,10 @@ def _logit(p: Decimal) -> Decimal:
 
 
 def _inv_logit(x: Decimal) -> Decimal:
-    ex = float(x)
     import math
 
+    # Clip to avoid OverflowError on large β·x; ±60 is 0/1 to machine precision.
+    ex = min(max(float(x), -60.0), 60.0)
     p = 1.0 / (1.0 + math.exp(-ex))
     return Decimal(str(p))
 
