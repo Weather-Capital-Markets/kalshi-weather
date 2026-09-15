@@ -1,0 +1,5 @@
+{
+  "name": "kalshi-weather",
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh"
+}
