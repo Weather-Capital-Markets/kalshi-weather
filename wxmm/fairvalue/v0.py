@@ -53,6 +53,7 @@ from wxmm.fairvalue.coverage import (
 from wxmm.fairvalue.model_trades import (
     _ridge,
     _row_features,
+    _solve,
     null_trade_recovery,
 )
 from wxmm.fairvalue.v0_baselines import (
@@ -498,12 +499,13 @@ def score_cached_walkforward(
         by_day.setdefault(cached_row.climate_day, []).append(cached_row)
 
     predictions: list[V0Prediction] = []
-    x_rows: list[list[float]] = []
-    y: list[float] = []
     names: tuple[str, ...] | None = None
     seen_train: set[date] = set()
     last_beta: tuple[float, ...] = ()
     last_train: tuple[date, ...] = ()
+    xtx: list[list[float]] = []
+    xty: list[float] = []
+    n_design = 0
     for origin in origins:
         if origin.train_days != last_train:
             for day in origin.train_days:
@@ -513,13 +515,25 @@ def score_cached_walkforward(
                 for train_row in by_day.get(day, ()):
                     if names is None:
                         names = train_row.feature_names
+                        dim = len(names)
+                        xtx = [[0.0] * dim for _ in range(dim)]
+                        xty = [0.0] * dim
                     for ticker in train_row.tickers:
-                        x_rows.append([train_row.features[ticker][name] for name in names])
-                        y.append(train_row.working[ticker])
+                        xvec = [train_row.features[ticker][name] for name in names]
+                        target = train_row.working[ticker]
+                        n_design += 1
+                        for a, xa in enumerate(xvec):
+                            xty[a] += xa * target
+                            row_a = xtx[a]
+                            for b, xb in enumerate(xvec):
+                                row_a[b] += xa * xb
             last_train = origin.train_days
-            if names is None or not x_rows:
+            if names is None or n_design == 0:
                 continue
-            last_beta = tuple(_ridge(x_rows, y, ridge_lambda))
+            penalised = [row[:] for row in xtx]
+            for a in range(len(names)):
+                penalised[a][a] += ridge_lambda
+            last_beta = tuple(_solve(penalised, xty[:]))
         if names is None or not last_beta:
             continue
         origin_row = by_key.get((origin.predict_day, origin.hours_to_close))
