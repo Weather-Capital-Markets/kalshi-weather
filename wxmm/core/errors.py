@@ -117,6 +117,25 @@ class ReconstructionBoundRequired(WxmmError):
     """``model.fit`` and market-mid baseline refuse without a Phase 3 bound file."""
 
 
+class CoverageFloorRefused(WxmmError):
+    """Trade-derived two-sided coverage is below the pre-registered floor.
+
+    Fitting on that slice is the design-rule-4 regime leak. Report coverage;
+    do not fit.
+    """
+
+    def __init__(self, message: str, *, share: float, floor: float) -> None:
+        self.share = share
+        self.floor = floor
+        super().__init__(message)
+
+
+class NwpInterpolationUnspecified(WxmmError):
+    """NBM / nwp is blocked on the K2 decile-to-bracket interpolation write-up."""
+
+    status = "UNAVAILABLE_INTERPOLATION_UNSPECIFIED"
+
+
 class SizeUnknownFlag(WxmmError):
     """A size-dependent claim was attempted without ask/bid size.
 

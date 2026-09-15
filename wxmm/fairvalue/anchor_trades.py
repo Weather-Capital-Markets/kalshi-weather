@@ -38,7 +38,7 @@ from decimal import Decimal
 from typing import Literal, Mapping, Sequence
 
 from wxmm.analysis.trades_ingest import RawTrade, assert_price_complement
-from wxmm.core.errors import InconsistentTakerMapping
+from wxmm.core.errors import InconsistentTakerMapping, LeakageError
 from wxmm.core.utc import require_utc
 
 PROVENANCE: Literal["TRADE_DERIVED"] = "TRADE_DERIVED"
@@ -266,6 +266,20 @@ def apply_print(
     return _with_staleness(updated, as_of)
 
 
+def stamp_staleness(book: TradeImpliedBook, as_of: datetime) -> TradeImpliedBook:
+    """Recompute per-side age vs the as-of clock. Does not move bid/ask."""
+    return _with_staleness(book, as_of)
+
+
+def trades_at_or_before(
+    trades: Sequence[RawTrade],
+    as_of: datetime,
+) -> list[RawTrade]:
+    """Drop prints after ``as_of``. ``created_time`` is the availability clock."""
+    cutoff = require_utc(as_of)
+    return [trade for trade in trades if require_utc(trade.created_time) <= cutoff]
+
+
 def implied_book_from_trades(
     trades: Sequence[RawTrade],
     *,
@@ -274,7 +288,14 @@ def implied_book_from_trades(
     mapping: ObservedMapping | None = None,
 ) -> TradeImpliedBook:
     """Replay prints in time order. Mapping must already be clean."""
+    as_of_utc = require_utc(as_of)
     eligible = [t for t in trades if ticker is None or t.ticker == ticker]
+    future = [t for t in eligible if require_utc(t.created_time) > as_of_utc]
+    if future:
+        raise LeakageError(
+            f"{len(future)} trade(s) with created_time after as_of "
+            f"{as_of_utc.isoformat()}; created_time is available_at for prints"
+        )
     non_block = [t for t in eligible if not t.is_block_trade]
     if mapping is None and non_block:
         mapping = assert_outcome_bookside_mapping(non_block)

@@ -6,6 +6,7 @@ Allowed to assume
 
 Must never
     Report a lone mean mark-out. Train on contemporaneous mid as label.
+    Treat v0 scores as P&L.
 """
 
 from __future__ import annotations

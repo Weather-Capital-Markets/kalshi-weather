@@ -25,6 +25,7 @@ from wxmm.fairvalue.anchor_trades import (
     assert_outcome_bookside_mapping,
     implied_book_from_trades,
     trade_derived_ladder,
+    trades_at_or_before,
 )
 from wxmm.fairvalue.features import (
     DEFAULT_FLOW_WINDOWS,
@@ -129,10 +130,11 @@ def trade_ladder_or_none(
     as_of: datetime,
     mapping: ObservedMapping | None = None,
 ) -> TradeDerivedLadder | None:
-    verified = mapping if mapping is not None else _corpus_mapping(trades)
+    safe = trades_at_or_before(trades, as_of)
+    verified = mapping if mapping is not None else _corpus_mapping(safe)
     books = {
         ticker: implied_book_from_trades(
-            trades, as_of=as_of, ticker=ticker, mapping=verified
+            safe, as_of=as_of, ticker=ticker, mapping=verified
         )
         for ticker in tickers
     }
