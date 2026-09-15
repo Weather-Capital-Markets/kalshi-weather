@@ -6,6 +6,7 @@ K2 interpolation write-up. ``obs`` waits on C1-T1.
 Must never
     Read a reconstructed book. Impute missing staleness. Drop per-side
     staleness from the vector. Invent a book feature that looks like flow.
+    Build an nwp block before the interpolation method is written.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from typing import Mapping, Sequence
 
 from wxmm.analysis.maker_taker import season_of
 from wxmm.analysis.trades_ingest import RawTrade, parse_climate_day
-from wxmm.core.errors import ReconstructionBoundRequired
+from wxmm.core.errors import NwpInterpolationUnspecified, ReconstructionBoundRequired
 from wxmm.core.utc import require_utc
 from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
@@ -120,6 +121,14 @@ def doy_harmonics(doy: int) -> tuple[float, float]:
 def book_features(*_args: object, **_kwargs: object) -> None:
     raise ReconstructionBoundRequired(
         "book feature block is Stage 0 gated; use flow and calendar on TRADE_DERIVED"
+    )
+
+
+def nwp_features(*_args: object, **_kwargs: object) -> None:
+    raise NwpInterpolationUnspecified(
+        "nwp block blocked on K2 decile-to-bracket interpolation "
+        f"({NwpInterpolationUnspecified.status}); write the method, then "
+        "verify a known Gaussian returns its own bracket masses"
     )
 
 

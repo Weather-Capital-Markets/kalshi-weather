@@ -2,7 +2,7 @@
 
 A fitted parameter at prediction time t may depend only on climate days
 strictly before the predicted climate day, and only on prints with
-available_at <= t.
+available_at <= t (created_time is the availability clock).
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from typing import Iterator, Sequence
 
 from wxmm.settlement.eras import kalshi_last_trading_close_utc
 
-DEFAULT_HOURS_TO_CLOSE: tuple[int, ...] = (24, 12)
+# Shared default is the union of v0 hours. v0-MINIMAL overrides via prereg yaml.
+DEFAULT_HOURS_TO_CLOSE: tuple[int, ...] = (24, 12, 6, 3, 1)
 
 
 @dataclass(frozen=True, slots=True)

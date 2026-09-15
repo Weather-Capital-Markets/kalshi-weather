@@ -106,12 +106,66 @@ source. Any code or prose that treats a clean cross-tab as sign verification is 
 
 | Item | Status |
 |---|---|
-| Observed mapping | **clean anti-diagonal** (re-probed 2026-09-15, C1-M1 v0-MINIMAL). `yes → bid` (17,813), `no → ask` (10,775). `yes×ask` = 0, `no×bid` = 0. Prior 2026-09-13 sample (68,305 / 47,082) agreed. |
-| Sample | `python -m analysis.probe_taker_mapping --series KXHIGHNY --max-markets 50 --limit 1000`. n=28,588 non-block prints. 0 parse errors. 0 complement failures. Gate passed before any v0-MINIMAL anchor edit. |
+| Observed mapping | **clean anti-diagonal**. Full six-bracket ingest 2026-09-15: `yes → bid` (1,899,558), `no → ask` (1,508,830), `yes×ask` = 0, `no×bid` = 0. Earlier v0-MINIMAL probe the same day (50 markets, n=28,588) agreed: 17,813 / 10,775. Prior 2026-09-13 live sample (68,305 / 47,082) also agreed. |
+| Sample (full ingest) | Cutoff-first public pull: `GET /historical/cutoff` (`market_settled_ts=2026-07-16T00:00:00Z`), then `/historical/trades` + `/markets/trades` for every KXHIGHNY/HIGHNY ticker from 2022-12-11. n=3,405,388 non-block prints, 8,241 markets, 0 errors, 0 complement failures. `python -m analysis.v0_ingest`; `python -m analysis.v0_measure`. |
+| Sample (v0-MINIMAL probe) | `python -m analysis.probe_taker_mapping --series KXHIGHNY --max-markets 50 --limit 1000`. Gate passed before any v0-MINIMAL anchor edit. |
 | Gate | `wxmm.fairvalue.anchor_trades.assert_outcome_bookside_mapping` |
 | Information content | **None.** Off-diagonal is exactly 0, so `taker_book_side` is redundant with `taker_outcome_side`. It is not a second source and never verifies d. |
 | Direction | From `taker_outcome_side` only (`yes` → d=+1 / YES-space ask print; `no` → d=−1 / YES-space bid print). The economics are unambiguous: a taker who bought YES at `yes_price` lifted someone's offer, so the print sets the ask. |
 | Probe | `python -m analysis.probe_taker_mapping --series KXHIGHNY` |
+
+### 1.5 Trade-derived two-sided coverage (not S2 reconstructed books)
+
+Share of grid points with **both** YES-space sides valid and uncrossed, hourly
+hours-to-close T−24 … T−0, over the 8,241-market six-bracket universe (including
+zero-volume tickers, which count as missing). This is not S2's 22.4% complete
+two-sided reconstructed books on bracket-days.
+
+`[V-LOCAL]` — `python -m analysis.v0_measure`, 2026-09-15.
+
+| Slice | two-sided uncrossed | n_grid | share |
+|---|---:|---:|---:|
+| pooled | 138,366 | 206,025 | **0.6716** |
+| DJF | 34,189 | 52,425 | 0.6522 |
+| MAM | 39,216 | 55,200 | 0.7104 |
+| JJA | 38,290 | 55,200 | 0.6937 |
+| SON | 26,671 | 43,200 | 0.6174 |
+
+Floor 0.15. Below-floor = false, so the v0 fit is allowed. Also: one-sided 23,458;
+missing 18,417; crossed-resolved 25,784 (rate 0.1251).
+
+Complete **ladders** (every contract on the climate day two-sided uncrossed at a
+prediction origin) are a stricter cut: 1,303 of 6,770 labelled (day × {24,12,6,3,1}h)
+slots. That is the design matrix, not the coverage floor.
+
+### 1.6 C1-M1 v0 sign test (OOS RPS vs the null)
+
+Null is β = 0 = the normalised trade-derived ladder. Labels are CLINYC as-issued
+(1,354 unique-winner days; 0 venue-`result` disagreements after inferring the
+lower T-suffix as `less` when `strike_type` is missing). NBM =
+`UNAVAILABLE_INTERPOLATION_UNSPECIFIED`. Scores, never P&L.
+
+`[V-LOCAL]` — `python -m analysis.v0_score`, 2026-09-15. n=1,300 OOS predictions.
+Walk-forward expanding window, `min_train_days=30`, day-clustered percentile CI,
+1,000 resamples, seed 0.
+
+| | mean ΔRPS (null − model) | clustered 95% CI | n |
+|---|---:|---:|---:|
+| pooled | **−0.0401** | **[−0.0529, −0.0291]** | 1,300 |
+| DJF | −0.0503 | [−0.0847, −0.0220] | 317 |
+| MAM | −0.0351 | [−0.0564, −0.0152] | 374 |
+| JJA | −0.0360 | [−0.0511, −0.0202] | 377 |
+| SON | −0.0409 | [−0.0539, −0.0278] | 232 |
+
+Contract-level CI [−0.0490, −0.0307] is narrower, as required. Decision rule
+`sign_test_oos_rps_improvement_vs_null`: clustered interval excludes zero and is
+negative → **`harmful_check_sign`**. Flow+calendar as specified is worse than the
+trade-derived ladder. Every season CI excludes zero on the same side.
+
+Watch coefficient `signed_ofi` (last-window fit, day-resampled): 4h −0.287
+[−0.316, −0.274]; 1h −0.229 [−0.236, −0.194]; 15m −0.040 [−0.066, −0.017].
+Negative in all three windows (Alb25's counter-trade sign), but the linear
+offset still loses on RPS.
 
 #### 1.4.1 Sign verification: the crossed-state rate
 

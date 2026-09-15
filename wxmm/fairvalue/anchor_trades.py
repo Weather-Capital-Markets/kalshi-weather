@@ -308,6 +308,19 @@ def refuse_if_leaked(
             )
 
 
+def stamp_staleness(book: TradeImpliedBook, as_of: datetime) -> TradeImpliedBook:
+    """Recompute per-side age vs the as-of clock. Does not move bid/ask."""
+    return _with_staleness(book, as_of)
+
+
+def trades_at_or_before(
+    trades: Sequence[RawTrade],
+    as_of: datetime,
+) -> list[RawTrade]:
+    """Alias of ``filter_trades_as_of`` without a ticker filter."""
+    return filter_trades_as_of(trades, as_of)
+
+
 def implied_book_from_trades(
     trades: Sequence[RawTrade],
     *,
@@ -319,6 +332,12 @@ def implied_book_from_trades(
     as_of_utc = require_utc(as_of)
     refuse_if_leaked(trades, as_of_utc, ticker=ticker)
     eligible = [t for t in trades if ticker is None or t.ticker == ticker]
+    future = [t for t in eligible if require_utc(t.created_time) > as_of_utc]
+    if future:
+        raise LeakageError(
+            f"{len(future)} trade(s) with created_time after as_of "
+            f"{as_of_utc.isoformat()}; created_time is available_at for prints"
+        )
     non_block = [t for t in eligible if not t.is_block_trade]
     if mapping is None and non_block:
         mapping = assert_outcome_bookside_mapping(non_block)

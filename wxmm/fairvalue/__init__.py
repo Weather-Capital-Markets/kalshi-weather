@@ -7,7 +7,7 @@ Allowed to assume
 Must never
     Import ``wxmm.execute``. Auto-send. Let a TRADE_DERIVED mid satisfy
     ``ReconstructionBoundRequired``. Write a reconstructed ``book`` feature
-    block or change ``model.fit`` until Stage 0 reports.
+    block or change ``model.fit`` until Stage 0 reports. Emit P&L from v0.
 """
 
 from __future__ import annotations
