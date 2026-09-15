@@ -1,0 +1,74 @@
+# C1-M1 v0-MINIMAL. Hashed before the first fit.
+# Sign test on out-of-sample RPS vs the null (β = 0 = trade-derived market).
+
+prereg_id: c1-m1-v0-min
+seed: 0
+universe:
+  - KXHIGHNY
+  - HIGHNY
+snapshot_id: FILL_IN
+locked: true
+anchor_provenance: TRADE_DERIVED
+note: >
+  logit(p_hat) = logit(q_trade) + beta · x with x from flow and calendar only.
+  β = 0 is the normalised trade-derived ladder. This run emits scores, never P&L.
+  Coverage is reported, not a halt. Residual GBM is the second experiment.
+
+sample:
+  era_filter: six_bracket
+  six_bracket_era_start: "2022-12-11"
+  date_range:
+    start: "2022-12-11"
+    end: LATEST_SETTLED_CLIMATE_DAY_WITH_CLINYC_LABEL
+  labels: CLINYC_as_issued
+  label_forbidden:
+    - METAR_derived_maxima
+    - GHCN_D
+    - final_climate_data
+  block_trades: exclude_from_anchor
+
+feature_blocks:
+  enabled: [flow, calendar]
+  disabled: [book, nwp, obs]
+  flow_windows_seconds: [900, 3600, 14400]
+  calendar:
+    season: meteorological_on_climate_day
+    doy_harmonics: [1]
+    hours_to_close: vintage_kalshi_last_trading_close_utc
+
+hours_to_close: [24, 12]
+climatology_doy_window: 15
+
+ridge_lambda_grid: [0.01, 0.1, 1.0, 10.0]
+ridge_penalty_selection: training_fold_only
+
+walk_forward:
+  scheme: expanding_window
+  min_train_days: 30
+  clustering_unit: climate_day
+  no_random_cv: true
+
+bootstrap:
+  n_resample: 1000
+  ci: 0.95
+  method: percentile
+  clustering_unit: climate_day
+
+primary_score: ranked_probability_score
+baselines: [null_beta_zero, climatology]
+
+decision:
+  type: sign_test
+  primary: oos_rps_improvement_vs_null
+  clustering: climate_day
+  flow_carries_information: clustered_ci_excludes_zero_and_positive
+  flow_adds_nothing: clustered_ci_includes_zero
+  harmful_check_sign: clustered_ci_excludes_zero_and_negative
+  watch_coefficient: signed_ofi
+  watch_note: >
+    Alb25 predicts viable maker strategies often counter-trade the prevailing
+    imbalance. This is the first test of that sign with authoritative direction.
+
+go_no_go:
+  rule: sign_test_oos_rps_improvement_vs_null
+  filled: true

@@ -10,6 +10,7 @@ Must never
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -23,7 +24,9 @@ from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
     TradeImpliedBook,
     YesSpacePrint,
+    filter_trades_as_of,
     implied_book_from_trades,
+    refuse_if_leaked,
     yes_space_print,
 )
 from wxmm.settlement.eras import kalshi_last_trading_close_utc
@@ -38,6 +41,7 @@ STALENESS_KEYS: tuple[str, ...] = (
     "ask_staleness_seconds",
     "staleness_ratio",
 )
+DOY_PERIOD = 365.25
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +85,8 @@ class FlowFeatures:
 class CalendarFeatures:
     season: str
     doy: int
+    doy_sin: float
+    doy_cos: float
     hours_to_close: float | None
 
 
@@ -89,6 +95,12 @@ def assert_staleness_surfaced(features: Mapping[str, float | None]) -> None:
     missing = [key for key in STALENESS_KEYS if key not in features]
     if missing:
         raise AssertionError(f"staleness dropped from feature vector: {missing}")
+
+
+def doy_harmonics(doy: int) -> tuple[float, float]:
+    """First Fourier pair on the climate-day day-of-year. Not a linear doy trend."""
+    angle = 2.0 * math.pi * float(doy) / DOY_PERIOD
+    return math.sin(angle), math.cos(angle)
 
 
 def book_features(*_args: object, **_kwargs: object) -> None:
@@ -105,13 +117,14 @@ def _prints_in_window(
     ticker: str | None,
 ) -> list[YesSpacePrint]:
     start = require_utc(as_of) - window
+    refuse_if_leaked(trades, as_of, ticker=ticker)
     out: list[YesSpacePrint] = []
     for trade in trades:
         if ticker is not None and trade.ticker != ticker:
             continue
         if trade.is_block_trade:
             continue
-        if trade.created_time < start or trade.created_time > as_of:
+        if trade.created_time < start:
             continue
         out.append(yes_space_print(trade))
     return out
@@ -128,7 +141,9 @@ def flow_features(
     mapping: ObservedMapping | None = None,
 ) -> FlowFeatures:
     as_of_utc = require_utc(as_of)
-    prints = _prints_in_window(trades, as_of=as_of_utc, window=window, ticker=ticker)
+    refuse_if_leaked(trades, as_of_utc, ticker=ticker)
+    scoped = filter_trades_as_of(trades, as_of_utc, ticker=ticker)
+    prints = _prints_in_window(scoped, as_of=as_of_utc, window=window, ticker=ticker)
     signed = Decimal("0")
     gross = Decimal("0")
     notional = Decimal("0")
@@ -139,7 +154,7 @@ def flow_features(
     ofi = (signed / gross) if gross else None
     # Mapping is a corpus property. Do not re-assert on a ticker- or window-filter.
     snapshot = book or implied_book_from_trades(
-        trades, as_of=as_of_utc, ticker=ticker, mapping=mapping
+        scoped, as_of=as_of_utc, ticker=ticker, mapping=mapping
     )
     bid_s = (
         snapshot.bid_staleness.total_seconds() if snapshot.bid_staleness is not None else None
@@ -197,8 +212,12 @@ def calendar_features(ticker: str, as_of: datetime) -> CalendarFeatures:
     close = kalshi_last_trading_close_utc(climate)
     now = require_utc(as_of)
     hours = (close - now).total_seconds() / 3600.0
+    doy = climate.timetuple().tm_yday
+    sine, cosine = doy_harmonics(doy)
     return CalendarFeatures(
         season=season_of(climate),
-        doy=climate.timetuple().tm_yday,
+        doy=doy,
+        doy_sin=sine,
+        doy_cos=cosine,
         hours_to_close=hours,
     )

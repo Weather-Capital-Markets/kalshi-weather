@@ -20,8 +20,9 @@ Allowed to assume
     trade. Direction uses outcome only: yes → d=+1 (YES-space ask print),
     no → d=−1 (YES-space bid print). YES-space price is yes_price
     (= 1 − no_price after complement). The live KXHIGHNY cross-tab
-    (2026-09-13) is the anti-diagonal yes↔bid / no↔ask; that bijection is
-    recorded, not used to flip d.
+    (2026-09-13 and re-probe 2026-09-15) is the anti-diagonal yes↔bid /
+    no↔ask; that bijection is recorded, not used to flip d. created_time
+    is the availability clock.
 
 Must never
     Assume taker_book_side's frame without a clean one-to-one cross-tab.
@@ -38,7 +39,7 @@ from decimal import Decimal
 from typing import Literal, Mapping, Sequence
 
 from wxmm.analysis.trades_ingest import RawTrade, assert_price_complement
-from wxmm.core.errors import InconsistentTakerMapping
+from wxmm.core.errors import InconsistentTakerMapping, LeakageError
 from wxmm.core.utc import require_utc
 
 PROVENANCE: Literal["TRADE_DERIVED"] = "TRADE_DERIVED"
@@ -266,6 +267,47 @@ def apply_print(
     return _with_staleness(updated, as_of)
 
 
+def trade_available_at(trade: RawTrade) -> datetime:
+    """Fill time is the availability clock. Do not invent wall-clock."""
+    return require_utc(trade.created_time)
+
+
+def filter_trades_as_of(
+    trades: Sequence[RawTrade],
+    as_of: datetime,
+    *,
+    ticker: str | None = None,
+) -> list[RawTrade]:
+    """Keep prints with available_at <= t. Does not impute absence."""
+    cutoff = require_utc(as_of)
+    out: list[RawTrade] = []
+    for trade in trades:
+        if ticker is not None and trade.ticker != ticker:
+            continue
+        if trade_available_at(trade) <= cutoff:
+            out.append(trade)
+    return out
+
+
+def refuse_if_leaked(
+    trades: Sequence[RawTrade],
+    as_of: datetime,
+    *,
+    ticker: str | None = None,
+) -> None:
+    """As-of violation: a print after t was passed into an as-of path."""
+    cutoff = require_utc(as_of)
+    for trade in trades:
+        if ticker is not None and trade.ticker != ticker:
+            continue
+        avail = trade_available_at(trade)
+        if avail > cutoff:
+            raise LeakageError(
+                f"trade {trade.trade_id} available_at={avail.isoformat()} "
+                f"after as_of={cutoff.isoformat()}"
+            )
+
+
 def implied_book_from_trades(
     trades: Sequence[RawTrade],
     *,
@@ -274,13 +316,15 @@ def implied_book_from_trades(
     mapping: ObservedMapping | None = None,
 ) -> TradeImpliedBook:
     """Replay prints in time order. Mapping must already be clean."""
+    as_of_utc = require_utc(as_of)
+    refuse_if_leaked(trades, as_of_utc, ticker=ticker)
     eligible = [t for t in trades if ticker is None or t.ticker == ticker]
     non_block = [t for t in eligible if not t.is_block_trade]
     if mapping is None and non_block:
         mapping = assert_outcome_bookside_mapping(non_block)
     _ = mapping  # gate only; direction still uses outcome, not book side
     if not eligible:
-        return _with_staleness(_empty_book(), as_of)
+        return _with_staleness(_empty_book(), as_of_utc)
     ordered = sorted(eligible, key=lambda t: (t.created_time, t.trade_id))
     book = _empty_book()
     for trade in ordered:

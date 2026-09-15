@@ -23,6 +23,7 @@ from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
     TradeDerivedLadder,
     assert_outcome_bookside_mapping,
+    filter_trades_as_of,
     implied_book_from_trades,
     trade_derived_ladder,
 )
@@ -105,10 +106,14 @@ def _row_features(
     *,
     mapping: ObservedMapping | None,
 ) -> dict[str, float]:
-    flows = flow_features_multiwindow(trades, as_of=as_of, ticker=ticker, mapping=mapping)
+    as_of_trades = filter_trades_as_of(trades, as_of)
+    flows = flow_features_multiwindow(
+        as_of_trades, as_of=as_of, ticker=ticker, mapping=mapping
+    )
     cal = calendar_features(ticker, as_of)
     out: dict[str, float] = {
-        "cal_doy": float(cal.doy),
+        "cal_doy_sin": float(cal.doy_sin),
+        "cal_doy_cos": float(cal.doy_cos),
         "cal_hours_to_close": float(cal.hours_to_close or 0.0),
         "cal_season_DJF": 1.0 if cal.season == "DJF" else 0.0,
         "cal_season_MAM": 1.0 if cal.season == "MAM" else 0.0,
@@ -130,9 +135,10 @@ def trade_ladder_or_none(
     mapping: ObservedMapping | None = None,
 ) -> TradeDerivedLadder | None:
     verified = mapping if mapping is not None else _corpus_mapping(trades)
+    as_of_trades = filter_trades_as_of(trades, as_of)
     books = {
         ticker: implied_book_from_trades(
-            trades, as_of=as_of, ticker=ticker, mapping=verified
+            as_of_trades, as_of=as_of, ticker=ticker, mapping=verified
         )
         for ticker in tickers
     }

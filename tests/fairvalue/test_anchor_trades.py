@@ -14,6 +14,7 @@ from wxmm.backtest.ledger import Ledger
 from wxmm.core.errors import (
     GoNoGoNotFilled,
     InconsistentTakerMapping,
+    LeakageError,
     PriceComplementError,
     ReconstructionBoundRequired,
 )
@@ -184,6 +185,19 @@ def test_sign_golden_no_taker_sets_bid() -> None:
     assert book.provenance == "TRADE_DERIVED"
 
 
+def test_as_of_future_print_raises_leakage() -> None:
+    future = _raw(
+        trade_id="future",
+        outcome="no",
+        book="bid",
+        yes="0.4200",
+        no="0.5800",
+        created="2026-08-12T19:00:00Z",
+    )
+    with pytest.raises(LeakageError, match="available_at"):
+        implied_book_from_trades([future], as_of=AS_OF)
+
+
 def test_complement_placeholder_raises() -> None:
     with pytest.raises(PriceComplementError):
         _raw(
@@ -316,6 +330,7 @@ def test_calendar_and_three_flow_windows() -> None:
     cal = calendar_features("KXHIGHNY-26AUG12-T90", AS_OF)
     assert cal.season == "JJA"
     assert cal.doy == 224
+    assert cal.doy_sin ** 2 + cal.doy_cos ** 2 == pytest.approx(1.0)
     close = kalshi_last_trading_close_utc(date(2026, 8, 12))
     expected = (close - AS_OF).total_seconds() / 3600.0
     assert cal.hours_to_close == pytest.approx(expected)
