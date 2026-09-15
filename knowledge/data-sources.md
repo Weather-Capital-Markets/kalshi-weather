@@ -97,11 +97,65 @@ is a gate: it must be a clean one-to-one bijection or the estimator stops.
 
 | Item | Status |
 |---|---|
-| Observed mapping | **clean anti-diagonal** (2026-09-13). `yes → bid` (68,305), `no → ask` (47,082). `yes×ask` = 0, `no×bid` = 0. |
-| Sample | Live `GET /markets?series_ticker=KXHIGHNY` then per-ticker `GET /markets/trades?limit=1000`. n=115,387 non-block prints across 200 markets (page-capped at 1,000/ticker). 0 `is_block_trade` in this pull. 0 complement failures (`yes_price + no_price ≈ 1`). |
+| Observed mapping | **clean anti-diagonal** on the full six-bracket ingest (2026-09-15). `yes → bid` (1,899,558), `no → ask` (1,508,830). `yes×ask` = 0, `no×bid` = 0. |
+| Sample | Cutoff-first public pull: `GET /historical/cutoff` (`market_settled_ts=2026-07-16T00:00:00Z`), then `/historical/trades` + `/markets/trades` for every KXHIGHNY/HIGHNY ticker from 2022-12-11. n=3,405,388 non-block prints, 8,241 markets, 0 errors, 0 complement failures. v0 is a sign test and was **not** held for X1 FILL_IN. |
 | Gate | `wxmm.fairvalue.anchor_trades.assert_outcome_bookside_mapping` |
 | Direction | Still from `taker_outcome_side` only (`yes` → d=+1 / YES-space ask print; `no` → d=−1 / YES-space bid print). The cross-tab is a bijection, not a license to re-derive d from `taker_book_side`. |
-| Probe | `python -m analysis.probe_taker_mapping --series KXHIGHNY` |
+| Earlier probe | 2026-09-13 live page-capped sample (115,387 prints / 200 markets, also anti-diagonal) is superseded by the full ingest. |
+| Commands | `python -m analysis.v0_ingest`; `python -m analysis.v0_measure` |
+
+### 1.5 Trade-derived two-sided coverage (not S2 reconstructed books)
+
+Share of grid points with **both** YES-space sides valid and uncrossed, hourly
+hours-to-close T−24 … T−0, over the 8,241-market six-bracket universe (including
+zero-volume tickers, which count as missing). This is not S2's 22.4% complete
+two-sided reconstructed books on bracket-days.
+
+`[V-LOCAL]` — `python -m analysis.v0_measure`, 2026-09-15.
+
+| Slice | two-sided uncrossed | n_grid | share |
+|---|---:|---:|---:|
+| pooled | 138,366 | 206,025 | **0.6716** |
+| DJF | 34,189 | 52,425 | 0.6522 |
+| MAM | 39,216 | 55,200 | 0.7104 |
+| JJA | 38,290 | 55,200 | 0.6937 |
+| SON | 26,671 | 43,200 | 0.6174 |
+
+Floor 0.15. Below-floor = false, so the v0 fit is allowed. Also: one-sided 23,458;
+missing 18,417; crossed-resolved 25,784 (rate 0.1251).
+
+Complete **ladders** (every contract on the climate day two-sided uncrossed at a
+prediction origin) are a stricter cut: 1,303 of 6,770 labelled (day × {24,12,6,3,1}h)
+slots. That is the design matrix, not the coverage floor.
+
+### 1.6 C1-M1 v0 sign test (OOS RPS vs the null)
+
+Null is β = 0 = the normalised trade-derived ladder. Labels are CLINYC as-issued
+(1,354 unique-winner days; 0 venue-`result` disagreements after inferring the
+lower T-suffix as `less` when `strike_type` is missing). NBM =
+`UNAVAILABLE_INTERPOLATION_UNSPECIFIED`. Scores, never P&L.
+
+`[V-LOCAL]` — `python -m analysis.v0_score`, 2026-09-15. n=1,300 OOS predictions.
+Walk-forward expanding window, `min_train_days=30`, day-clustered percentile CI,
+1,000 resamples, seed 0.
+
+| | mean ΔRPS (null − model) | clustered 95% CI | n |
+|---|---:|---:|---:|
+| pooled | **−0.0401** | **[−0.0529, −0.0291]** | 1,300 |
+| DJF | −0.0503 | [−0.0847, −0.0220] | 317 |
+| MAM | −0.0351 | [−0.0564, −0.0152] | 374 |
+| JJA | −0.0360 | [−0.0511, −0.0202] | 377 |
+| SON | −0.0409 | [−0.0539, −0.0278] | 232 |
+
+Contract-level CI [−0.0490, −0.0307] is narrower, as required. Decision rule
+`sign_test_oos_rps_improvement_vs_null`: clustered interval excludes zero and is
+negative → **`harmful_check_sign`**. Flow+calendar as specified is worse than the
+trade-derived ladder. Every season CI excludes zero on the same side.
+
+Watch coefficient `signed_ofi` (last-window fit, day-resampled): 4h −0.287
+[−0.316, −0.274]; 1h −0.229 [−0.236, −0.194]; 15m −0.040 [−0.066, −0.017].
+Negative in all three windows (Alb25's counter-trade sign), but the linear
+offset still loses on RPS.
 
 ---
 
