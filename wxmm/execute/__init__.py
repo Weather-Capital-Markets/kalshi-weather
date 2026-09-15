@@ -1,4 +1,13 @@
-"""Execute public surface. Sending requires a ConfirmationToken with no default."""
+"""Execute public surface. Sending requires a ConfirmationToken with no default.
+
+Allowed to assume
+    Canonical journal, lifecycle, send gate, and reconcile live here.
+    ``wxmm.ops`` is a facade.
+
+Must never
+    Default the send token. Provide ``force``. Auto-send. Invent actor
+    ``system``. Keep a second state machine in ``wxmm.ops``.
+"""
 
 from __future__ import annotations
 

@@ -51,3 +51,25 @@ name = "Backtest cannot reach live"
 type = "forbidden"
 source_modules = ["wxmm.backtest"]
 forbidden_modules = ["wxmm.live"]
+
+[[tool.importlinter.contracts]]
+name = "Measure cannot reach live transports"
+type = "forbidden"
+source_modules = ["wxmm.measure"]
+forbidden_modules = ["wxmm.live"]
+
+[[tool.importlinter.contracts]]
+name = "Fair value cannot reach execute"
+type = "forbidden"
+source_modules = ["wxmm.fairvalue", "wxmm.eval"]
+forbidden_modules = ["wxmm.execute"]
+
+[[tool.importlinter.contracts]]
+name = "C1-X1 analysis cannot import book reconstruction"
+type = "forbidden"
+source_modules = ["wxmm.analysis"]
+forbidden_modules = [
+    "wxmm.core.book",
+    "wxmm.core.book_quality",
+    "wxmm.fairvalue",
+]

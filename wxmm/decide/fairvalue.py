@@ -5,6 +5,7 @@ Allowed to assume
 
 Must never
     Invent a probability. Import ``wxmm.execute``. Treat missing FV as 50%.
+    Send. The TRADE_DERIVED implementation is ``wxmm.fairvalue.provider``.
 """
 
 from __future__ import annotations

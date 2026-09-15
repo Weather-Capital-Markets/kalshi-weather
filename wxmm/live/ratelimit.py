@@ -1,6 +1,12 @@
 """Re-export. Rate-limit math lives in ``wxmm.core.ratelimit``.
 
-Decide must not import this package; live code may keep using these names.
+Allowed to assume
+    Decide consults buckets before a proposal is shown. Live may import
+    these names; decide must import ``wxmm.core.ratelimit`` instead.
+
+Must never
+    Be imported by ``wxmm.decide``. Consume tokens when only peeking
+    ``RATE_BLOCKED``. Call wall-clock.
 """
 
 from __future__ import annotations

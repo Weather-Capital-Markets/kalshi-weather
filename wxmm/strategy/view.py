@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
+from wxmm.core.book_quality import (
+    BookDefectKind,
+    BookReconstructed,
+    BookSizeUnknown,
+    reconstruction_from_book,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class BookView:
@@ -21,6 +28,33 @@ class BookView:
     volume: int | None
     reconstructed: bool
     staleness: timedelta
+
+    def reconstruction_defect(self) -> BookReconstructed | None:
+        """``BOOK_RECONSTRUCTED`` when carry-forward; distinct from size-unknown."""
+        return reconstruction_from_book(
+            reconstructed=self.reconstructed,
+            staleness=self.staleness,
+        )
+
+    def size_unknown_defect(self) -> BookSizeUnknown | None:
+        """``SIZE_UNKNOWN`` when ask size is absent; independent of reconstruction."""
+        if self.ask_size_known:
+            return None
+        if self.bid_size is None and self.ask_size is None:
+            return BookSizeUnknown(side="both")
+        if self.ask_size is None:
+            return BookSizeUnknown(side="ask")
+        if self.bid_size is None:
+            return BookSizeUnknown(side="bid")
+        return BookSizeUnknown(side="ask")
+
+    def defect_kinds(self) -> tuple[BookDefectKind, ...]:
+        kinds: list[BookDefectKind] = []
+        if self.reconstruction_defect() is not None:
+            kinds.append(BookDefectKind.BOOK_RECONSTRUCTED)
+        if self.size_unknown_defect() is not None:
+            kinds.append(BookDefectKind.SIZE_UNKNOWN)
+        return tuple(kinds)
 
 
 @dataclass(frozen=True, slots=True)

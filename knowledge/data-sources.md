@@ -88,6 +88,78 @@ the archive would mis-select the issuance for most market days — a 10 AM snaps
 CLINYC revision an 8 AM snapshot cannot. `[V-LOCAL]` — `python -m analysis.venue_eras` over
 all 9,364 markets, 2026-08-14. Tracked as O9.
 
+### 1.4 `taker_outcome_side` × `taker_book_side` (trade-derived anchor)
+
+C1-M1 addendum 2 must not assume `taker_book_side`'s frame of reference. The docs call it
+only "book side equivalent to `taker_outcome_side`". Direction for the YES-space estimator
+uses `taker_outcome_side` alone (`yes` → d=+1 / offer; `no` → d=−1 / bid). The cross-tab
+is a gate: it must be a clean one-to-one bijection or the estimator stops.
+
+**Addendum 2's stated pairing was wrong, and the correction matters less than what it
+reveals.** Addendum 2 asserted `yes` pairs with `ask`, reasoning that buying YES lifts a YES
+offer. The observed table is the opposite, `yes↔bid` / `no↔ask`, so `taker_book_side` is not
+in the YES-book frame addendum 2 assumed. That is a bookkeeping correction. The load-bearing
+observation is the **off-diagonal being exactly zero**: `taker_book_side` is a deterministic
+function of `taker_outcome_side`, carries zero independent information, and therefore
+**cannot corroborate the direction sign**. A bijection is a consistency gate, not a second
+source. Any code or prose that treats a clean cross-tab as sign verification is wrong.
+
+| Item | Status |
+|---|---|
+| Observed mapping | **clean anti-diagonal** (re-probed 2026-09-15, C1-M1 v0-MINIMAL). `yes → bid` (17,813), `no → ask` (10,775). `yes×ask` = 0, `no×bid` = 0. Prior 2026-09-13 sample (68,305 / 47,082) agreed. |
+| Sample | `python -m analysis.probe_taker_mapping --series KXHIGHNY --max-markets 50 --limit 1000`. n=28,588 non-block prints. 0 parse errors. 0 complement failures. Gate passed before any v0-MINIMAL anchor edit. |
+| Gate | `wxmm.fairvalue.anchor_trades.assert_outcome_bookside_mapping` |
+| Information content | **None.** Off-diagonal is exactly 0, so `taker_book_side` is redundant with `taker_outcome_side`. It is not a second source and never verifies d. |
+| Direction | From `taker_outcome_side` only (`yes` → d=+1 / YES-space ask print; `no` → d=−1 / YES-space bid print). The economics are unambiguous: a taker who bought YES at `yes_price` lifted someone's offer, so the print sets the ask. |
+| Probe | `python -m analysis.probe_taker_mapping --series KXHIGHNY` |
+
+#### 1.4.1 Sign verification: the crossed-state rate
+
+The only independent check on d is a property the mapping implies but the mapping did not
+manufacture. Replay prints per ticker into the trade-implied book. If d is right, ask prints
+land above bid prints most of the time and a crossed state (`ask < bid`) is occasional
+staleness. If d is inverted, the anchor is crossed nearly always and the rate approaches 100%.
+The inverted-d replay is run as a paired control on the same prints, so the two rates are
+reported together.
+
+A synthetic fixture cannot settle this — the fixture is built from the same assumption it
+would be testing. The number must come from the real corpus, and it must be reported before
+anything is fitted.
+
+One caveat on how the number is presented. Flipping d swaps which side each print
+writes, so the inverted rate is the exact complement of the as-specified rate except
+where `ask == bid`. The inverted column is a reading aid, **not corroboration**; the
+evidence is the *level* of the as-specified rate against the 0.5 coin flip, which is a
+property of the prices and not of any label field.
+
+| Item | Status |
+|---|---|
+| Diagnostic | `wxmm.fairvalue.crossed.crossed_state_rate` |
+| Runner | `python -m analysis.crossed_rate --parquet data/trades/KXHIGHNY` |
+| Gate | `wxmm.fairvalue.v0_min.run_c1_m1_v0_min` refuses to fit on `sign_inverted` |
+
+#### 1.4.2 Result: crossed rate 6.25% `[V-LOCAL]`
+
+Run 2026-09-15 on the pulled corpus (2,834,401 prints, 6,581 tickers, climate days
+2022-12-11 → 2026-07-15, `analysis/out/crossed_rate.json`):
+
+| Quantity | As specified (`yes` → ask) | Inverted d (mirror) |
+|---|---|---|
+| Crossed rate | **0.0625** (174,984 / 2,799,290) | 0.8204 |
+| Median implied spread | **+2.0c** | −2.0c |
+| Ties (`ask == bid`) | 327,781 | 327,781 |
+| Tickers majority-crossed | **224 / 6,581** | 6,110 / 6,581 |
+
+**The sign is confirmed.** Trade-implied ask sits above trade-implied bid 93.75% of the
+time and the median trade-implied spread is positive, which is what a correctly oriented
+anchor looks like. An inverted sign would have driven this toward 100% and the median
+spread negative. Crossing at 6% is the staleness the anchor's docstring predicts — the two
+sides are drawn from different instants — not a direction error. Only 3.4% of tickers are
+majority-crossed.
+
+This was run before the first fit, and the fit path refuses to proceed on a
+`sign_inverted` verdict.
+
 ---
 
 ## 2. NBM gridded archive (AWS)

@@ -1,19 +1,23 @@
-"""In-memory fake venue. Scripted acks, fills, 429s, and disconnects.
+"""In-memory fake venue. Scripted BookUpdates, acks, fills, 429s, disconnects.
 
 Allowed to assume
     Callers inject a clock and a script. Fees default to the Kalshi formula
     when ``fee_like='kalshi'``. Polymarket-like mode raises unverified.
+    ``BookUpdate`` objects are the same tape records live and replay consume.
 
 Must never
     Read API keys. Call HTTP. Use wall-clock. Price Polymarket while unverified.
+    Import ``wxmm.live``.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
+from wxmm.core.book import BookUpdate, apply_book_update
 from wxmm.core.errors import RateLimited, UnverifiedFeeSchedule
 from wxmm.core.money import Money
 from wxmm.core.types import (
@@ -61,6 +65,7 @@ class FakeVenue:
         *,
         fee_like: str = "kalshi",
         name: str = "fake",
+        tape: Sequence[BookUpdate] = (),
     ) -> None:
         self.name = name
         self.fee_like = fee_like
@@ -73,6 +78,8 @@ class FakeVenue:
         self.disconnected = False
         self.venue_clock_ahead: timedelta = timedelta(0)
         self._seq = 0
+        self._tape: list[BookUpdate] = list(tape)
+        self.emitted: list[BookUpdate] = []
 
     def list_markets(self, as_of: datetime) -> tuple[str, ...]:
         rec = _optional_get(self._store, "fake:markets", as_of)
@@ -130,6 +137,20 @@ class FakeVenue:
     def settlement_rule(self, as_of: datetime) -> SettlementRule:
         like = "polymarket" if self.fee_like == "polymarket" else "kalshi"
         return settlement_rule_in_force(like, as_of)
+
+    def queue_book_update(self, update: BookUpdate) -> None:
+        self._tape.append(update)
+
+    def scripted_book_updates(self) -> tuple[BookUpdate, ...]:
+        return tuple(self._tape)
+
+    def emit_book_updates(self) -> tuple[BookUpdate, ...]:
+        """Write the scripted tape onto the venue store. Same records replay uses."""
+        out = tuple(self._tape)
+        for update in out:
+            apply_book_update(self._store, update)
+            self.emitted.append(update)
+        return out
 
     def submit(self, order: Order) -> FakeAck:
         """Only ``wxmm.execute.send_gate`` should call this from package code."""

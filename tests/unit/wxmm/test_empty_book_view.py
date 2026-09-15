@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from wxmm.core.book import snapshot_payload, snapshot_update
 from wxmm.core.types import (
     AsOfRecord,
     BookLevel,
@@ -13,7 +14,7 @@ from wxmm.core.types import (
     InMemoryAsOfStore,
 )
 from wxmm.core.view import book_view_from_snapshot, build_market_view
-from wxmm.live.state import LiveState, snapshot_payload, snapshot_update
+from wxmm.live.state import LiveState
 from wxmm.venues.kalshi.adapter import KalshiVenue
 from wxmm.venues.polymarket.adapter import PolymarketVenue
 

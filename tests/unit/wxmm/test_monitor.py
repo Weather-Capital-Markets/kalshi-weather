@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from wxmm.core.errors import UnreconciledBreak
+from wxmm.core.errors import FeeMismatch, UnreconciledBreak
 from wxmm.core.money import Money
 from wxmm.core.types import FrozenClock
 from wxmm.decide.engine import propose
@@ -92,3 +92,44 @@ def test_daily_loss_halts() -> None:
     machine.note_daily_loss(Money.cents(51), at_utc=TS)
     assert machine.status is SystemStatus.HALT
     assert machine.reason == "daily_loss"
+
+
+def test_fee_mismatch_halts() -> None:
+    journal = Journal()
+    machine = StatusMachine(journal)
+    with pytest.raises(FeeMismatch):
+        machine.halt_from_fee_mismatch(FeeMismatch("kalshi predicted!=charged"), at_utc=TS)
+    assert machine.status is SystemStatus.HALT
+    assert machine.reason is not None and machine.reason.startswith("fee_mismatch:")
+
+
+def test_rate_budget_and_unverified_venue_degrade() -> None:
+    journal = Journal()
+    machine = StatusMachine(journal)
+    machine.note_rate_budget_low(at_utc=TS)
+    assert machine.status is SystemStatus.DEGRADED
+    assert "rate_budget_low" in machine.degradation
+    machine.note_venue_unverified("polymarket", at_utc=TS)
+    assert "venue_unverified:polymarket" in machine.degradation
+    view = MarketView(
+        books=(
+            BookView(
+                venue="kalshi",
+                market_id="M",
+                two_sided=True,
+                bid_cents=40,
+                ask_cents=42,
+                bid_size=1,
+                ask_size=1,
+                ask_size_known=True,
+                volume=1,
+                reconstructed=False,
+                staleness=timedelta(0),
+            ),
+        ),
+        positions=(),
+        fills=(),
+    )
+    out = propose(view, system_status=machine.status.value, degradation=machine.degradation)
+    assert out
+    assert all(p.degradation == machine.degradation for p in out)

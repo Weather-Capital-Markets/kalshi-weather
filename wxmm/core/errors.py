@@ -97,8 +97,24 @@ class ConfigNotPreregistered(WxmmError):
     """Backtest ``run()`` saw a config hash that is not in ``prereg/``."""
 
 
+class GoNoGoNotFilled(WxmmError):
+    """A study ``run()`` was invoked while prereg go/no-go numbers are FILL_IN."""
+
+
+class PriceComplementError(WxmmError):
+    """A trade's yes_price + no_price is not ≈ 1.00. Silent acceptance inverts P&L."""
+
+
+class InconsistentTakerMapping(WxmmError):
+    """taker_outcome_side × taker_book_side is not a clean one-to-one map."""
+
+
 class HeldOutLockedError(WxmmError):
     """Held-out period was requested without an explicit loud unlock."""
+
+
+class ReconstructionBoundRequired(WxmmError):
+    """``model.fit`` and market-mid baseline refuse without a Phase 3 bound file."""
 
 
 class SizeUnknownFlag(WxmmError):

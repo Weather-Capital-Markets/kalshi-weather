@@ -6,10 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from wxmm.core.ratelimit import kalshi_write_bucket
 from wxmm.core.types import FrozenClock
 from wxmm.decide.engine import propose
 from wxmm.decide.fairvalue import NullFairValue
-from wxmm.live.ratelimit import kalshi_write_bucket
 from wxmm.strategy.view import BookView, MarketView
 
 UTC = timezone.utc
