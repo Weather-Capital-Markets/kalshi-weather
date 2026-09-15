@@ -6,7 +6,7 @@ seed: 0
 universe:
   - KXHIGHNY
   - HIGHNY
-snapshot_id: FILL_IN
+snapshot_id: "trades-ff7e56e6fc3c4973/labels-05940acd31ce7542"
 locked: true
 anchor_provenance: TRADE_DERIVED
 note: >
@@ -19,7 +19,7 @@ sample:
   six_bracket_era_start: "2022-12-11"
   date_range:
     start: "2022-12-11"
-    end: LATEST_SETTLED_CLIMATE_DAY_WITH_CLINYC_LABEL
+    end: "2026-09-13"  # latest settled climate day carrying a CLINYC as-issued label
   labels: CLINYC_as_issued
   label_forbidden:
     - METAR_derived_maxima

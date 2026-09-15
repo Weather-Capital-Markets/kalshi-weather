@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -18,10 +19,17 @@ from wxmm.analysis.trades_ingest import parse_trade
 from wxmm.backtest.ledger import Ledger
 from wxmm.core.errors import LeakageError
 from wxmm.fairvalue.anchor_trades import refuse_if_leaked
-from wxmm.fairvalue.model_trades import null_trade_recovery, trade_ladder_or_none
+from wxmm.fairvalue.features import WINDOW_INVARIANT_KEYS
+from wxmm.fairvalue.model_trades import (
+    _row_features,
+    null_trade_recovery,
+    trade_ladder_or_none,
+)
 from wxmm.fairvalue.v0_min import (
+    assert_design_is_identified,
     climatology_forecast,
     fit_offset_logit_mle,
+    percentile_ci,
     predict_adjusted,
     residual_gbm_experiment,
     run_c1_m1_v0_min,
@@ -256,6 +264,127 @@ def test_offset_mle_shrinks_toward_zero() -> None:
     ]
     beta = fit_offset_logit_mle(observations, ridge_lambda=100.0, max_iter=80)
     assert all(abs(v) < 0.5 for v in beta)
+
+
+def _moving_tape(day: date) -> list[object]:
+    """Both sides re-printed inside each window, at a spread that keeps moving.
+
+    Close is 04:59 the next day, so prints have to sit in the final hours or the
+    15m/1h/4h lags all land on the same book and every change reads zero.
+    """
+    ticker = _ticker(day, "T80")
+    quotes = [(18, 0, "0.50", "0.44"), (21, 0, "0.52", "0.50"),
+              (22, 0, "0.46", "0.36"), (22, 50, "0.55", "0.51")]
+    out: list[object] = []
+    for hour, minute, ask, bid in quotes:
+        created = datetime(
+            day.year, day.month, day.day, hour, minute, tzinfo=UTC
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        tag = f"{hour:02d}{minute:02d}"
+        out.append(
+            _raw(trade_id=f"{ticker}-{tag}y", ticker=ticker, outcome="yes",
+                 book="ask", yes=ask, no=f"{1 - float(ask):.2f}", created=created)
+        )
+        out.append(
+            _raw(trade_id=f"{ticker}-{tag}n", ticker=ticker, outcome="no",
+                 book="bid", yes=bid, no=f"{1 - float(bid):.2f}", created=created)
+        )
+    return out
+
+
+def test_window_invariant_book_features_emitted_once() -> None:
+    """Staleness and spread read the as-of book, which no window touches.
+
+    Emitting them per window put three identical columns in the design. Ridge
+    does not complain, it just hands each copy a third of the effect.
+    """
+    day = date(2026, 8, 12)
+    as_of = kalshi_last_trading_close_utc(day) - timedelta(hours=6)
+    feats = _row_features(
+        _moving_tape(day),  # type: ignore[arg-type]
+        _ticker(day, "T80"),
+        as_of,
+        mapping=None,
+    )
+    for key in WINDOW_INVARIANT_KEYS:
+        assert f"book_{key}" in feats
+        assert not [name for name in feats if name.endswith(f"_{key}") and name.startswith("w")]
+    assert len([n for n in feats if n.endswith("_signed_ofi")]) == 3
+    assert "w900s_trade_count" not in feats
+    assert "w900s_intensity_per_hour" in feats
+
+
+def test_implied_spread_change_is_measured_over_the_window() -> None:
+    """The spec asks for the spread *and its change*. A never-populated column
+    standardises to a constant and silently contributes nothing."""
+    day = date(2026, 8, 12)
+    as_of = kalshi_last_trading_close_utc(day) - timedelta(hours=6)
+    feats = _row_features(
+        _moving_tape(day),  # type: ignore[arg-type]
+        _ticker(day, "T80"),
+        as_of,
+        mapping=None,
+    )
+    changes = {n: v for n, v in feats.items() if n.endswith("_implied_spread_change")}
+    assert len(changes) == 3
+    assert any(abs(v) > 1e-9 for v in changes.values())
+
+
+def test_beta_interval_is_a_percentile_not_a_ci_on_the_bootstrap_mean() -> None:
+    """The draws are refits of one coefficient, so the interval must bracket the
+    coefficient. Bracketing the mean of the draws gives something that narrows
+    with the refit count and can exclude the point estimate it is reported next
+    to, which reads as significance that is not there."""
+    rng = random.Random(3)
+    draws = [rng.gauss(0.0, 1.0) for _ in range(400)]
+    ci = percentile_ci(draws)
+    assert ci is not None
+    assert ci[0] < -1.0 and ci[1] > 1.0
+    mean_ci = bootstrap_mean_ci([Decimal(str(v)) for v in draws], seed=0, n_resample=400)
+    assert mean_ci is not None
+    assert (ci[1] - ci[0]) > 10 * float(mean_ci[1] - mean_ci[0])
+    assert percentile_ci([0.5]) is None
+
+
+def test_reported_beta_intervals_contain_their_point() -> None:
+    days = [date(2026, 8, d) for d in range(10, 20)]
+    trades = [t for day in days for t in _pair_for_day(day)]
+    labels = _labels_for_days(days, winner="T90")
+    payload = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "prereg" / "c1-m1-v0-min.yaml").read_text()
+    )
+    payload["prereg_id"] = "c1-m1-v0-min-beta"
+    payload["walk_forward"]["min_train_days"] = 2
+    payload["ridge_lambda_grid"] = [1.0]
+    tmp = Path(__file__).resolve().parent / "_beta_prereg"
+    tmp.mkdir(exist_ok=True)
+    (tmp / "c1-m1-v0-min-beta.yaml").write_text(yaml.safe_dump(payload))
+    try:
+        report = run_c1_m1_v0_min(
+            trades,  # type: ignore[arg-type]
+            labels,
+            prereg=payload,
+            prereg_dir=tmp,
+            ledger=Ledger(),
+            n_resample=30,
+        )
+    finally:
+        (tmp / "c1-m1-v0-min-beta.yaml").unlink()
+        tmp.rmdir()
+    assert report.beta
+    for row in report.beta:
+        if row.ci_low is None or row.ci_high is None:
+            continue
+        assert row.ci_low <= row.point <= row.ci_high, row.name
+
+
+def test_collinear_design_is_refused() -> None:
+    rng = random.Random(7)
+    rows = [[rng.random(), rng.random()] for _ in range(200)]
+    assert_design_is_identified(["a", "b"], rows)
+    doubled = [[r[0], r[1], 2.0 * r[0]] for r in rows]
+    with pytest.raises(ValueError, match="collinear"):
+        assert_design_is_identified(["a", "b", "a_scaled"], doubled)
 
 
 def test_climatology_nearby_doy() -> None:

@@ -75,9 +75,10 @@ def render(report: V0MinReport) -> str:
         )
     lines.append("")
     lines.append("  beta (watch signed_ofi):")
-    for row in report.beta:
+    for coef in report.beta:
         lines.append(
-            f"    {row.name:<28} {row.point:+.5f}  {_interval(row.ci_low, row.ci_high)}"
+            f"    {coef.name:<28} {coef.point:+.5f}  "
+            f"{_interval(coef.ci_low, coef.ci_high)}"
         )
     return "\n".join(lines)
 

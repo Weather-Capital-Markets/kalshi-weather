@@ -138,24 +138,28 @@ property of the prices and not of any label field.
 | Runner | `python -m analysis.crossed_rate --parquet data/trades/KXHIGHNY` |
 | Gate | `wxmm.fairvalue.v0_min.run_c1_m1_v0_min` refuses to fit on `sign_inverted` |
 
-#### 1.4.2 Result: crossed rate 6.25% `[V-LOCAL]`
+#### 1.4.2 Result: crossed rate 5.82% `[V-LOCAL]`
 
-Run 2026-09-15 on the pulled corpus (2,834,401 prints, 6,581 tickers, climate days
-2022-12-11 → 2026-07-15, `analysis/out/crossed_rate.json`):
+Run 2026-09-15 on the full pulled corpus (3,405,461 prints, 6,974 tickers, 1,374
+climate days 2022-12-11 → 2026-09-15, `analysis/out/crossed_rate.json`):
 
 | Quantity | As specified (`yes` → ask) | Inverted d (mirror) |
 |---|---|---|
-| Crossed rate | **0.0625** (174,984 / 2,799,290) | 0.8204 |
+| Crossed rate | **0.0582** (195,892 / 3,368,606) | 0.8277 |
 | Median implied spread | **+2.0c** | −2.0c |
-| Ties (`ask == bid`) | 327,781 | 327,781 |
-| Tickers majority-crossed | **224 / 6,581** | 6,110 / 6,581 |
+| Ties (`ask == bid`) | 384,667 | 384,667 |
+| Tickers majority-crossed | **230 / 6,974** | 6,074 / 6,974 |
 
-**The sign is confirmed.** Trade-implied ask sits above trade-implied bid 93.75% of the
+An earlier partial pull (2.83M prints, through the 2026-07-16 historical cutoff only)
+gave 0.0625 on the same corpus definition, so the number is not sensitive to the
+sample boundary.
+
+**The sign is confirmed.** Trade-implied ask sits above trade-implied bid 94.2% of the
 time and the median trade-implied spread is positive, which is what a correctly oriented
 anchor looks like. An inverted sign would have driven this toward 100% and the median
-spread negative. Crossing at 6% is the staleness the anchor's docstring predicts — the two
-sides are drawn from different instants — not a direction error. Only 3.4% of tickers are
-majority-crossed.
+spread negative. Crossing at 5.8% is the staleness the anchor's docstring predicts — the
+two sides are drawn from different instants — not a direction error. Only 3.3% of tickers
+are majority-crossed.
 
 This was run before the first fit, and the fit path refuses to proceed on a
 `sign_inverted` verdict.

@@ -24,6 +24,7 @@ from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
     TradeImpliedBook,
     YesSpacePrint,
+    assert_outcome_bookside_mapping,
     filter_trades_as_of,
     implied_book_from_trades,
     refuse_if_leaked,
@@ -41,6 +42,19 @@ STALENESS_KEYS: tuple[str, ...] = (
     "ask_staleness_seconds",
     "staleness_ratio",
 )
+WINDOW_INVARIANT_KEYS: tuple[str, ...] = (
+    "implied_spread",
+    "bid_staleness_seconds",
+    "ask_staleness_seconds",
+    "staleness_ratio",
+    "crossed_count",
+)
+"""Read off the as-of book, which the window does not touch.
+
+Emitting these once per window puts identical columns in the design matrix.
+Ridge then splits one effect across the copies and penalises the direction at
+lambda/k instead of lambda. Consumers must emit them once.
+"""
 DOY_PERIOD = 365.25
 
 
@@ -153,8 +167,15 @@ def flow_features(
         notional += item.count * item.yes_price
     ofi = (signed / gross) if gross else None
     # Mapping is a corpus property. Do not re-assert on a ticker- or window-filter.
+    # Resolving it once here keeps the lagged book below off a narrower slice than
+    # the one the caller's cross-tab gate already cleared.
+    resolved = mapping
+    if resolved is None:
+        non_block = [trade for trade in scoped if not trade.is_block_trade]
+        if non_block:
+            resolved = assert_outcome_bookside_mapping(non_block)
     snapshot = book or implied_book_from_trades(
-        scoped, as_of=as_of_utc, ticker=ticker, mapping=mapping
+        scoped, as_of=as_of_utc, ticker=ticker, mapping=resolved
     )
     bid_s = (
         snapshot.bid_staleness.total_seconds() if snapshot.bid_staleness is not None else None
@@ -170,6 +191,15 @@ def flow_features(
     last = max((p.created_time for p in prints), default=None)
     gap = (as_of_utc - last).total_seconds() if last is not None else None
     spread = snapshot.implied_spread
+    if prior_spread is None and spread is not None:
+        lagged_as_of = as_of_utc - window
+        lagged = implied_book_from_trades(
+            filter_trades_as_of(scoped, lagged_as_of, ticker=ticker),
+            as_of=lagged_as_of,
+            ticker=ticker,
+            mapping=resolved,
+        )
+        prior_spread = lagged.implied_spread
     change = None if spread is None or prior_spread is None else spread - prior_spread
     features = FlowFeatures(
         window=window,

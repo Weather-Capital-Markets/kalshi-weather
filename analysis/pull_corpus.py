@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from wxmm.analysis.trades_ingest import (
     SIX_BRACKET_ERA_START,
@@ -37,6 +37,7 @@ from wxmm.analysis.trades_ingest import (
     merge_trades,
     parse_climate_day,
     pull_ticker,
+    read_trades_parquet,
     trades_to_parquet,
 )
 from wxmm.core.errors import PriceComplementError
@@ -203,6 +204,21 @@ def pull_one(
     return merged, row
 
 
+def _merge_existing(
+    by_shard: dict[str, list[RawTrade]],
+    existing_dir: Path,
+) -> dict[str, list[RawTrade]]:
+    merged: dict[str, list[RawTrade]] = {}
+    for shard, trades in by_shard.items():
+        path = existing_dir / f"climate_month={shard}.parquet"
+        prior = read_trades_parquet(path) if path.exists() else []
+        seen: dict[str, RawTrade] = {t.trade_id: t for t in prior}
+        for trade in trades:
+            seen[trade.trade_id] = trade
+        merged[shard] = list(seen.values())
+    return merged
+
+
 def write_shards(
     by_shard: dict[str, list[RawTrade]],
     out_dir: Path,
@@ -228,6 +244,8 @@ def run(
     limit: int,
     min_interval: float,
     progress_every: int,
+    only_tickers: Sequence[str] = (),
+    merge_into: Path | None = None,
 ) -> int:
     transport = HttpTransport(min_interval=min_interval)
     cutoff = fetch_cutoff(transport)
@@ -243,6 +261,12 @@ def run(
             climate = in_scope(ticker, start=start, end=end)
             if climate is not None:
                 scoped[ticker] = climate
+    if only_tickers:
+        wanted = set(only_tickers)
+        missing = wanted - set(scoped)
+        if missing:
+            print(f"not in scope, skipped: {sorted(missing)}", file=sys.stderr)
+        scoped = {t: d for t, d in scoped.items() if t in wanted}
     tickers = sorted(scoped)
     print(f"in scope {start} .. {end}: {len(tickers)} tickers")
     if not tickers:
@@ -282,6 +306,10 @@ def run(
     with ThreadPoolExecutor(max_workers=workers) as pool:
         list(pool.map(work, tickers))
 
+    if merge_into is not None:
+        # Targeted retry: fold the repaired tickers into the existing shards
+        # rather than replacing a shard with only the retried rows.
+        by_shard = _merge_existing(by_shard, merge_into)
     counts = write_shards(by_shard, out_dir)
     total = sum(counts.values())
     meta = {
@@ -322,6 +350,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--min-interval", type=float, default=0.0)
     parser.add_argument("--progress-every", type=int, default=250)
+    parser.add_argument(
+        "--tickers",
+        nargs="+",
+        default=[],
+        help="Pull only these tickers (targeted retry of failures)",
+    )
+    parser.add_argument(
+        "--merge-into",
+        type=Path,
+        default=None,
+        help="Fold results into existing shards in this directory",
+    )
     return parser
 
 
@@ -336,6 +376,8 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         min_interval=args.min_interval,
         progress_every=args.progress_every,
+        only_tickers=args.tickers,
+        merge_into=args.merge_into,
     )
 
 

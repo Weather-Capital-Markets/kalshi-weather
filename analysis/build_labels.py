@@ -36,6 +36,11 @@ from wxmm.settlement.rules import Observation
 STATION = "KNYC"
 
 
+def _role_of(market: Mapping[str, Any]) -> str:
+    strike = strike_of(market)
+    return "unparsed" if strike is None else strike.role
+
+
 @dataclass(frozen=True, slots=True)
 class LabelReport:
     n_markets: int
@@ -239,12 +244,7 @@ def main(argv: list[str] | None = None) -> int:
         "n_venue_compared": report.n_venue_compared,
         "n_venue_disagree": report.n_venue_disagree,
         "venue_disagreement_rate": report.venue_disagreement_rate,
-        "roles": dict(
-            Counter(
-                (strike_of(m).role if strike_of(m) else "unparsed")
-                for m in markets[:0]
-            )
-        ),
+        "roles": dict(Counter(_role_of(m) for m in markets)),
     }
     print(json.dumps(payload, indent=2))
     if report.disagreements:

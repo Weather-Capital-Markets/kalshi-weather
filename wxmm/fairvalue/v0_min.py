@@ -17,6 +17,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
+import numpy as np
+
 from wxmm.analysis.maker_taker import (
     SettlementLabel,
     bootstrap_mean_ci,
@@ -48,6 +50,7 @@ from wxmm.settlement.eras import kalshi_last_trading_close_utc
 
 RIDGE_LAMBDA_GRID: tuple[float, ...] = (0.01, 0.1, 1.0, 10.0)
 _CLIP = 20.0
+_IDENTIFIED_ROWS_PER_COLUMN = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,21 +200,21 @@ def _standardize(
 ) -> tuple[list[list[float]], tuple[float, ...], tuple[float, ...]]:
     if not rows:
         return [], (), ()
-    k = len(rows[0])
+    block = np.asarray(rows, dtype=float)
     if mean is None or std is None:
-        means = [sum(row[j] for row in rows) / len(rows) for j in range(k)]
-        vars_ = [
-            sum((row[j] - means[j]) ** 2 for row in rows) / max(len(rows), 1)
-            for j in range(k)
-        ]
-        stds = [math.sqrt(v) if v > 1e-12 else 1.0 for v in vars_]
+        mean_arr = block.mean(axis=0)
+        std_arr = np.sqrt(block.var(axis=0))
+        std_arr = np.where(std_arr > 1e-12, std_arr, 1.0)
     else:
-        means = list(mean)
-        stds = [s if s > 1e-12 else 1.0 for s in std]
-    scaled = [
-        [(row[j] - means[j]) / stds[j] for j in range(k)] for row in rows
-    ]
-    return scaled, tuple(means), tuple(stds)
+        mean_arr = np.asarray(mean, dtype=float)
+        std_arr = np.asarray(std, dtype=float)
+        std_arr = np.where(std_arr > 1e-12, std_arr, 1.0)
+    scaled = (block - mean_arr) / std_arr
+    return (
+        scaled.tolist(),
+        tuple(float(v) for v in mean_arr),
+        tuple(float(v) for v in std_arr),
+    )
 
 
 def _offset_probs(
@@ -230,26 +233,88 @@ def _offset_probs(
     return [u / total for u in unnorm], unnorm
 
 
+@dataclass(frozen=True, slots=True)
+class _PackedObservations:
+    """Ragged brackets flattened once per fit.
+
+    Bracket count varies by climate day, so the observations are concatenated
+    into one row block with a segment id per row. Every quantity the objective
+    needs is then a single array op instead of a Python loop over every
+    training row, which the expanding window would otherwise walk thousands of
+    times.
+    """
+
+    x: "np.ndarray"
+    logit_q: "np.ndarray"
+    segment: "np.ndarray"
+    winner_row: "np.ndarray"
+    n_obs: int
+    n_features: int
+
+
+def pack_observations(
+    observations: Sequence[tuple[list[float], list[list[float]], int]],
+) -> _PackedObservations | None:
+    if not observations:
+        return None
+    x_blocks: list[list[float]] = []
+    logit_q: list[float] = []
+    segment: list[int] = []
+    winner_row: list[int] = []
+    cursor = 0
+    for index, (q, x_rows, y_idx) in enumerate(observations):
+        for qi, xi in zip(q, x_rows, strict=True):
+            x_blocks.append(list(xi))
+            logit_q.append(_logit(qi))
+            segment.append(index)
+        winner_row.append(cursor + y_idx)
+        cursor += len(x_rows)
+    return _PackedObservations(
+        x=np.asarray(x_blocks, dtype=float),
+        logit_q=np.asarray(logit_q, dtype=float),
+        segment=np.asarray(segment, dtype=np.intp),
+        winner_row=np.asarray(winner_row, dtype=np.intp),
+        n_obs=len(observations),
+        n_features=len(x_blocks[0]) if x_blocks else 0,
+    )
+
+
+def _nll_and_grad_packed(
+    packed: _PackedObservations,
+    beta: "np.ndarray",
+    lam: float,
+) -> tuple[float, "np.ndarray"]:
+    scores = packed.logit_q + packed.x @ beta
+    unnorm = 1.0 / (1.0 + np.exp(-np.clip(scores, -_CLIP, _CLIP)))
+    totals = np.bincount(packed.segment, weights=unnorm, minlength=packed.n_obs)
+    safe = np.where(totals > 1e-18, totals, 1.0)
+    probs = unnorm / safe[packed.segment]
+    degenerate = totals <= 1e-18
+    if degenerate.any():
+        counts = np.bincount(packed.segment, minlength=packed.n_obs)
+        uniform = (1.0 / counts[packed.segment])[degenerate[packed.segment]]
+        probs[degenerate[packed.segment]] = uniform
+
+    p_y = np.maximum(probs[packed.winner_row], 1e-12)
+    nll = 0.5 * lam * float(beta @ beta) - float(np.log(p_y).sum())
+
+    grad = lam * beta
+    winner_x = packed.x[packed.winner_row]
+    grad = grad - winner_x.T @ (1.0 - unnorm[packed.winner_row])
+    grad = grad + packed.x.T @ (probs * (1.0 - unnorm))
+    return nll, grad
+
+
 def _nll_and_grad(
     observations: Sequence[tuple[list[float], list[list[float]], int]],
     beta: list[float],
     lam: float,
 ) -> tuple[float, list[float]]:
-    nll = 0.5 * lam * sum(b * b for b in beta)
-    grad = [lam * b for b in beta]
-    for q, x_rows, y_idx in observations:
-        probs, unnorm = _offset_probs(q, x_rows, beta)
-        py = max(probs[y_idx], 1e-12)
-        nll -= math.log(py)
-        x_y = x_rows[y_idx]
-        s_y = unnorm[y_idx]
-        for j, xj in enumerate(x_y):
-            grad[j] -= (1.0 - s_y) * xj
-        for pk, sk, xk in zip(probs, unnorm, x_rows, strict=True):
-            factor = pk * (1.0 - sk)
-            for j, xj in enumerate(xk):
-                grad[j] += factor * xj
-    return nll, grad
+    packed = pack_observations(observations)
+    if packed is None:
+        return 0.5 * lam * sum(b * b for b in beta), [lam * b for b in beta]
+    nll, grad = _nll_and_grad_packed(packed, np.asarray(beta, dtype=float), lam)
+    return nll, [float(g) for g in grad]
 
 
 def fit_offset_logit_mle(
@@ -259,23 +324,23 @@ def fit_offset_logit_mle(
     max_iter: int = 200,
 ) -> list[float]:
     """Ridge-penalised multinomial MLE with trade-mid logit offset."""
-    if not observations:
+    packed = pack_observations(observations)
+    if packed is None or not packed.n_features:
         return []
-    k = len(observations[0][1][0])
-    beta = [0.0] * k
+    beta = np.zeros(packed.n_features, dtype=float)
     step = 0.25
     last = float("inf")
     for _ in range(max_iter):
-        nll, grad = _nll_and_grad(observations, beta, ridge_lambda)
-        gnorm = math.sqrt(sum(g * g for g in grad))
+        nll, grad = _nll_and_grad_packed(packed, beta, ridge_lambda)
+        gnorm = float(np.sqrt(grad @ grad))
         if gnorm < 1e-8 or abs(last - nll) < 1e-10:
             break
         # Armijo backtracking
         trial_step = step
         improved = False
         for _bt in range(8):
-            cand = [b - trial_step * g for b, g in zip(beta, grad, strict=True)]
-            cand_nll, _ = _nll_and_grad(observations, cand, ridge_lambda)
+            cand = beta - trial_step * grad
+            cand_nll, _ = _nll_and_grad_packed(packed, cand, ridge_lambda)
             if cand_nll < nll:
                 beta = cand
                 last = cand_nll
@@ -286,7 +351,7 @@ def fit_offset_logit_mle(
             break
         if nll < last:
             last = nll
-    return beta
+    return [float(b) for b in beta]
 
 
 def _day_observation(
@@ -320,37 +385,94 @@ def _day_observation(
     return tickers, q, x_rows, y_idx, q_map
 
 
-def _collect_observations(
+Packed = tuple[list[str], list[float], list[list[float]], int, dict[str, Decimal]]
+
+
+def index_by_climate_day(
     trades: Sequence[RawTrade],
-    labels: Mapping[str, SettlementLabel],
+) -> dict[date, list[RawTrade]]:
+    """A ticker's climate day comes from its own name, so this partition is exact."""
+    out: dict[date, list[RawTrade]] = {}
+    for trade in trades:
+        out.setdefault(trade.climate_day, []).append(trade)
+    return out
+
+
+class ObservationCache:
+    """One as-of feature build per (climate day, horizon), reused across folds.
+
+    The expanding window refits on every predict day, so without this the same
+    training day is re-featurised once per later fold — quadratic in days, and
+    each rebuild otherwise rescanned the whole corpus to answer an as-of
+    question about a single day.
+    """
+
+    def __init__(
+        self,
+        trades: Sequence[RawTrade],
+        labels: Mapping[str, SettlementLabel],
+        *,
+        hours_to_close: Sequence[int],
+        mapping: ObservedMapping | None,
+    ) -> None:
+        self._by_day = index_by_climate_day(trades)
+        self._labels = labels
+        self._hours = tuple(int(h) for h in hours_to_close)
+        self._mapping = mapping
+        self._cache: dict[tuple[date, int], Packed | None] = {}
+        self.names: list[str] | None = None
+
+    @property
+    def hours_to_close(self) -> tuple[int, ...]:
+        return self._hours
+
+    def as_of(self, climate: date, hours: int) -> datetime:
+        return kalshi_last_trading_close_utc(climate) - timedelta(hours=int(hours))
+
+    def day_trades(self, climate: date) -> list[RawTrade]:
+        return self._by_day.get(climate, [])
+
+    def get(self, climate: date, hours: int) -> Packed | None:
+        key = (climate, int(hours))
+        if key not in self._cache:
+            as_of = self.as_of(climate, hours)
+            packed = _day_observation(
+                self.day_trades(climate),
+                self._labels,
+                climate,
+                as_of,
+                mapping=self._mapping,
+            )
+            self._cache[key] = packed
+            if packed is not None and self.names is None:
+                feats = _row_features(
+                    filter_trades_as_of(self.day_trades(climate), as_of),
+                    packed[0][0],
+                    as_of,
+                    mapping=self._mapping,
+                )
+                self.names = sorted(feats)
+        return self._cache[key]
+
+    def warm(self, days: Sequence[date]) -> None:
+        for climate in days:
+            for hours in self._hours:
+                self.get(climate, hours)
+
+
+def _collect_observations(
+    cache: ObservationCache,
     days: Sequence[date],
-    *,
-    hours_to_close: Sequence[int],
-    mapping: ObservedMapping | None,
 ) -> tuple[list[str] | None, list[tuple[list[float], list[list[float]], int]]]:
-    names: list[str] | None = None
     out: list[tuple[list[float], list[list[float]], int]] = []
     for climate in days:
-        close = kalshi_last_trading_close_utc(climate)
-        for hours in hours_to_close:
-            as_of = close - timedelta(hours=int(hours))
-            packed = _day_observation(
-                trades, labels, climate, as_of, mapping=mapping
-            )
+        for hours in cache.hours_to_close:
+            packed = cache.get(climate, hours)
             if packed is None:
                 continue
             _tickers, q, x_rows, y_idx, _qmap = packed
-            if names is None:
-                # feature names recovered from first row via _row_features order
-                feats = _row_features(
-                    filter_trades_as_of(trades, as_of),
-                    _tickers[0],
-                    as_of,
-                    mapping=mapping,
-                )
-                names = sorted(feats)
             out.append((q, x_rows, y_idx))
-    return names, out
+    return cache.names, out
 
 
 def select_ridge_lambda(
@@ -430,6 +552,7 @@ def trade_anchor_coverage(
     hours_to_close: Sequence[int],
     mapping: ObservedMapping | None,
 ) -> AnchorCoverage:
+    by_day = index_by_climate_day(trades)
     days = sorted({label.climate_day for label in labels.values()})
     n_grid = 0
     n_ok = 0
@@ -438,10 +561,11 @@ def trade_anchor_coverage(
         if len(tickers) < 2:
             continue
         close = kalshi_last_trading_close_utc(climate)
+        day_trades = by_day.get(climate, [])
         for hours in hours_to_close:
             as_of = close - timedelta(hours=int(hours))
             n_grid += 1
-            as_of_trades = filter_trades_as_of(trades, as_of)
+            as_of_trades = filter_trades_as_of(day_trades, as_of)
             ladder = trade_ladder_or_none(
                 as_of_trades, tickers, as_of=as_of, mapping=mapping
             )
@@ -513,22 +637,54 @@ def _slice_scores(
     return tuple(out)
 
 
+def assert_design_is_identified(
+    names: Sequence[str],
+    rows: Sequence[Sequence[float]],
+) -> None:
+    """Refuse a design carrying two columns that are the same direction.
+
+    Exact duplicates and constant multiples both collapse to one column once
+    standardised. Ridge does not error on them, it splits a single effect across
+    the copies and penalises that direction at lambda/k, so the coefficient table
+    reads as k weak features instead of one. Only an explicit check catches it.
+
+    Structural collinearity is the target. A design with few rows relative to
+    columns is collinear by arithmetic rather than by construction, so the check
+    stays quiet until there are enough rows for the distinction to mean anything.
+    """
+    if not rows or not names:
+        return
+    scaled, _mean, _std = _standardize([list(r) for r in rows])
+    matrix = np.asarray(scaled, dtype=float)
+    if matrix.ndim != 2 or matrix.shape[1] < 2:
+        return
+    if matrix.shape[0] < _IDENTIFIED_ROWS_PER_COLUMN * matrix.shape[1]:
+        return
+    norms = np.linalg.norm(matrix, axis=0)
+    live = np.flatnonzero(norms > 1e-12)
+    if live.size < 2:
+        return
+    unit = matrix[:, live] / norms[live]
+    gram = np.abs(unit.T @ unit)
+    a, b = np.triu_indices(live.size, k=1)
+    hits = np.flatnonzero(gram[a, b] > 1.0 - 1e-9)
+    if hits.size:
+        pairs = [
+            f"{names[live[a[h]]]}=={names[live[b[h]]]}" for h in hits[:8]
+        ]
+        raise ValueError(
+            f"design has {hits.size} collinear column pair(s), ridge would split "
+            f"one effect across them: {', '.join(pairs)}"
+        )
+
+
 def _fit_on_days(
-    trades: Sequence[RawTrade],
-    labels: Mapping[str, SettlementLabel],
+    cache: ObservationCache,
     train_days: Sequence[date],
     *,
-    hours_to_close: Sequence[int],
-    mapping: ObservedMapping | None,
     lambda_grid: Sequence[float],
 ) -> OffsetLogitFit | None:
-    names, raw_obs = _collect_observations(
-        trades,
-        labels,
-        train_days,
-        hours_to_close=hours_to_close,
-        mapping=mapping,
-    )
+    names, raw_obs = _collect_observations(cache, train_days)
     if names is None or not raw_obs:
         return None
     # Flatten x for standardisation across brackets and days.
@@ -545,20 +701,8 @@ def _fit_on_days(
     if sel_n:
         fit_days = list(train_days)[:-sel_n]
         sel_days = list(train_days)[-sel_n:]
-        _n_fit, fit_obs_raw = _collect_observations(
-            trades,
-            labels,
-            fit_days,
-            hours_to_close=hours_to_close,
-            mapping=mapping,
-        )
-        _n_sel, sel_obs_raw = _collect_observations(
-            trades,
-            labels,
-            sel_days,
-            hours_to_close=hours_to_close,
-            mapping=mapping,
-        )
+        _n_fit, fit_obs_raw = _collect_observations(cache, fit_days)
+        _n_sel, sel_obs_raw = _collect_observations(cache, sel_days)
         fit_scaled: list[tuple[list[float], list[list[float]], int]] = []
         for q, x_rows, y_idx in fit_obs_raw:
             scaled, _, _ = _standardize(x_rows, mean=mean, std=std)
@@ -583,25 +727,38 @@ def _fit_on_days(
     )
 
 
+def percentile_ci(
+    draws: Sequence[float],
+    *,
+    ci: float = 0.95,
+) -> tuple[float, float] | None:
+    """Percentile interval over the day-resampled refits of one coefficient.
+
+    Passing these draws to ``bootstrap_mean_ci`` instead asks a different
+    question: it brackets the *mean* of the bootstrap distribution, an interval
+    that narrows as the refit count grows and sits on the bootstrap mean rather
+    than on the point estimate. Coefficients then routinely read as excluding
+    zero while the point estimate falls outside its own interval.
+    """
+    if len(draws) < 2:
+        return None
+    ordered = sorted(float(v) for v in draws)
+    n = len(ordered)
+    alpha = (1.0 - ci) / 2.0
+    lo = ordered[min(n - 1, max(0, int(math.floor(alpha * n))))]
+    hi = ordered[min(n - 1, max(0, int(math.ceil((1.0 - alpha) * n)) - 1))]
+    return lo, hi
+
+
 def _beta_intervals(
-    trades: Sequence[RawTrade],
-    labels: Mapping[str, SettlementLabel],
+    cache: ObservationCache,
     train_days: Sequence[date],
     *,
-    hours_to_close: Sequence[int],
-    mapping: ObservedMapping | None,
     ridge_lambda: float,
     seed: int,
     n_resample: int,
 ) -> tuple[BetaInterval, ...]:
-    fitted = _fit_on_days(
-        trades,
-        labels,
-        train_days,
-        hours_to_close=hours_to_close,
-        mapping=mapping,
-        lambda_grid=(ridge_lambda,),
-    )
+    fitted = _fit_on_days(cache, train_days, lambda_grid=(ridge_lambda,))
     if fitted is None:
         return ()
     days = list(train_days)
@@ -614,31 +771,23 @@ def _beta_intervals(
 
     rng = random.Random(seed)
     draws: list[list[float]] = [[] for _ in fitted.feature_names]
-    n_boot = min(n_resample, 40)
+    n_boot = min(n_resample, 200)
     for _ in range(n_boot):
         sample_days = [days[rng.randrange(len(days))] for _ in days]
-        refit = _fit_on_days(
-            trades,
-            labels,
-            sample_days,
-            hours_to_close=hours_to_close,
-            mapping=mapping,
-            lambda_grid=(ridge_lambda,),
-        )
+        refit = _fit_on_days(cache, sample_days, lambda_grid=(ridge_lambda,))
         if refit is None or refit.feature_names != fitted.feature_names:
             continue
         for i, value in enumerate(refit.beta):
             draws[i].append(value)
     out: list[BetaInterval] = []
     for i, name in enumerate(fitted.feature_names):
-        series = [Decimal(str(v)) for v in draws[i]]
-        ci = bootstrap_mean_ci(series, seed=seed + i, n_resample=min(n_resample, 200))
+        ci = percentile_ci(draws[i])
         out.append(
             BetaInterval(
                 name=name,
                 point=fitted.beta[i],
-                ci_low=float(ci[0]) if ci else None,
-                ci_high=float(ci[1]) if ci else None,
+                ci_low=ci[0] if ci else None,
+                ci_high=ci[1] if ci else None,
             )
         )
     return tuple(out)
@@ -690,23 +839,26 @@ def run_c1_m1_v0_min(
     if origins:
         assert_schedule_integrity(origins)
 
+    cache = ObservationCache(
+        trades, labels, hours_to_close=hours, mapping=mapping
+    )
+    cache.warm(days)
+    names, warm_obs = _collect_observations(cache, days)
+    if names is not None and warm_obs:
+        assert_design_is_identified(
+            names, [row for _q, x_rows, _y in warm_obs for row in x_rows]
+        )
+
     predictions: list[V0MinPrediction] = []
     last_fit: OffsetLogitFit | None = None
     cache_key: tuple[date, ...] | None = None
     for origin in origins:
         if cache_key != origin.train_days:
             last_fit = _fit_on_days(
-                trades,
-                labels,
-                origin.train_days,
-                hours_to_close=hours,
-                mapping=mapping,
-                lambda_grid=lambda_grid,
+                cache, origin.train_days, lambda_grid=lambda_grid
             )
             cache_key = origin.train_days
-        packed = _day_observation(
-            trades, labels, origin.predict_day, origin.as_of, mapping=mapping
-        )
+        packed = cache.get(origin.predict_day, origin.hours_to_close)
         if packed is None:
             continue
         tickers, _q, x_rows, _y_idx, q_map = packed
@@ -762,11 +914,8 @@ def run_c1_m1_v0_min(
     beta_iv: tuple[BetaInterval, ...] = ()
     if last_fit is not None and origins:
         beta_iv = _beta_intervals(
-            trades,
-            labels,
+            cache,
             origins[-1].train_days,
-            hours_to_close=hours,
-            mapping=mapping,
             ridge_lambda=last_fit.ridge_lambda,
             seed=seed,
             n_resample=n_boot,

@@ -29,11 +29,16 @@ from wxmm.fairvalue.anchor_trades import (
 )
 from wxmm.fairvalue.features import (
     DEFAULT_FLOW_WINDOWS,
+    WINDOW_INVARIANT_KEYS,
     calendar_features,
     flow_features_multiwindow,
 )
 
 RIDGE_LAMBDA = 1.0
+DESIGN_DROPPED_KEYS: frozenset[str] = frozenset({"trade_count"})
+"""``intensity_per_hour`` is ``trade_count`` over a constant, so within a window
+the two are the same column once standardised. Keep the intensity, which is
+comparable across windows, and keep the count out of the design."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +128,13 @@ def _row_features(
     for name, flow in flows.items():
         raw = flow.as_dict()
         for key, value in raw.items():
-            out[f"{name}_{key}"] = 0.0 if value is None else float(value)
+            if key in DESIGN_DROPPED_KEYS:
+                continue
+            numeric = 0.0 if value is None else float(value)
+            if key in WINDOW_INVARIANT_KEYS:
+                out[f"book_{key}"] = numeric
+            else:
+                out[f"{name}_{key}"] = numeric
     return out
 
 
