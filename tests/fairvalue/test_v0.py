@@ -328,3 +328,41 @@ def test_public_surface_has_no_currency_return() -> None:
             assert Money not in (ret, getattr(ret, "__origin__", None))
             assert "Money" not in text
             assert "PnL" not in text and "pnl" not in name.lower()
+
+
+def test_rps_orders_by_ladder_not_ticker_string() -> None:
+    from wxmm.eval.scores import ranked_probability_score
+    from wxmm.fairvalue.v0 import _rps_on_ladder
+
+    less = "HIGHNY-26AUG12-T70"
+    between = "HIGHNY-26AUG12-B80.5"
+    greater = "HIGHNY-26AUG12-T83"
+    forecast = {
+        less: Decimal("0.80"),
+        between: Decimal("0.10"),
+        greater: Decimal("0.10"),
+    }
+    assert ranked_probability_score(forecast, less) != _rps_on_ladder(forecast, less)
+
+
+def test_null_t_tail_is_less_not_greater() -> None:
+    from analysis.v0_labels import labels_from_clinyc, resolve_strike
+
+    day = [
+        {"ticker": "HIGHNY-22DEC11-B38.5", "strike_type": None, "result": "no"},
+        {"ticker": "HIGHNY-22DEC11-B40.5", "strike_type": None, "result": "yes"},
+        {"ticker": "HIGHNY-22DEC11-B42.5", "strike_type": None, "result": "no"},
+        {"ticker": "HIGHNY-22DEC11-B44.5", "strike_type": None, "result": "no"},
+        {"ticker": "HIGHNY-22DEC11-T38", "strike_type": None, "result": "no"},
+        {"ticker": "HIGHNY-22DEC11-T45", "strike_type": None, "result": "no"},
+    ]
+    assert resolve_strike(day[4], day) == ("less", None, 38)
+    assert resolve_strike(day[5], day) == ("greater", 45, None)
+    labels, diag = labels_from_clinyc(
+        day,
+        {"2022-12-11": {"high_F": 40, "climate_date": "2022-12-11"}},
+    )
+    assert diag["n_unique_winner_days"] == 1
+    assert labels["HIGHNY-22DEC11-B40.5"].yes_won is True
+    assert labels["HIGHNY-22DEC11-T38"].yes_won is False
+    assert diag["n_venue_result_disagree"] == 0

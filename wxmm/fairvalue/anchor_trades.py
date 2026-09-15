@@ -266,6 +266,11 @@ def apply_print(
     return _with_staleness(updated, as_of)
 
 
+def stamp_staleness(book: TradeImpliedBook, as_of: datetime) -> TradeImpliedBook:
+    """Recompute per-side age vs the as-of clock. Does not move bid/ask."""
+    return _with_staleness(book, as_of)
+
+
 def trades_at_or_before(
     trades: Sequence[RawTrade],
     as_of: datetime,

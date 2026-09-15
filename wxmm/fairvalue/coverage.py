@@ -15,15 +15,19 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
-from typing import Literal, Sequence
+from typing import Literal, Mapping, Sequence
 
 from wxmm.analysis.maker_taker import season_of
 from wxmm.analysis.trades_ingest import RawTrade
 from wxmm.core.errors import CoverageFloorRefused
 from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
+    TradeImpliedBook,
+    YesSpacePrint,
+    apply_print,
     implied_book_from_trades,
-    trades_at_or_before,
+    stamp_staleness,
+    yes_space_print,
 )
 from wxmm.fairvalue.ladder import parse_kalshi_bracket
 from wxmm.settlement.eras import kalshi_last_trading_close_utc
@@ -112,36 +116,75 @@ def coverage_grid_times(climate_day: date) -> list[tuple[int, datetime]]:
     return [(hour, close - timedelta(hours=hour)) for hour in COVERAGE_HOURS]
 
 
+def _state_of(book: TradeImpliedBook) -> str:
+    if book.mid is not None:
+        return "two_sided"
+    if book.bid is None and book.ask is None:
+        return "missing"
+    if book.crossed_invalidations > 0:
+        return "crossed"
+    return "one_sided"
+
+
+def _scan_ticker(
+    trades: Sequence[RawTrade],
+    *,
+    as_of_grid: list[tuple[int, datetime]],
+) -> list[tuple[int, TradeImpliedBook]]:
+    if not as_of_grid:
+        return []
+    ordered = sorted(trades, key=lambda t: (t.created_time, t.trade_id))
+    book = implied_book_from_trades([], as_of=as_of_grid[0][1])
+    i = 0
+    snapshots: list[tuple[int, TradeImpliedBook]] = []
+    for hour, as_of in as_of_grid:
+        while i < len(ordered) and ordered[i].created_time <= as_of:
+            trade = ordered[i]
+            i += 1
+            if trade.is_block_trade:
+                dummy = YesSpacePrint(
+                    direction=1,
+                    yes_price=trade.yes_price,
+                    created_time=trade.created_time,
+                    count=trade.count,
+                    ticker=trade.ticker,
+                )
+                book = apply_print(book, dummy, as_of=as_of, is_block=True)
+            else:
+                book = apply_print(book, yes_space_print(trade), as_of=as_of, is_block=False)
+        book = stamp_staleness(book, as_of)
+        snapshots.append((hour, book))
+    return snapshots
+
+
 def trade_anchor_coverage(
     trades: Sequence[RawTrade],
     *,
     mapping: ObservedMapping,
     floor: float = DEFAULT_COVERAGE_FLOOR,
+    universe: Sequence[tuple[str, date]] | None = None,
+    roles: Mapping[str, str] | None = None,
 ) -> TradeAnchorCoverage:
-    pairs = sorted({(trade.ticker, trade.climate_day) for trade in trades})
+    _ = mapping  # required: caller must have passed a clean bijection
+    by_ticker: dict[tuple[str, date], list[RawTrade]] = {}
+    for trade in trades:
+        by_ticker.setdefault((trade.ticker, trade.climate_day), []).append(trade)
+    pairs = sorted(universe) if universe is not None else sorted(by_ticker)
     rows: list[tuple[str, str, str, str]] = []
     bid_stale: list[float] = []
     ask_stale: list[float] = []
     for ticker, climate in pairs:
         season = season_of(climate)
-        role = _role(ticker)
-        for hour, as_of in coverage_grid_times(climate):
-            safe = trades_at_or_before(trades, as_of)
-            book = implied_book_from_trades(
-                safe, as_of=as_of, ticker=ticker, mapping=mapping
-            )
-            if book.mid is not None:
-                state = "two_sided"
+        role = (roles or {}).get(ticker) or _role(ticker)
+        grid = sorted(coverage_grid_times(climate), key=lambda item: item[1])
+        snaps = _scan_ticker(by_ticker.get((ticker, climate), ()), as_of_grid=grid)
+        for hour, book in snaps:
+            state = _state_of(book)
+            if state == "two_sided":
                 if book.bid_staleness is not None:
                     bid_stale.append(book.bid_staleness.total_seconds())
                 if book.ask_staleness is not None:
                     ask_stale.append(book.ask_staleness.total_seconds())
-            elif book.bid is None and book.ask is None:
-                state = "missing"
-            elif book.crossed_invalidations > 0:
-                state = "crossed"
-            else:
-                state = "one_sided"
             rows.append((season, f"T-{hour}h", role, state))
 
     n = len(rows)
@@ -159,7 +202,7 @@ def trade_anchor_coverage(
         for label in (f"T-{hour}h" for hour in COVERAGE_HOURS)
         if any(row[1] == f"T-{hour}h" for row in rows)
     )
-    roles = tuple(
+    role_slices = tuple(
         _slice([row for row in rows if row[2] == role], role)
         for role in sorted({row[2] for row in rows})
     )
@@ -174,7 +217,7 @@ def trade_anchor_coverage(
         floor=floor,
         by_season=seasons,
         by_hours_to_close=hours,
-        by_bracket_role=roles,
+        by_bracket_role=role_slices,
         bid_staleness_seconds=tuple(bid_stale),
         ask_staleness_seconds=tuple(ask_stale),
     )
