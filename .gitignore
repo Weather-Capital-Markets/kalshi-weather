@@ -230,3 +230,6 @@ analysis/out/*
 !analysis/out/emission_convention_sweep.json
 !analysis/out/emission_convention_sweep_inputs.json
 !analysis/out/emission_convention_sweep.txt
+!analysis/out/crossed_rate.json
+!analysis/out/crossed_by_day.json
+!analysis/out/c1_m1_v0_min.json

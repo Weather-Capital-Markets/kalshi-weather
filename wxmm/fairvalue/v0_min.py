@@ -25,6 +25,7 @@ from wxmm.analysis.maker_taker import (
 )
 from wxmm.analysis.trades_ingest import RawTrade
 from wxmm.backtest.ledger import Ledger, canonical_json, refuse_unless_preregistered
+from wxmm.core.errors import InconsistentTakerMapping
 from wxmm.eval.scores import ranked_probability_score
 from wxmm.fairvalue.anchor import apply_logit_adjustment
 from wxmm.fairvalue.anchor_trades import (
@@ -32,6 +33,7 @@ from wxmm.fairvalue.anchor_trades import (
     assert_outcome_bookside_mapping,
     filter_trades_as_of,
 )
+from wxmm.fairvalue.crossed import CrossedDiagnostic, crossed_diagnostic
 from wxmm.fairvalue.model_trades import (
     _row_features,
     null_trade_recovery,
@@ -117,6 +119,7 @@ class V0MinReport:
     """Out-of-sample scores. Not P&L."""
 
     prereg_id: str
+    crossed: CrossedDiagnostic
     coverage: AnchorCoverage
     n_predictions: int
     mean_rps_improvement: float
@@ -131,6 +134,9 @@ class V0MinReport:
     def as_dict(self) -> dict[str, object]:
         return {
             "prereg_id": self.prereg_id,
+            "crossed_rate": asdict(self.crossed.as_specified),
+            "crossed_rate_inverted": asdict(self.crossed.inverted),
+            "crossed_verdict": self.crossed.verdict,
             "coverage": asdict(self.coverage),
             "n_predictions": self.n_predictions,
             "mean_rps_improvement": self.mean_rps_improvement,
@@ -647,11 +653,19 @@ def run_c1_m1_v0_min(
     ledger: Ledger,
     n_resample: int | None = None,
 ) -> V0MinReport:
-    """Cross-tab → coverage (reported) → walk-forward scores. Never P&L."""
+    """Cross-tab → crossed rate → coverage → walk-forward scores. Never P&L."""
     registered = refuse_unless_preregistered(dict(prereg), prereg_dir)
     mapping = assert_outcome_bookside_mapping(
         [trade for trade in trades if not trade.is_block_trade]
     )
+    # The cross-tab's off-diagonal is exactly zero, so it verified nothing about
+    # direction. The crossed-state rate is the independent check, and it runs
+    # before the first fit.
+    crossed = crossed_diagnostic(trades)
+    if crossed.verdict == "sign_inverted":
+        raise InconsistentTakerMapping(
+            f"crossed-state rate says the direction sign is backwards: {crossed.note}"
+        )
     hours = tuple(
         int(h) for h in registered.get("hours_to_close") or DEFAULT_HOURS_TO_CLOSE
     )
@@ -759,6 +773,7 @@ def run_c1_m1_v0_min(
         )
     report = V0MinReport(
         prereg_id=str(registered["prereg_id"]),
+        crossed=crossed,
         coverage=coverage,
         n_predictions=len(predictions),
         mean_rps_improvement=mean_imp,
@@ -774,6 +789,9 @@ def run_c1_m1_v0_min(
         "C1_M1_V0_MIN",
         {
             "prereg_id": report.prereg_id,
+            "crossed_rate": report.crossed.as_specified.rate,
+            "crossed_rate_inverted": report.crossed.inverted.rate,
+            "crossed_verdict": report.crossed.verdict,
             "n_predictions": report.n_predictions,
             "coverage_share": report.coverage.share,
             "mean_rps_improvement": report.mean_rps_improvement,
