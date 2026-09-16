@@ -88,6 +88,136 @@ the archive would mis-select the issuance for most market days — a 10 AM snaps
 CLINYC revision an 8 AM snapshot cannot. `[V-LOCAL]` — `python -m analysis.venue_eras` over
 all 9,364 markets, 2026-08-14. Tracked as O9.
 
+### 1.4 `taker_outcome_side` × `taker_book_side` (trade-derived anchor)
+
+C1-M1 addendum 2 must not assume `taker_book_side`'s frame of reference. The docs call it
+only "book side equivalent to `taker_outcome_side`". Direction for the YES-space estimator
+uses `taker_outcome_side` alone (`yes` → d=+1 / offer; `no` → d=−1 / bid). The cross-tab
+is a gate: it must be a clean one-to-one bijection or the estimator stops.
+
+**Addendum 2's stated pairing was wrong, and the correction matters less than what it
+reveals.** Addendum 2 asserted `yes` pairs with `ask`, reasoning that buying YES lifts a YES
+offer. The observed table is the opposite, `yes↔bid` / `no↔ask`, so `taker_book_side` is not
+in the YES-book frame addendum 2 assumed. That is a bookkeeping correction. The load-bearing
+observation is the **off-diagonal being exactly zero**: `taker_book_side` is a deterministic
+function of `taker_outcome_side`, carries zero independent information, and therefore
+**cannot corroborate the direction sign**. A bijection is a consistency gate, not a second
+source. Any code or prose that treats a clean cross-tab as sign verification is wrong.
+
+| Item | Status |
+|---|---|
+| Observed mapping | **clean anti-diagonal**. Full six-bracket ingest 2026-09-15: `yes → bid` (1,899,558), `no → ask` (1,508,830), `yes×ask` = 0, `no×bid` = 0. Earlier v0-MINIMAL probe the same day (50 markets, n=28,588) agreed: 17,813 / 10,775. Prior 2026-09-13 live sample (68,305 / 47,082) also agreed. |
+| Sample (full ingest) | Cutoff-first public pull: `GET /historical/cutoff` (`market_settled_ts=2026-07-16T00:00:00Z`), then `/historical/trades` + `/markets/trades` for every KXHIGHNY/HIGHNY ticker from 2022-12-11. n=3,405,388 non-block prints, 8,241 markets, 0 errors, 0 complement failures. `python -m analysis.v0_ingest`; `python -m analysis.v0_measure`. |
+| Sample (v0-MINIMAL probe) | `python -m analysis.probe_taker_mapping --series KXHIGHNY --max-markets 50 --limit 1000`. Gate passed before any v0-MINIMAL anchor edit. |
+| Gate | `wxmm.fairvalue.anchor_trades.assert_outcome_bookside_mapping` |
+| Information content | **None.** Off-diagonal is exactly 0, so `taker_book_side` is redundant with `taker_outcome_side`. It is not a second source and never verifies d. |
+| Direction | From `taker_outcome_side` only (`yes` → d=+1 / YES-space ask print; `no` → d=−1 / YES-space bid print). The economics are unambiguous: a taker who bought YES at `yes_price` lifted someone's offer, so the print sets the ask. |
+| Probe | `python -m analysis.probe_taker_mapping --series KXHIGHNY` |
+
+### 1.5 Trade-derived two-sided coverage (not S2 reconstructed books)
+
+Share of grid points with **both** YES-space sides valid and uncrossed, hourly
+hours-to-close T−24 … T−0, over the 8,241-market six-bracket universe (including
+zero-volume tickers, which count as missing). This is not S2's 22.4% complete
+two-sided reconstructed books on bracket-days.
+
+`[V-LOCAL]` — `python -m analysis.v0_measure`, 2026-09-15.
+
+| Slice | two-sided uncrossed | n_grid | share |
+|---|---:|---:|---:|
+| pooled | 138,366 | 206,025 | **0.6716** |
+| DJF | 34,189 | 52,425 | 0.6522 |
+| MAM | 39,216 | 55,200 | 0.7104 |
+| JJA | 38,290 | 55,200 | 0.6937 |
+| SON | 26,671 | 43,200 | 0.6174 |
+
+Floor 0.15. Below-floor = false, so the v0 fit is allowed. Also: one-sided 23,458;
+missing 18,417; crossed-resolved 25,784 (rate 0.1251).
+
+Complete **ladders** (every contract on the climate day two-sided uncrossed at a
+prediction origin) are a stricter cut: 1,303 of 6,770 labelled (day × {24,12,6,3,1}h)
+slots. That is the design matrix, not the coverage floor.
+
+### 1.6 C1-M1 v0 sign test (OOS RPS vs the null)
+
+Null is β = 0 = the normalised trade-derived ladder. Labels are CLINYC as-issued
+(1,354 unique-winner days; 0 venue-`result` disagreements after inferring the
+lower T-suffix as `less` when `strike_type` is missing). NBM =
+`UNAVAILABLE_INTERPOLATION_UNSPECIFIED`. Scores, never P&L.
+
+`[V-LOCAL]` — `python -m analysis.v0_score`, 2026-09-15. n=1,300 OOS predictions.
+Walk-forward expanding window, `min_train_days=30`, day-clustered percentile CI,
+1,000 resamples, seed 0.
+
+| | mean ΔRPS (null − model) | clustered 95% CI | n |
+|---|---:|---:|---:|
+| pooled | **−0.0401** | **[−0.0529, −0.0291]** | 1,300 |
+| DJF | −0.0503 | [−0.0847, −0.0220] | 317 |
+| MAM | −0.0351 | [−0.0564, −0.0152] | 374 |
+| JJA | −0.0360 | [−0.0511, −0.0202] | 377 |
+| SON | −0.0409 | [−0.0539, −0.0278] | 232 |
+
+Contract-level CI [−0.0490, −0.0307] is narrower, as required. Decision rule
+`sign_test_oos_rps_improvement_vs_null`: clustered interval excludes zero and is
+negative → **`harmful_check_sign`**. Flow+calendar as specified is worse than the
+trade-derived ladder. Every season CI excludes zero on the same side.
+
+Watch coefficient `signed_ofi` (last-window fit, day-resampled): 4h −0.287
+[−0.316, −0.274]; 1h −0.229 [−0.236, −0.194]; 15m −0.040 [−0.066, −0.017].
+Negative in all three windows (Alb25's counter-trade sign), but the linear
+offset still loses on RPS.
+
+#### 1.4.1 Sign verification: the crossed-state rate
+
+The only independent check on d is a property the mapping implies but the mapping did not
+manufacture. Replay prints per ticker into the trade-implied book. If d is right, ask prints
+land above bid prints most of the time and a crossed state (`ask < bid`) is occasional
+staleness. If d is inverted, the anchor is crossed nearly always and the rate approaches 100%.
+The inverted-d replay is run as a paired control on the same prints, so the two rates are
+reported together.
+
+A synthetic fixture cannot settle this — the fixture is built from the same assumption it
+would be testing. The number must come from the real corpus, and it must be reported before
+anything is fitted.
+
+One caveat on how the number is presented. Flipping d swaps which side each print
+writes, so the inverted rate is the exact complement of the as-specified rate except
+where `ask == bid`. The inverted column is a reading aid, **not corroboration**; the
+evidence is the *level* of the as-specified rate against the 0.5 coin flip, which is a
+property of the prices and not of any label field.
+
+| Item | Status |
+|---|---|
+| Diagnostic | `wxmm.fairvalue.crossed.crossed_state_rate` |
+| Runner | `python -m analysis.crossed_rate --parquet data/trades/KXHIGHNY` |
+| Gate | `wxmm.fairvalue.v0_min.run_c1_m1_v0_min` refuses to fit on `sign_inverted` |
+
+#### 1.4.2 Result: crossed rate 5.82% `[V-LOCAL]`
+
+Run 2026-09-15 on the full pulled corpus (3,405,461 prints, 6,974 tickers, 1,374
+climate days 2022-12-11 → 2026-09-15, `analysis/out/crossed_rate.json`):
+
+| Quantity | As specified (`yes` → ask) | Inverted d (mirror) |
+|---|---|---|
+| Crossed rate | **0.0582** (195,892 / 3,368,606) | 0.8277 |
+| Median implied spread | **+2.0c** | −2.0c |
+| Ties (`ask == bid`) | 384,667 | 384,667 |
+| Tickers majority-crossed | **230 / 6,974** | 6,074 / 6,974 |
+
+An earlier partial pull (2.83M prints, through the 2026-07-16 historical cutoff only)
+gave 0.0625 on the same corpus definition, so the number is not sensitive to the
+sample boundary.
+
+**The sign is confirmed.** Trade-implied ask sits above trade-implied bid 94.2% of the
+time and the median trade-implied spread is positive, which is what a correctly oriented
+anchor looks like. An inverted sign would have driven this toward 100% and the median
+spread negative. Crossing at 5.8% is the staleness the anchor's docstring predicts — the
+two sides are drawn from different instants — not a direction error. Only 3.3% of tickers
+are majority-crossed.
+
+This was run before the first fit, and the fit path refuses to proceed on a
+`sign_inverted` verdict.
+
 ---
 
 ## 2. NBM gridded archive (AWS)
@@ -121,9 +251,18 @@ all 9,364 markets, 2026-08-14. Tracked as O9.
 
 ### 2.3 Cycles & latency
 
-- Hourly cycles; text-bulletin publication ~30–50 min after nominal cycle time; primary
+- Hourly cycles; **text-bulletin** publication ~30–50 min after nominal cycle time; primary
   full-content cycles 01Z/07Z/13Z/19Z. `[REPORTED]` (VLab text-products page, quoted round 1)
-  `(verify against own logger timestamps once running)`.
+  — applies to **text bulletins only**, not qmd grib percentile products.
+- **qmd grib percentile products (CONUS window max/min):** measured prospective
+  first-availability on NOMADS across 3 cycles (404→200 polling, Session 6b-fix) with AWS
+  `Last-Modified` corroboration. `[V-LOCAL]` — 2026-08-21/22:
+  - median **435 min**, p90 **441 min**, max **453 min** after nominal cycle time
+  - Method: `analysis/nbm_availability_watch.py` on NOMADS; Panel A AWS Last-Modified ~438 min
+  - **Vintage rule (Session 7e):** T−24h snapshot selects latest 00Z/12Z cycle with
+    `publication_utc(nominal, 441) < snapshot` and idx-confirmed 12Z–06Z(+1) max window;
+    expected cycle **D−1 12Z / f042** (~24h forecast lead), verified empirically per day
+  - Prior 300-day backfill at 60 min / D 00Z f030 is **void** (future information at snapshot)
 
 ---
 

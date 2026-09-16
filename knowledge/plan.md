@@ -1,6 +1,8 @@
 # plan.md — Kalshi KXHIGHNY session 2 execution plan
 
-**Status:** ACTIVE — source of truth for run order, gates, and K1 pre-registration.
+**Status:** ACTIVE — source of truth for **research** run order, gates, and K1
+pre-registration. Trading-stack mechanics live in `wxmm/` (Stages B1–B3) and do
+**not** ratify edge or lift these gates. See §11.
 **Owner:** root chat ratifies; this file records what landed in code.
 
 ## 1. Scope
@@ -62,8 +64,18 @@ validity machinery; the census stayed frozen until v3 was registered here.
 | Polymarket logger | **Done** — Gamma `nyc-daily-weather` ladder + CLOB books; PR #10 on `main` |
 | VPS dual logger | **Runbook** — `scripts/vps-setup.sh`; `scripts/verify-setup.sh` for local smoke |
 | Census execution | **Frozen** — awaiting v3 date in root chat + VPS `--status` |
-| PR #2 | Bulk backfill branch ready to merge after this housekeeping |
-| Open (load-bearing) | VPS `--status` (K4 + forward quote validation); root-chat ratification date; Polymarket; Gate 0 |
+| Open (load-bearing) | VPS `--status` (K4 + forward quote validation); root-chat ratification date; Gate 0 |
+
+### Current stack (2026-09-04 housekeeping)
+
+`main` through 2026-08-21 was PR #21 (availability watch). Sessions 7a–7e and 6c lived on stacked draft PRs (#22–#27). This housekeeping branch lands that work on one reviewable tip, with:
+
+- NBM vintage **441/453 min**, D−1 12Z / f042, `decoded_v441/` (7e)
+- `forecast_vs_market.py` code (6c; **0 comparison rows** until laptop `markets_history`/`candlesticks` exist)
+- Test hardening (7c) and audit reports (7a/7b/7d)
+- **NBM progress DB isolated:** `nbm_archive.backfill_db` = `data/backfill_v441.sqlite`; Kalshi/CLINYC/ASOS stay on `storage.backfill_db` = `data/backfill.sqlite`
+
+Do **not** delete void `data/nbm/decoded/` until 6c has been run against `decoded_v441/` on a machine that also has the frozen Kalshi corpus.
 
 ## 5. Session 2.5 — instrument calibration + forward-validation tooling
 
@@ -83,6 +95,18 @@ asos_obs → clockb_check → [write Clock B conclusion to data-sources.md]
 window_mismatch (K2 prep)
 validate_emission_forward (run when VPS alive; rsync or on-box)
 ```
+
+**C1-X1 (2026-09-13) — not blocked by Stage 0.** Maker/taker returns on the
+public trade record (`wxmm/analysis/`, `wxmm/eval/flb.py`). Reads no book and
+no candle. Prereg `prereg/c1-x1-v1.yaml` (go/no-go still `FILL_IN`; `run()`
+refuses until the root chat fills them). X1a without X1b is uninterpretable.
+
+**Stage 0 (C1-M1) — before any VPS 12-way sweep.** Decision bands locked in
+`prereg/c1-m1-v1-stage0-decision.yaml`: max≥0.60 → JOIN_BUG / full_corpus;
+0.10≤max<0.60 → PARTIAL (no auto-branch; `winner_match_distribution` by market/day);
+max<0.10 → LOW then well-posedness check before falsified vs ILL_POSED.
+Orphan prose 0.9%/2026 is unreproducible (`knowledge/venue-facts.md` §1.12); do not
+recover its window. Declared window: 2026-08-19 → latest complete climate day.
 
 **Code landed 2026-08-14** — 71 tests passing; census still not executed.
 
@@ -145,25 +169,22 @@ by price region). Streams one market at a time to avoid loading the full corpus 
 | Item | Script | Notes |
 |---|---|---|
 | A Window mismatch K2 | `analysis/window_mismatch.py` | `window_mismatch_k2.csv` + PNG: CLI lst/ldt + ASOS KNYC outside 12Z–06Z; conditional `delta_f`; bracket disagreement (`whole_f`); both clock hypotheses, no pick |
-| B NBM idx parser | `ingestion/nbm_idx.py` | `.idx` line parse, byte ranges, vintage T−24h (60 min latency), era/version tags |
-| C NBM archive | `ingestion/nbm_archive.py` | AWS `noaa-nbm-grib2-pds`; range-only via `.idx`; `--probe` / `--dry-run` / resumable backfill; nearest gridpoint for O8 |
+| B NBM idx parser | `ingestion/nbm_idx.py` | `.idx` line parse, byte ranges, empirical vintage (441/453 min qmd latency), era/version tags |
+| C NBM archive | `ingestion/nbm_archive.py` | AWS `noaa-nbm-grib2-pds`; range-only via `.idx`; `--vintage-calibrate` / `--probe` / `--dry-run` / resumable backfill; nearest gridpoint for O8 |
 
 ```text
-window_mismatch (K2 CSV) → nbm_archive --probe (paste output before bulk)
-nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded)
+window_mismatch (K2 CSV) → nbm_archive --vintage-calibrate → nbm_archive --probe
+nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded_v441)
 ```
 
-NBM retrospective scope: **300 stratified climate days** (season × v4 early/late sub-era)
-with **9 percentile levels** (P10–P90 by 10) of the 18-h max-window ladder — not the full
-~1,700-day × 99-level corpus. `nbm_archive --dry-run` calibrates bytes from `.idx` sidecars
-only; bulk backfill waits on a sane estimate.
+NBM retrospective scope: **300 stratified climate days** (season × v4 early/late sub-era,
+seed **43**, start **2022-12-11**) with **9 percentile levels** (P10–P90 by 10) of the
+climate max-window ladder — not the full ~1,700-day × 99-level corpus. Prior backfill at
+`data/nbm/decoded/` (60 min / D 00Z f030) is **void**; corrected writes go to
+`data/nbm/decoded_v441/`. `nbm_archive --dry-run` calibrates bytes from empirical vintage
+`.idx` sidecars only; bulk backfill waits on approval after probe + dry-run.
 
-```text
-window_mismatch (K2 CSV) → nbm_archive --probe (paste output before bulk)
-nbm_archive --dry-run → nbm_archive (resumable backfill to data/nbm/decoded)
-```
-
-Eligible span `2021-08-05` → `2026-05-03` (hard cut 2026-05-04). cfgrib +
+Eligible span `2022-12-11` → `2026-05-03` (hard cut 2026-05-04). cfgrib +
 pyarrow in `requirements-analysis.txt`. Raw `nbm_qmd` JSONL per percentile message.
 
 ## 10. Session 6b — K2 blocking prerequisites (bracket structure + NBM latency)
@@ -173,14 +194,257 @@ pyarrow in `requirements-analysis.txt`. Raw `nbm_qmd` JSONL per percentile messa
 | Item | Script | Notes |
 |---|---|---|
 | A Bracket enumeration | `analysis/bracket_enumeration.py` | Frozen `markets_history` only; derive width, alignment, contiguity, tails; `bracket_structure.csv` |
-| B NBM latency check | `analysis/nbm_latency_check.py` | HEAD on AWS qmd `.idx`; mirror lag vs 60 min assumption; **hard stop if p90 > 60** |
+| B NBM latency check | `analysis/nbm_latency_check.py` | HEAD on AWS qmd `.idx`; mirror lag vs 441 min assumption (config default); **hard stop if p90 > assumed** |
 | B-fix Availability watch | `analysis/nbm_availability_watch.py` | Prospective first-HTTP-200 poll AWS + NOMADS; resolves Last-Modified vs real lag (**blocking K2**) |
 
 ```text
 bracket_enumeration → nbm_latency_check → nbm_availability_watch → (6c gated)
 ```
 
-Do **not** build forecast-vs-market comparison until A and B pass. If B hard-stops,
-re-run `nbm_archive` with corrected latency before 6c. **Do not re-run backfill**
-until B-fix settles first-availability vs Last-Modified.
+Do **not** build forecast-vs-market comparison until A and B pass. B-fix settled qmd
+latency at p90 **441 min** (max **453 min**); Session **7e** re-ran `nbm_archive` with
+empirical D−1 12Z / f042 vintage + idx-confirmed max window (300/300 days). Keep the
+void `data/nbm/decoded/` tree until 6c validates `decoded_v441/`.
+
+## 11. Session 7e — NBM vintage correction + backfill re-run
+
+**Status:** DONE — 300/300 climate days backfilled to `data/nbm/decoded_v441/` (seed 43, start 2022-12-11). All days use D−1 12Z / f042 at 441 min latency; 0 skips.
+
+| Item | Module | Notes |
+|---|---|---|
+| A Empirical vintage | `ingestion/nbm_idx.py` | Candidate pool at max latency; V1 assert at p90; idx-confirmed climate max window |
+| B Ladder repair | `ingestion/nbm_ladder.py` | Dedupe `(climate_date, percentile_level)`; isotonic PAV for non-monotone quantiles |
+| C Archive wiring | `ingestion/nbm_archive.py` | `--vintage-calibrate`; writes `decoded_v441/` + `backfill_v441.sqlite` |
+| D Config | `ingestion/config.yaml` | `publication_latency_min: 441`, `start_date: 2022-12-11`, `sample_seed: 43` |
+
+```text
+nbm_archive --vintage-calibrate → nbm_archive --probe → nbm_archive --dry-run → nbm_archive (done 2026-08-24)
+```
+
+## 12. Session 6c — NBM forecast vs market at T-24h
+
+**Status:** CODE LANDED — measurement **not run**. Cloud/VPS have no `markets_history`/`candlesticks`; laptop fresh clone has no `data/`. No Brier/edge/calibration numbers exist yet.
+
+| Item | Script | Notes |
+|---|---|---|
+| A Forecast vs market | `analysis/forecast_vs_market.py` | NBM bracket probs vs Kalshi carry-forward mid at T-24h; Brier + edge distributions |
+| B Bracket structure | `analysis/bracket_enumeration.py` | Prerequisite metadata (`bracket_structure.csv`) |
+
+```text
+bracket_enumeration → forecast_vs_market
+```
+
+Uses `decoded_v441/` only (void `decoded/` excluded). Primary band 10–90¢ matches K1.
+Measurement only — no pass/fail verdict on forecast skill vs market.
+Windows: `scripts/run-session6c.cmd` (checks `markets_history`, `candlesticks`, `decoded_v441`).
+
+## 13. Sessions 7a–7d — audits (reports landed)
+
+| Session | Artifact | Status |
+|---|---|---|
+| 7a correctness | `knowledge/audit-correctness.md` | Report; C1 vintage remediated by 7e; C2 empty-CLINYC remediated by 7c; C3 empty-lag hard-stop still open |
+| 7b reproducibility | `knowledge/audit-reproducibility.md` | Report; published corpus not regenerable without laptop `data/` |
+| 7c test hardening | `ingestion/validate_units.py` + analysis/ingestion guards | Code landed; CI tests include regression fixtures |
+| 7d logger storage | `knowledge/audit-logger-storage.md` + `scripts/measure_logger_storage.py` | Report only; ~267 MB/day, `pm_orderbook` 75%; no format change |
+
+## 13. Session 8 — S2 relative-value census
+
+**Status:** FAILED — S2 v1 dated 2026-08-30 (V4 amended as a threshold branch from coverage facts only). Coverage 2026-08-29. Violations + penny-exclusion measured after the dated text. Verdict 2026-08-30: FAIL (after-fee slack and ROC; frequency MARGINAL). Strategy DEAD.
+
+| Item | Module | Notes |
+|---|---|---|
+| A Coverage | `analysis/relative_value_census.py --phase coverage` | Complete-book rates T−36/24/12/6h; no sums |
+| B Pre-registration | this file, S2 v1 | Written 2026-08-30 after coverage, before magnitudes |
+| C Violations | `--phase violations` | Executable sums, persistence ≥2 candles, after-fee slack, ROC, penny-exclusion |
+| D Verdict | this file, S2 verdict | 2026-08-30 FAIL; two independent FAIL clauses |
+
+### S2 pre-registration v1 (date: 2026-08-30)
+
+> **S2 PRE-REGISTRATION v1 — 2026-08-30**
+> Ratified by: Eugenio
+> Written after coverage rates were seen, BEFORE any violation magnitude exists.
+>
+> QUESTION: Do Kalshi's mutually-exclusive, exhaustive daily temperature
+> brackets exhibit executable coherence violations (sum of asks < 1, or sum of
+> bids > 1) frequently and largely enough to constitute a business? S2 requires
+> no forecast; K2's failure does not bear on it.
+>
+> UNIVERSE: all KXHIGHNY/HIGHNY climate days from 2022-12-11 (stable 6-bracket
+> regime), 1,340 six-bracket days. Carry-forward quotes, two-sided defined as
+> bid >= 1c and ask <= 99c, snapshot inside the trading window.
+>
+> COVERAGE (measured, recorded before thresholds):
+>   T-36h 34.5% complete books (457/1,325)
+>   T-24h 22.4% (299/1,337)
+>   T-12h  1.0% (14/1,340)
+>   T- 6h  0.1% (2/1,340)
+> Mean two-sided legs 4.77 -> 4.23 -> 2.93 -> 0.59. At T-6h, 918/1,340 days have
+> ZERO two-sided legs.
+>
+> PRIMARY HORIZON: T-24h. T-12h and T-6h are EXCLUDED from threshold evaluation
+> (n=14 and n=2); they are reported descriptively only. T-36h is reported as a
+> secondary horizon.
+>
+> PRIMARY STATISTIC: violation-days per year, defined as
+>   (complete-book rate) x (fraction of complete books with a violation
+>    surviving >= 2 consecutive candles) x 365
+> Persistence is required: a single-candle crossing is a microstructure artifact,
+> not a tradeable state.
+>
+> SECONDARY, REQUIRED FOR ANY PASS: median slack among persistent violations,
+> after the published quadratic taker fee per leg, and the implied return on
+> collateral under the buy-the-set formula (capital = sum_ask).
+>
+> THRESHOLDS:
+>   PASS      : >= 30 violation-days/yr AND median after-fee slack >= 2c AND
+>               per-trade ROC >= 0.5% AND V4 tradeability.
+>               Rationale: 30 days/yr at ~2c on a basket is the minimum that
+>               could contribute meaningfully against Gate 0's $24,000, given
+>               measured turnover of ~$2,400 premium per climate day.
+>   MARGINAL  : violation-days 10-30/yr, or slack 1-2c. Report, do not act;
+>               the pre-registered response is a depth measurement on logger
+>               books, NOT reinterpretation.
+>   FAIL      : < 10 violation-days/yr OR median after-fee slack < 1c OR
+>               ROC < 0.5% OR V4 not tradeable.
+>
+> VALIDITY CONDITIONS:
+>   V1. Violations counted only on complete books (all six legs two-sided).
+>       A five-leg book is not a coherent basket.
+>   V2. Persistence >= 2 consecutive candles required, as above.
+>   V3. Slack must be reported both raw and after the published quadratic taker
+>       fee ceil_6dp(0.07*P*(1-P)) applied per leg. The live fee page was not
+>       re-verified this session (Cloudflare-blocked); if the published schedule
+>       is later found stale, this pre-registration is void.
+>   V4. Report the primary statistic separately on (a) all complete books and
+>       (b) the all-legs-in-10-90c subset (n=12 at T-24h, n=14 at T-36h). A
+>       PASS requires the violation to be present in (b), or to be present in
+>       (a) with slack that survives excluding any leg quoted at <=1c or >=99c.
+>       A violation whose slack derives from a penny leg is recorded as NOT
+>       tradeable regardless of magnitude. Given n~12, subset (b) cannot
+>       support a statistical claim -- it is a necessary check, not a
+>       sufficient one.
+>   V5. Depth is NOT measured. Candles carry no resting size. Any PASS is
+>       therefore conditional on a subsequent logger-based depth check, and no
+>       capital is committed before it.
+>
+> RECORDED IN ADVANCE: the coverage pattern already constrains the outcome. At
+> 22.4% complete books at T-24h, even a 20% violation rate among them yields
+> ~16 days/yr, which lands MARGINAL. A PASS requires either a high violation
+> rate or the T-36h horizon carrying it. Note also that the horizons with the
+> best return-on-capital economics (T-12h, T-6h) are exactly where complete
+> books do not exist -- the strategy's best regime is structurally empty. A
+> further constraint is now known: 71% of T-24h complete books contain a <=1c
+> leg, and only 12/299 have all six legs in the tradeable band. The population
+> of genuinely executable baskets is therefore roughly 12-14 per horizon
+> across three-plus years, i.e. ~4/yr. Unless violations concentrate
+> overwhelmingly in that small subset, the violation-days-per-year statistic
+> will land FAIL on tradeability even if raw slack looks large.
+>
+> INTEGRITY NOTE: coverage was known when these thresholds were set; violation
+> magnitudes were not. The thresholds are calibrated to Gate 0 arithmetic
+> ($24,000/yr against ~$2,400 median daily premium), not to what the data is
+> likely to show.
+
+### S2 verdict (date: 2026-08-30)
+
+> **S2 VERDICT — 2026-08-30**
+> Recorded by: Eugenio
+> Scored against S2 pre-registration v1, dated before violation magnitudes existed.
+>
+> RESULT: S2 FAILS.
+>
+> T-24h (PRIMARY), universe 1,340 six-bracket days from 2022-12-11:
+>   Branch (a), all complete books (299/1,337 = 22.4%):
+>     buy-the-set violations: 0
+>     persistent sell violations: 77 -> 21.02 violation-days/yr  [MARGINAL band]
+>     median after-fee slack: -2.27c  (raw +3.0c; 8/77 positive after fee) [FAIL]
+>     median buy-set ROC: -12.3%                                          [FAIL]
+>   Branch (b), all six legs in 10-90c: n=12. Zero violations of any kind.
+>   Penny-exclusion: of 77 persistents, 62 survive dropping <=1c/>=99c legs;
+>     15 derive slack solely from a penny leg and are discarded as untradeable.
+>
+> T-36h (secondary): 15.15 days/yr; after-fee slack -2.0c / -3.0c; (b) n=14 with
+>   one persistent sell. Cannot carry a PASS.
+> T-12h / T-6h: 3 and 1 persistent sells, negative after-fee slack. Structurally
+>   empty as pre-registered (complete-book rates 1.0% and 0.1%).
+>
+> CLAUSES FIRED: frequency MARGINAL; after-fee slack FAIL; ROC FAIL. Two
+> independent FAIL clauses. V5 never opened -- ask-size present on 0% of
+> complete books, so no depth check was reachable and no capital follows.
+>
+> MECHANISM: there are no buy-the-set violations. The only raw edge is selling
+> into a ~3c overround, and the published quadratic taker fee
+> (ceil_6dp(0.07*P*(1-P)), ~1.75c/leg at mid) flips the median negative. The
+> persistent 1.03 mid-sum is approximately the exchange fee viewed from outside
+> the book -- not a mispricing.
+>
+> RECORDED PREDICTION AND CORRECTION: the pre-registration predicted FAIL on
+> tradeability (too few executable baskets). That constraint is real -- (b) is
+> empty, the executable population is ~4/yr -- but it is NOT what caused the
+> failure. Frequency reached MARGINAL. The fee caused the failure. The
+> prediction was right on outcome, wrong on mechanism; recorded because the
+> distinction matters for what follows.
+>
+> WHAT THIS DOES NOT CLOSE: the measurement is of TAKER execution, which is what
+> candles support. A maker pays $0.00 on weather (verified 2026-08-15) and would
+> not have the +3.0c flipped. That is not a rescue of S2 as specified -- a maker
+> cannot cross the whole basket at once -- but it does mean the overround is a
+> spread-capture observation, not a relative-value one, and it belongs to K4.
+>
+> STATUS OF THE STRATEGY SET AFTER S2:
+>   S1 recalibration      DEAD (K1 taker, K2 maker)
+>   S2 relative value     DEAD (this verdict)
+>   S3 weather-edge       DEAD (K2)
+>   Pure spread capture   UNDETERMINED -- the only surviving candidate, and the
+>                         sole remaining question in the project. K4's domain.
+
+## 14. Session 9 — GEFS ensemble resolution test
+
+**Status:** MEASUREMENT RAN 2026-08-31 — 300/300 GEFS days decoded (D−1 18Z vintage,
+`publication_latency_min=300`). Distributions in `analysis/out/gefs_murphy_brier.csv`
+and `analysis/out/gefs_resolution_test.csv`. No verdict in this file; reading is in
+the root chat against [`knowledge/k2-gefs-prereg-v1.md`](k2-gefs-prereg-v1.md).
+
+| Item | Module | Notes |
+|---|---|---|
+| A Latency probe | `ingestion/gefs_archive.py --latency-probe` | First HTTP 200 on unpublished cycles; ≥4 cycles; pin p90; **STOP for OK** |
+| B Probe / dry-run | `--probe` / `--dry-run` | One-day decode; idx-only bytes; stop if >~30 GB |
+| C Backfill | `--backfill` | `data/gefs/decoded/` + `data/backfill_gefs.sqlite`; never NBM dirs |
+| D Measurement | `analysis/gefs_resolution_test.py` | Murphy GEFS/NBM/market on joined K2 T−24h rows; distributions only |
+
+```text
+k2-gefs-prereg-v1.md → gefs_archive --latency-probe → [p90 OK]
+→ --probe → --dry-run → [bytes OK] → backfill → gefs_resolution_test
+```
+
+Do **not** assume GEFS publication latency. Do **not** use accumulating 0–N hour
+TMAX for the climate-day max (contaminates hours before 05Z). Instantaneous
+3-hourly 2 m TMP only.
+
+## 11. WXMM instrument (Stages B1–B3) — orthogonal to K1/K2
+
+**Status:** IN TREE — mechanics only. Does **not** execute the K1 census, lift
+the K2 gate, or ship a fair-value model.
+
+Thesis: **instrument before edge**. `wxmm/` encodes as-of reads, LST climate
+days, non-fungible KNYC vs KLGA underlyings, human send-gate, last-in-queue
+paper fills, and a fake venue. `NullFairValue` and `strategies.idle.Idle` are
+the only shipped policies. Live and replay share `wxmm.core.view.build_market_view`.
+
+Two consumers of that view are **not** the same policy:
+
+- Replay: `Strategy.on_snapshot` (Idle returns `[]`).
+- Live quote candidates: `wxmm.decide.engine.propose` (at-touch makers, no
+  fair value, no send).
+
+Identical views do not imply identical orders until a strategy is wired on
+both sides. Cross-underlying size requires an explicit `BasisModel` and never
+reports residual 0; positions are never aggregated across non-fungible
+underlyings.
+
+Research gates in §§3–10 still bind any capital or edge claim. Kalshi maker
+fee $0 is modelled; `require_for_capital` on that fact expires the next day
+and blocks the ops checklist until re-verified. Polymarket fills cannot be
+priced until the fee schedule is verified.
+
 

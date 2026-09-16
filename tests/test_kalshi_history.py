@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from ingestion.client import RequestResult
 from ingestion.kalshi_history import HistoryBackfill
 from ingestion.state import get_candle_progress, init_backfill_schema, set_candle_progress
@@ -201,5 +203,27 @@ def test_progress_advances_only_after_raw_write(tmp_path: Path) -> None:
         progress = get_candle_progress(app.conn, "KXHIGHNY-26JUL04-T90")
         assert progress is None
         app.writer.write = original_write  # type: ignore[method-assign]
+    finally:
+        app.close()
+
+
+def test_missing_close_time_raises_instead_of_wall_clock(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    app = HistoryBackfill(config)
+    app.client = ScriptedClient(config)
+    try:
+        from ingestion.state import upsert_history_market
+
+        upsert_history_market(
+            app.conn,
+            ticker="KXHIGHNY-26JUL04-T90",
+            series_ticker="KXHIGHNY",
+            open_time="2026-07-02T10:00:00Z",
+            close_time=None,
+            status="settled",
+            enumerated_utc=utc_now_iso(),
+        )
+        with pytest.raises(RuntimeError, match="missing close_time"):
+            app.backfill_candles()
     finally:
         app.close()

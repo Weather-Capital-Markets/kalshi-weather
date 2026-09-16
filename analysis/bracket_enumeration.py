@@ -10,11 +10,11 @@ than assuming 2°F bins from the working record.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -24,121 +24,24 @@ import pandas as pd
 from analysis.spread_census import load_markets, ticker_climate_date
 from analysis.venue_eras import change_points
 from ingestion.config_loader import load_config
+from ingestion.validate_units import assert_non_empty_frame
+from wxmm.settlement.brackets import (
+    SUBTITLE_KEYS,
+    ParsedStrike,
+    parse_market_strike,
+)
 
 logger = logging.getLogger(__name__)
 
-BETWEEN_SUBTITLE = re.compile(
-    r"(\d+)\s*(?:°|deg)?\s*to\s*(\d+)\s*(?:°|deg)?",
-    re.IGNORECASE,
-)
-TAIL_ABOVE = re.compile(
-    r"(\d+)\s*(?:°|deg)?\s*or\s*(?:above|higher)",
-    re.IGNORECASE,
-)
-TAIL_BELOW = re.compile(
-    r"(\d+)\s*(?:°|deg)?\s*or\s*(?:below|lower)",
-    re.IGNORECASE,
-)
 TICKER_SUFFIX = re.compile(r"-([TB][A-Z0-9.]+)$", re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class ParsedStrike:
-    role: str  # between | greater | less
-    floor_f: int | None
-    cap_f: int | None
-    width_f: int | None
-    strike_source: str
-
-
 def _label_text(market: dict[str, Any]) -> str:
-    for key in ("yes_sub_title", "subtitle", "title"):
+    for key in SUBTITLE_KEYS:
         raw = market.get(key)
         if isinstance(raw, str) and raw.strip():
             return raw.strip()
     return ""
-
-
-def _float_strike(value: Any) -> int | None:
-    if value is None or value == "":
-        return None
-    try:
-        return int(round(float(value)))
-    except (TypeError, ValueError):
-        return None
-
-
-def parse_strike_from_subtitle(text: str) -> ParsedStrike | None:
-    match = BETWEEN_SUBTITLE.search(text)
-    if match:
-        low = int(match.group(1))
-        high = int(match.group(2))
-        return ParsedStrike(
-            role="between",
-            floor_f=low,
-            cap_f=high,
-            width_f=high - low + 1,
-            strike_source="subtitle",
-        )
-    match = TAIL_ABOVE.search(text)
-    if match:
-        threshold = int(match.group(1))
-        return ParsedStrike(
-            role="greater",
-            floor_f=threshold,
-            cap_f=None,
-            width_f=None,
-            strike_source="subtitle",
-        )
-    match = TAIL_BELOW.search(text)
-    if match:
-        threshold = int(match.group(1))
-        return ParsedStrike(
-            role="less",
-            floor_f=None,
-            cap_f=threshold,
-            width_f=None,
-            strike_source="subtitle",
-        )
-    return None
-
-
-def parse_market_strike(market: dict[str, Any]) -> ParsedStrike | None:
-    strike_type = str(market.get("strike_type") or "").strip().lower()
-    floor_f = _float_strike(market.get("floor_strike"))
-    cap_f = _float_strike(market.get("cap_strike"))
-
-    if strike_type == "between" and floor_f is not None and cap_f is not None:
-        return ParsedStrike(
-            role="between",
-            floor_f=floor_f,
-            cap_f=cap_f,
-            width_f=cap_f - floor_f + 1,
-            strike_source="metadata",
-        )
-    if strike_type == "greater" and floor_f is not None:
-        return ParsedStrike(
-            role="greater",
-            floor_f=floor_f,
-            cap_f=None,
-            width_f=None,
-            strike_source="metadata",
-        )
-    if strike_type == "less" and cap_f is not None:
-        return ParsedStrike(
-            role="less",
-            floor_f=None,
-            cap_f=cap_f,
-            width_f=None,
-            strike_source="metadata",
-        )
-
-    subtitle = _label_text(market)
-    if subtitle:
-        parsed = parse_strike_from_subtitle(subtitle)
-        if parsed is not None:
-            return parsed
-    return None
 
 
 def classify_ticker_suffix(ticker: str) -> str:
@@ -349,15 +252,19 @@ def verdict_on_two_degree_hypothesis(regimes: pd.DataFrame, daily: pd.DataFrame)
     return "era_dependent"
 
 
-def run(config: dict[str, Any], out_dir: Path) -> int:
+def run(config: dict[str, Any], out_dir: Path, *, markets_json: Path | None = None) -> int:
     storage = config["storage"]
     raw_dir = Path(storage["raw_dir"])
     cfg = config.get("bracket_enumeration") or {}
     start_date = date.fromisoformat(str(cfg.get("start_date") or "2021-08-05"))
 
-    markets = load_markets(raw_dir)
+    if markets_json is not None and markets_json.exists():
+        loaded = json.loads(markets_json.read_text(encoding="utf-8"))
+        markets = [m for m in loaded if isinstance(m, dict)] if isinstance(loaded, list) else []
+    else:
+        markets = load_markets(raw_dir)
     if not markets:
-        print("no markets_history data in raw_dir")
+        print("no markets_history data in raw_dir and no --markets-json")
         return 1
 
     daily = build_daily_table(markets, start_date=start_date)
@@ -370,6 +277,7 @@ def run(config: dict[str, Any], out_dir: Path) -> int:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "bracket_structure.csv"
+    assert_non_empty_frame(regimes, what="bracket_structure.csv")
     regimes.to_csv(csv_path, index=False)
 
     print(f"climate_days={len(daily)} markets={len(markets)} start={start_date.isoformat()}")
@@ -395,6 +303,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Kalshi bracket structure by era")
     parser.add_argument("--config", type=Path, default=None)
     parser.add_argument("--out-dir", type=Path, default=None)
+    parser.add_argument(
+        "--markets-json",
+        type=Path,
+        default=None,
+        help="API-enumerated markets JSON from analysis.pull_corpus",
+    )
     return parser
 
 
@@ -405,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     default_out = (config.get("bracket_enumeration") or {}).get("out_dir") or "analysis/out"
     out_dir = args.out_dir or Path(default_out)
-    return run(config, out_dir)
+    return run(config, out_dir, markets_json=args.markets_json)
 
 
 if __name__ == "__main__":

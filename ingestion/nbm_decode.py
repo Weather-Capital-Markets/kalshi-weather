@@ -12,6 +12,7 @@ from typing import Any
 
 from ingestion.nbm_grid import nearest_on_mesh
 from ingestion.nbm_idx import kelvin_to_fahrenheit
+from ingestion.validate_units import validate_temperature_f
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ def decode_percentile_value_f(grib_bytes: bytes) -> float | None:
                 return None
             var = data_vars[0]
         value = float(ds[var].values.flatten()[0])
-        return kelvin_to_fahrenheit(value)
+        return validate_temperature_f(kelvin_to_fahrenheit(value), label="NBM TMP")
 
 
 def _coord_names(ds: Any) -> tuple[str, str] | None:
@@ -129,12 +130,29 @@ def decode_message_at_gridpoint(
     row: int,
     col: int,
 ) -> float | None:
+    decoded = decode_grid_cells(grib_bytes, [("cell", row, col)])
+    return decoded.get("cell")
+
+
+def decode_grid_cells(
+    grib_bytes: bytes,
+    cells: list[tuple[str, int, int]],
+) -> dict[str, float | None]:
+    """Decode named (row, col) cells from one grib message (opens cfgrib once)."""
+    out: dict[str, float | None] = {name: None for name, _row, _col in cells}
     with open_grib_datasets(grib_bytes) as datasets:
         if not datasets:
-            return None
+            return out
         ds = datasets[0]
         var = next(iter(ds.data_vars))
         values = ds[var].values
-        if values.ndim == 2:
-            return kelvin_to_fahrenheit(float(values[row, col]))
-        return kelvin_to_fahrenheit(float(values.flatten()[0]))
+        for name, row, col in cells:
+            try:
+                if values.ndim == 2:
+                    raw = kelvin_to_fahrenheit(float(values[row, col]))
+                else:
+                    raw = kelvin_to_fahrenheit(float(values.flatten()[0]))
+                out[name] = validate_temperature_f(raw, label="NBM TMP")
+            except (IndexError, TypeError):
+                out[name] = None
+    return out

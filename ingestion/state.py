@@ -204,6 +204,11 @@ CREATE TABLE IF NOT EXISTS nbm_climate_day_progress (
   complete INTEGER NOT NULL DEFAULT 0,
   updated_utc TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS gefs_climate_day_progress (
+  climate_date TEXT PRIMARY KEY,
+  complete INTEGER NOT NULL DEFAULT 0,
+  updated_utc TEXT NOT NULL
+);
 """
 
 
@@ -259,6 +264,28 @@ def nbm_day_complete(conn: sqlite3.Connection, climate_date: str) -> bool:
         (climate_date,),
     ).fetchone()
     return bool(row and row["complete"])
+
+
+def gefs_day_complete(conn: sqlite3.Connection, climate_date: str) -> bool:
+    row = conn.execute(
+        "SELECT complete FROM gefs_climate_day_progress WHERE climate_date = ?",
+        (climate_date,),
+    ).fetchone()
+    return bool(row and row["complete"])
+
+
+def set_gefs_day_complete(conn: sqlite3.Connection, climate_date: str, updated_utc: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO gefs_climate_day_progress (climate_date, complete, updated_utc)
+        VALUES (?, 1, ?)
+        ON CONFLICT(climate_date) DO UPDATE SET
+            complete = 1,
+            updated_utc = excluded.updated_utc
+        """,
+        (climate_date, updated_utc),
+    )
+    conn.commit()
 
 
 def set_nbm_day_complete(conn: sqlite3.Connection, climate_date: str, updated_utc: str) -> None:

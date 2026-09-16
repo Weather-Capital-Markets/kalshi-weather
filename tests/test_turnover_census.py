@@ -108,6 +108,7 @@ def test_aggregate_market_day_premium_band_and_vol_concentration() -> None:
     assert all_band["contracts_traded"] == pytest.approx(20.0)
     assert all_band["premium_traded"] == pytest.approx(10 * 0.45 + 4 * 0.03 + 6 * 0.45)
     assert all_band["share_vol_last_1h"] == pytest.approx(10 / 20)
+    assert all_band["vol_last_1h"] == pytest.approx(10.0)
     assert all_band["share_vol_last_3h"] == pytest.approx(14 / 20)
     assert all_band["share_vol_last_6h"] == pytest.approx(20 / 20)
     assert all_band["time_bucket_volumes"]["0-1h"] == pytest.approx(10.0)
@@ -179,6 +180,9 @@ def test_build_climate_day_table_bracket_concentration() -> None:
                 "share_vol_last_1h": 0.5,
                 "share_vol_last_3h": 0.7,
                 "share_vol_last_6h": 1.0,
+                "vol_last_1h": 10.0,
+                "vol_last_3h": 14.0,
+                "vol_last_6h": 20.0,
             },
             {
                 "ticker": "KXHIGHNY-26JUL04-T91",
@@ -191,6 +195,9 @@ def test_build_climate_day_table_bracket_concentration() -> None:
                 "share_vol_last_1h": 0.25,
                 "share_vol_last_3h": 0.5,
                 "share_vol_last_6h": 0.8,
+                "vol_last_1h": 2.0,
+                "vol_last_3h": 4.0,
+                "vol_last_6h": 6.4,
             },
             {
                 "ticker": "KXHIGHNY-26JUL04-T92",
@@ -203,6 +210,9 @@ def test_build_climate_day_table_bracket_concentration() -> None:
                 "share_vol_last_1h": float("nan"),
                 "share_vol_last_3h": float("nan"),
                 "share_vol_last_6h": float("nan"),
+                "vol_last_1h": 0.0,
+                "vol_last_3h": 0.0,
+                "vol_last_6h": 0.0,
             },
         ]
     )
@@ -212,6 +222,7 @@ def test_build_climate_day_table_bracket_concentration() -> None:
     assert row["contracts_traded_climate_day"] == pytest.approx(28.0)
     assert row["n_brackets_with_volume"] == 2
     assert row["top_bracket_share"] == pytest.approx(20 / 28)
+    assert row["share_vol_last_1h"] == pytest.approx(12 / 28)
 
 
 def test_summarize_turnover_reports_zero_volume_fraction() -> None:
@@ -249,6 +260,65 @@ def test_summarize_turnover_reports_zero_volume_fraction() -> None:
     assert row["zero_volume_market_day_frac"] == pytest.approx(0.5)
     assert row["median_contracts_market_day"] == pytest.approx(10.0)
     assert "p25_contracts_market_day" in summary.columns
+    assert "pooled_share_vol_last_1h" in summary.columns
+
+
+def test_pooled_share_differs_from_median_of_ratios() -> None:
+    market_days = pd.DataFrame(
+        [
+            {
+                "ticker": "dead_a",
+                "climate_date": "2026-07-04",
+                "season": "JJA",
+                "era": "2022_plus",
+                "band": "10_90",
+                "premium_traded": 1.0,
+                "contracts_traded": 1.0,
+                "share_vol_last_1h": 0.0,
+                "share_vol_last_3h": 0.0,
+                "share_vol_last_6h": 0.0,
+                "vol_last_1h": 0.0,
+                "vol_last_3h": 0.0,
+                "vol_last_6h": 0.0,
+            },
+            {
+                "ticker": "dead_b",
+                "climate_date": "2026-07-05",
+                "season": "JJA",
+                "era": "2022_plus",
+                "band": "10_90",
+                "premium_traded": 1.0,
+                "contracts_traded": 1.0,
+                "share_vol_last_1h": 0.0,
+                "share_vol_last_3h": 0.0,
+                "share_vol_last_6h": 0.0,
+                "vol_last_1h": 0.0,
+                "vol_last_3h": 0.0,
+                "vol_last_6h": 0.0,
+            },
+            {
+                "ticker": "live",
+                "climate_date": "2026-07-06",
+                "season": "JJA",
+                "era": "2022_plus",
+                "band": "10_90",
+                "premium_traded": 50.0,
+                "contracts_traded": 100.0,
+                "share_vol_last_1h": 0.5,
+                "share_vol_last_3h": 0.5,
+                "share_vol_last_6h": 0.5,
+                "vol_last_1h": 50.0,
+                "vol_last_3h": 50.0,
+                "vol_last_6h": 50.0,
+            },
+        ]
+    )
+    climate_days = build_climate_day_table(market_days)
+    summary = summarize_turnover(market_days, climate_days)
+    row = summary[(summary["band"] == "10_90") & (summary["season"] == "JJA")].iloc[0]
+    assert row["median_share_vol_last_1h"] == pytest.approx(0.0)
+    assert row["pooled_share_vol_last_1h"] == pytest.approx(50.0 / 102.0)
+    assert row["median_share_vol_last_1h_contracts_ge20"] == pytest.approx(0.5)
 
 
 def test_era_split_keeps_2021_separate() -> None:

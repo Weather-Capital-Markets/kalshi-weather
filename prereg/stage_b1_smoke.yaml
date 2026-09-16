@@ -1,0 +1,9 @@
+prereg_id: stage_b1_smoke
+seed: 0
+universe:
+  - KXHIGHNY
+snapshot_id: fixture
+held_out:
+  start: "2099-01-01"
+  end: "2099-12-31"
+  locked: true

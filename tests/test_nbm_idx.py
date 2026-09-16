@@ -5,11 +5,19 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from ingestion.nbm_idx import (
+    VintageAvailabilityError,
+    assert_vintage_available,
+    available_max_cycles,
     byte_ranges_for_messages,
     byte_ranges_for_selected_lines,
+    empirical_vintage_for_climate_date,
     era_band_for_date,
     era_level_count_for_date,
+    forecast_lead_hours,
+    match_max_window_in_idx,
     max_product_for_cycle_hour,
     nbm_version_for_date,
     parse_idx_text,
@@ -108,22 +116,75 @@ def test_max_product_alternation_12z_f018_is_max() -> None:
     assert max_product_for_cycle_hour(12, 30) is False
 
 
-def test_t24h_vintage_is_00z_not_off_hour_cycle() -> None:
+def test_t24h_vintage_is_prior_day_12z_at_441min_latency() -> None:
+    """T−24h vintage is prior-day 12Z at measured 441 min latency, not 00Z.
+
+    Replaces ``test_t24h_vintage_is_00z_not_off_hour_cycle`` (Session 7e).
+    60-min 00Z was void; restoring that nodeid would re-pin a false cycle.
+    """
     from ingestion.nbm_archive import snapshot_utc_for_climate_date
-    from ingestion.nbm_idx import (
-        candidate_max_cycles_for_snapshot,
-        forecast_hour_for_climate_max_window,
-        vintage_select_cycle,
-    )
 
     climate = date(2022, 7, 4)
     snapshot = snapshot_utc_for_climate_date(climate, 24)
     assert snapshot == datetime(2022, 7, 4, 5, 0, tzinfo=timezone.utc)
-    covering = [
-        cycle
-        for cycle in candidate_max_cycles_for_snapshot(snapshot)
-        if forecast_hour_for_climate_max_window(cycle, climate) is not None
-    ]
-    selected = vintage_select_cycle(snapshot, covering, latency_min=60)
-    assert selected == datetime(2022, 7, 4, 0, 0, tzinfo=timezone.utc)
-    assert forecast_hour_for_climate_max_window(selected, climate) == 30
+    candidates = available_max_cycles(snapshot, latency_max_min=453)
+    selected = vintage_select_cycle(snapshot, candidates, latency_min=441)
+    assert selected == datetime(2022, 7, 3, 12, 0, tzinfo=timezone.utc)
+    idx_text = Path("tests/fixtures/nbm_idx_f042_12z_sample.txt").read_text(encoding="utf-8")
+    matched = match_max_window_in_idx(
+        parse_idx_text(idx_text),
+        cycle_dt=selected,
+        climate_date=climate,
+        percentile_levels={10, 20, 50, 90},
+    )
+    assert matched is not None
+    assert matched.forecast_hour == 42
+    assert forecast_lead_hours(selected, climate) == 24.0
+
+
+def test_assert_vintage_available_rejects_boundary_cycle() -> None:
+    snapshot = datetime(2022, 7, 4, 5, 0, tzinfo=timezone.utc)
+    cycle = datetime(2022, 7, 3, 12, 0, tzinfo=timezone.utc)
+    pub = publication_utc(cycle, 441)
+    assert pub < snapshot
+    assert_vintage_available(cycle, snapshot, latency_p90_min=441)
+    too_late = datetime(2022, 7, 4, 0, 0, tzinfo=timezone.utc)
+    with pytest.raises(VintageAvailabilityError):
+        assert_vintage_available(too_late, snapshot, latency_p90_min=441)
+
+
+def test_match_f042_idx_fixture_for_climate_day() -> None:
+    climate = date(2022, 7, 4)
+    cycle = datetime(2022, 7, 3, 12, tzinfo=timezone.utc)
+    idx_text = Path("tests/fixtures/nbm_idx_f042_12z_sample.txt").read_text(encoding="utf-8")
+    matched = match_max_window_in_idx(
+        parse_idx_text(idx_text),
+        cycle_dt=cycle,
+        climate_date=climate,
+    )
+    assert matched is not None
+    assert matched.forecast_hour == 42
+    assert len(matched.idx_lines) == 4
+
+
+def test_empirical_vintage_uses_idx_callback() -> None:
+    climate = date(2022, 7, 4)
+    snapshot = datetime(2022, 7, 4, 5, 0, tzinfo=timezone.utc)
+    idx_text = Path("tests/fixtures/nbm_idx_f042_12z_sample.txt").read_text(encoding="utf-8")
+
+    def fetch_idx(cycle: datetime, forecast_hour: int) -> str | None:
+        if cycle == datetime(2022, 7, 3, 12, tzinfo=timezone.utc) and forecast_hour == 42:
+            return idx_text
+        return None
+
+    selection = empirical_vintage_for_climate_date(
+        climate,
+        snapshot,
+        fetch_idx=fetch_idx,
+        latency_p90_min=441,
+        latency_max_min=453,
+        percentile_levels={10, 20, 50, 90},
+    )
+    assert selection is not None
+    assert selection.forecast_hour == 42
+    assert selection.cycle == datetime(2022, 7, 3, 12, tzinfo=timezone.utc)

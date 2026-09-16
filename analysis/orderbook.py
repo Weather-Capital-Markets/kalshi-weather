@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ingestion.validate_units import price_as_dollars
+
 CENT = 0.01
 
 
@@ -123,6 +125,8 @@ def depth_metrics_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None
     bid, ask = _best_yes_bid(book), _best_yes_ask(book)
     if bid is None or ask is None:
         return None
+    bid = price_as_dollars(bid, label="yes_bid")
+    ask = price_as_dollars(ask, label="yes_ask")
     mid = (bid + ask) / 2.0
     yes_top_bid_size = bid_levels[0][1] if bid_levels else 0.0
     yes_top_ask_size = ask_levels[0][1] if ask_levels else 0.0
