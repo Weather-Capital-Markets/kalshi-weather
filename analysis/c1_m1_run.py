@@ -56,6 +56,8 @@ def render(report: V0MinReport) -> str:
         f"  anchor coverage     {report.coverage.share:.4f} "
         f"({report.coverage.n_both_sides_uncrossed}/{report.coverage.n_grid} grid points)",
         f"  predictions         {report.n_predictions}",
+        f"  climate-day clusters {report.n_clusters}"
+        + ("  (below 400 — ridge at limit)" if report.n_clusters < 400 else ""),
         "",
         f"  mean RPS improvement vs null   {report.mean_rps_improvement:+.6f}",
         f"  day-clustered 95% CI           "

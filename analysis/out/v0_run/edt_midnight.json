@@ -1,0 +1,4 @@
+{
+  "status": "NOT_RUN",
+  "reason": "no ASOS/METAR KNYC data under data/ (checked asos/KNYC and raw/**/asos_obs)"
+}

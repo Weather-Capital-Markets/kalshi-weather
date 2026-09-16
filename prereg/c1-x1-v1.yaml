@@ -83,8 +83,17 @@ flb:
     alpha_se: 0.243
     n: 29924
 
-# Do not invent these. Root chat fills them. run() refuses while FILL_IN.
+# Go/no-go return thresholds come from the root chat. Do not invent them.
+# M and A below are Gate 0 / magnitude-gate *inputs*, not outcomes of a test.
 go_no_go:
   maker_mean_net_return: FILL_IN
   near_flat_bracket_day_share: FILL_IN
   resting_offer_below_10c_net_return: FILL_IN
+
+gate0_inputs:
+  status: FILL_FROM_V0_RUN_B6
+  note: >
+    M = mean daily premium in the 10–90¢ band and A = average trade price in
+    band are threshold inputs for Gate 0 capacity arithmetic. Computing them
+    is not post-hoc threshold-setting. Filled by analysis/v0_run Phase B6;
+    see analysis/out/v0_run/turnover.json.

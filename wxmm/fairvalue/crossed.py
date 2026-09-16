@@ -64,6 +64,7 @@ class CrossedRate:
     n_touching: int
     rate: float | None
     mean_gap_cents: float | None
+    mean_gap_uncrossed_cents: float | None
     median_gap_cents: float | None
     n_tickers: int
     n_tickers_two_sided: int
@@ -137,6 +138,8 @@ def crossed_state_rate(
     n_crossed = 0
     n_touching = 0
     gap_hist: Counter[int] = Counter()
+    uncrossed_gap_sum = 0.0
+    uncrossed_gap_n = 0
     ticker_rates: list[float] = []
     n_majority = 0
 
@@ -156,7 +159,11 @@ def crossed_state_rate(
             if bid is None or ask is None:
                 continue
             local_two_sided += 1
-            gap_hist[_gap_cents(ask, bid)] += 1
+            gap = _gap_cents(ask, bid)
+            gap_hist[gap] += 1
+            if ask >= bid:
+                uncrossed_gap_sum += gap
+                uncrossed_gap_n += 1
             if ask < bid:
                 local_crossed += 1
             elif ask == bid:
@@ -178,6 +185,9 @@ def crossed_state_rate(
         if gap_hist
         else None
     )
+    mean_gap_uncrossed = (
+        uncrossed_gap_sum / uncrossed_gap_n if uncrossed_gap_n else None
+    )
     return CrossedRate(
         sign=sign,
         n_prints=n_prints,
@@ -186,6 +196,7 @@ def crossed_state_rate(
         n_touching=n_touching,
         rate=(n_crossed / n_two_sided) if n_two_sided else None,
         mean_gap_cents=mean_gap,
+        mean_gap_uncrossed_cents=mean_gap_uncrossed,
         median_gap_cents=_median_from_histogram(gap_hist),
         n_tickers=len(by_ticker),
         n_tickers_two_sided=len(ticker_rates),
@@ -226,6 +237,12 @@ def _verdict(as_specified: CrossedRate, inverted: CrossedRate) -> tuple[Verdict,
         f"as-specified crossed {here:.4f} sits between {CONFIRM_MAX_RATE} and "
         f"{INVERT_MIN_RATE}; the anchor is not oriented either way",
     )
+
+
+def hard_stop_inverted(diag: CrossedDiagnostic) -> bool:
+    """Preregistered halt when the direction sign is clearly backwards."""
+    rate = diag.as_specified.rate
+    return diag.verdict == "sign_inverted" or (rate is not None and rate > 0.50)
 
 
 def crossed_diagnostic(trades: Sequence[RawTrade]) -> CrossedDiagnostic:

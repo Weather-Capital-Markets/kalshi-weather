@@ -233,3 +233,5 @@ analysis/out/*
 !analysis/out/crossed_rate.json
 !analysis/out/crossed_by_day.json
 !analysis/out/c1_m1_v0_min.json
+!analysis/out/v0_run/
+!analysis/out/v0_run/**

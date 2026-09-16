@@ -1,0 +1,251 @@
+{
+  "n_climate_days_in_labels": 1352,
+  "days_resolved_cleanly": 1344,
+  "days_ambiguous": 0,
+  "days_raising": 8,
+  "ambiguous_examples": [],
+  "raising_examples": [
+    {
+      "climate_day": "2023-03-22",
+      "n_winners": 1,
+      "high_at_snapshot": 62,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    },
+    {
+      "climate_day": "2024-09-24",
+      "n_winners": 1,
+      "high_at_snapshot": 68,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    },
+    {
+      "climate_day": "2024-09-25",
+      "n_winners": 1,
+      "high_at_snapshot": 68,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    },
+    {
+      "climate_day": "2025-01-19",
+      "n_winners": 1,
+      "high_at_snapshot": 41,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    },
+    {
+      "climate_day": "2025-12-03",
+      "n_winners": 1,
+      "high_at_snapshot": 40,
+      "n_later": 1,
+      "flags": [
+        "n_later=1",
+        "venue_disagree:KXHIGHNY-25DEC03-B39.5",
+        "venue_disagree:KXHIGHNY-25DEC03-B41.5"
+      ]
+    },
+    {
+      "climate_day": "2026-01-01",
+      "n_winners": 1,
+      "high_at_snapshot": 36,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    },
+    {
+      "climate_day": "2026-03-04",
+      "n_winners": 1,
+      "high_at_snapshot": 49,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    },
+    {
+      "climate_day": "2026-08-29",
+      "n_winners": 1,
+      "high_at_snapshot": 76,
+      "n_later": 1,
+      "flags": [
+        "n_later=1"
+      ]
+    }
+  ],
+  "days_era_boundary_changes_answer": 0,
+  "era_boundary_near_days": [
+    {
+      "climate_day": "2024-08-31",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+      "current_high_at_snapshot": 77,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_unspecified_thru_2021-12-25",
+          "high_at_snapshot": 77,
+          "n_later": 0,
+          "differs_from_current": false
+        },
+        {
+          "comparison": "next_rule",
+          "rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+          "high_at_snapshot": 77,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-01",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+      "current_high_at_snapshot": 81,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_unspecified_thru_2021-12-25",
+          "high_at_snapshot": 81,
+          "n_later": 0,
+          "differs_from_current": false
+        },
+        {
+          "comparison": "next_rule",
+          "rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+          "high_at_snapshot": 81,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-02",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+      "current_high_at_snapshot": 79,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_unspecified_thru_2021-12-25",
+          "high_at_snapshot": 79,
+          "n_later": 0,
+          "differs_from_current": false
+        },
+        {
+          "comparison": "next_rule",
+          "rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+          "high_at_snapshot": 79,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-03",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+      "current_high_at_snapshot": 74,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_unspecified_thru_2021-12-25",
+          "high_at_snapshot": 74,
+          "n_later": 0,
+          "differs_from_current": false
+        },
+        {
+          "comparison": "next_rule",
+          "rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+          "high_at_snapshot": 74,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-04",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+      "current_high_at_snapshot": 77,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+          "high_at_snapshot": 77,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-05",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+      "current_high_at_snapshot": 77,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+          "high_at_snapshot": 77,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-06",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+      "current_high_at_snapshot": 78,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+          "high_at_snapshot": 78,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    },
+    {
+      "climate_day": "2024-09-07",
+      "boundary": "10am_to_7or8am",
+      "current_rule_id": "kalshi_first_7_or_8am_et_from_2024-09-04",
+      "current_high_at_snapshot": 76,
+      "current_n_later": 0,
+      "comparisons": [
+        {
+          "comparison": "previous_rule",
+          "rule_id": "kalshi_first_10am_et_thru_2024-09-03",
+          "high_at_snapshot": 76,
+          "n_later": 0,
+          "differs_from_current": false
+        }
+      ],
+      "answer_changes": false
+    }
+  ],
+  "scope_note": "Labels are the CLINYC-as-issued settlement.json set; resolved_cleanly requires exactly one YES winner and no audit flags."
+}

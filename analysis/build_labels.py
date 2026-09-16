@@ -49,6 +49,7 @@ class LabelReport:
     n_missing_high: int
     n_unparsed_strike: int
     n_days_labelled: int
+    n_revised_cli_days: int
     n_venue_compared: int
     n_venue_disagree: int
     disagreements: tuple[str, ...]
@@ -107,6 +108,54 @@ def high_at_snapshot(
     return chosen.high_f, len(later)
 
 
+def label_day_audit(
+    observations: Sequence[Observation],
+    climate_days: Sequence[date],
+) -> dict[str, Any]:
+    """Return lists: no_issuance_days, missing_high_days, revised_cli_days (n_later>0),
+    and counts. Also compute label_noise_rate = days_with_revision / days_with_issuance.
+    """
+    no_issuance_days: list[str] = []
+    missing_high_days: list[str] = []
+    revised_cli_days: list[str] = []
+    days_with_issuance = 0
+    days_with_revision = 0
+
+    for climate_day in sorted(set(climate_days)):
+        same_day = [o for o in observations if o.climate_day == climate_day]
+        if not same_day:
+            no_issuance_days.append(climate_day.isoformat())
+            continue
+        high, n_later = high_at_snapshot(observations, climate_day)
+        if high is None:
+            missing_high_days.append(climate_day.isoformat())
+        else:
+            days_with_issuance += 1
+            if n_later > 0:
+                days_with_revision += 1
+                revised_cli_days.append(climate_day.isoformat())
+
+    label_noise_rate = (
+        days_with_revision / days_with_issuance if days_with_issuance else None
+    )
+    return {
+        "no_issuance_days": no_issuance_days,
+        "missing_high_days": missing_high_days,
+        "revised_cli_days": revised_cli_days,
+        "n_no_issuance": len(no_issuance_days),
+        "n_missing_high": len(missing_high_days),
+        "n_revised_cli": len(revised_cli_days),
+        "days_with_issuance": days_with_issuance,
+        "days_with_revision": days_with_revision,
+        "label_noise_rate": label_noise_rate,
+    }
+
+
+def write_label_day_audit(audit: Mapping[str, Any], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(audit), indent=2), encoding="utf-8")
+
+
 def build_labels(
     markets: Sequence[Mapping[str, Any]],
     observations: Sequence[Observation],
@@ -115,6 +164,7 @@ def build_labels(
     end: date,
 ) -> tuple[dict[str, SettlementLabel], LabelReport]:
     highs: dict[date, int | None] = {}
+    n_later_by_day: dict[date, int] = {}
     labels: dict[str, SettlementLabel] = {}
     n_no_issuance = 0
     n_missing_high = 0
@@ -131,7 +181,9 @@ def build_labels(
             continue
         considered += 1
         if climate not in highs:
-            highs[climate] = high_at_snapshot(observations, climate)[0]
+            high, n_later = high_at_snapshot(observations, climate)
+            highs[climate] = high
+            n_later_by_day[climate] = n_later
         high = highs[climate]
         if high is None:
             if not any(o.climate_day == climate for o in observations):
@@ -158,6 +210,11 @@ def build_labels(
                 if len(disagreements) < 200:
                     disagreements.append(f"{ticker} clinyc={won} venue={venue} high={high}")
 
+    n_revised_cli_days = sum(
+        1
+        for day, later in n_later_by_day.items()
+        if later > 0 and highs.get(day) is not None
+    )
     report = LabelReport(
         n_markets=considered,
         n_labelled=len(labels),
@@ -165,6 +222,7 @@ def build_labels(
         n_missing_high=n_missing_high,
         n_unparsed_strike=n_unparsed,
         n_days_labelled=len({label.climate_day for label in labels.values()}),
+        n_revised_cli_days=n_revised_cli_days,
         n_venue_compared=n_compared,
         n_venue_disagree=n_disagree,
         disagreements=tuple(disagreements),
@@ -207,6 +265,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start", type=date.fromisoformat, default=SIX_BRACKET_ERA_START)
     parser.add_argument("--end", type=date.fromisoformat, default=date.today())
     parser.add_argument("--out", type=Path, default=Path("data/labels/settlement.json"))
+    parser.add_argument(
+        "--audit-out",
+        type=Path,
+        default=None,
+        help="Optional path for label_day_audit JSON (v0_run day lists)",
+    )
     return parser
 
 
@@ -234,6 +298,25 @@ def main(argv: list[str] | None = None) -> int:
         markets, observations, start=args.start, end=args.end
     )
     write_labels(labels, args.out)
+    if args.audit_out is not None:
+        climate_days = sorted(
+            {
+                climate
+                for market in markets
+                if (
+                    climate := in_scope(
+                        str(market.get("ticker") or ""),
+                        start=args.start,
+                        end=args.end,
+                    )
+                )
+                is not None
+            }
+        )
+        write_label_day_audit(
+            label_day_audit(observations, climate_days),
+            args.audit_out,
+        )
     payload = {
         "n_markets": report.n_markets,
         "n_labelled": report.n_labelled,
@@ -241,6 +324,7 @@ def main(argv: list[str] | None = None) -> int:
         "n_missing_high": report.n_missing_high,
         "n_unparsed_strike": report.n_unparsed_strike,
         "n_days_labelled": report.n_days_labelled,
+        "n_revised_cli_days": report.n_revised_cli_days,
         "n_venue_compared": report.n_venue_compared,
         "n_venue_disagree": report.n_venue_disagree,
         "venue_disagreement_rate": report.venue_disagreement_rate,

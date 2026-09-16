@@ -7,6 +7,12 @@ Reads ``GET /historical/cutoff`` first and never assumes the partition. Every
 ticker is pulled from both sides of it and merged by ``trade_id`` so a market
 straddling the boundary is not silently truncated.
 
+Optional content-addressed RAW capture: when ``--raw-dir`` or ``WXMM_RAW_DIR`` is
+set, each HTTP response body is stored at ``{raw_dir}/{sha256[:2]}/{sha256}.json``
+with url/params/sha256/fetched_at metadata plus the parsed body. The existing
+parquet corpus was pulled without RAW capture (``merge_report.json`` records
+``raw_trades: NOT_RUN``).
+
 Must never
     Assume the cutoff. Derive direction. Drop the complement assertion.
     Write into ``knowledge/``.
@@ -15,7 +21,9 @@ Must never
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import sys
 import threading
 import time
@@ -46,6 +54,41 @@ LIVE_BASE = "https://api.elections.kalshi.com/trade-api/v2"
 HISTORICAL_BASE = "https://external-api.kalshi.com/trade-api/v2"
 DEFAULT_SERIES = ("KXHIGHNY",)
 HIGHNY_NEEDLES = ("HIGHNY", "KXHIGHNY")
+RAW_DIR_ENV = "WXMM_RAW_DIR"
+
+
+def resolve_raw_dir(raw_dir: Path | None) -> Path | None:
+    if raw_dir is not None:
+        return raw_dir
+    env = os.environ.get(RAW_DIR_ENV)
+    if env:
+        return Path(env)
+    return None
+
+
+def write_raw_response(
+    raw_dir: Path,
+    *,
+    url: str,
+    params: dict[str, Any] | None,
+    raw_bytes: bytes,
+    fetched_at: datetime,
+) -> tuple[str, bool]:
+    """Content-addressed RAW write. Returns (sha256 hex, written). Skips if exists."""
+    digest = hashlib.sha256(raw_bytes).hexdigest()
+    dest = raw_dir / digest[:2] / f"{digest}.json"
+    if dest.exists():
+        return digest, False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "url": url,
+        "params": params or {},
+        "sha256": digest,
+        "fetched_at": fetched_at.isoformat(),
+        "body": json.loads(raw_bytes.decode("utf-8")),
+    }
+    dest.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return digest, True
 
 
 class HttpTransport:
@@ -59,15 +102,18 @@ class HttpTransport:
         timeout: float = 45.0,
         max_retries: int = 5,
         min_interval: float = 0.0,
+        raw_dir: Path | None = None,
     ) -> None:
         self.live_base = live_base.rstrip("/")
         self.historical_base = historical_base.rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
         self._min_interval = min_interval
+        self.raw_dir = resolve_raw_dir(raw_dir)
         self._lock = threading.Lock()
         self._last = 0.0
         self.n_requests = 0
+        self.n_raw_written = 0
 
     def _throttle(self) -> None:
         if self._min_interval <= 0:
@@ -94,7 +140,20 @@ class HttpTransport:
             )
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    body = json.loads(response.read().decode("utf-8"))
+                    raw_bytes = response.read()
+                fetched_at = datetime.now(tz=timezone.utc)
+                if self.raw_dir is not None:
+                    _, written = write_raw_response(
+                        self.raw_dir,
+                        url=url,
+                        params=params,
+                        raw_bytes=raw_bytes,
+                        fetched_at=fetched_at,
+                    )
+                    if written:
+                        with self._lock:
+                            self.n_raw_written += 1
+                body = json.loads(raw_bytes.decode("utf-8"))
                 with self._lock:
                     self.n_requests += 1
                 if not isinstance(body, dict):
@@ -246,8 +305,9 @@ def run(
     progress_every: int,
     only_tickers: Sequence[str] = (),
     merge_into: Path | None = None,
+    raw_dir: Path | None = None,
 ) -> int:
-    transport = HttpTransport(min_interval=min_interval)
+    transport = HttpTransport(min_interval=min_interval, raw_dir=raw_dir)
     cutoff = fetch_cutoff(transport)
     cutoff_dt = datetime.fromtimestamp(cutoff.market_settled_ts, tz=timezone.utc)
     print(f"cutoff market_settled_ts={cutoff.market_settled_ts} ({cutoff_dt.isoformat()})")
@@ -326,6 +386,9 @@ def run(
         "n_trades": total,
         "shards": counts,
         "n_requests": transport.n_requests,
+        "raw_trades": "CAPTURED" if transport.raw_dir is not None else "NOT_RUN",
+        "raw_dir": str(transport.raw_dir) if transport.raw_dir is not None else None,
+        "n_raw_responses": transport.n_raw_written if transport.raw_dir is not None else 0,
         "n_duplicate_ids": sum(int(r["n_duplicate_ids"]) for r in reports),
         "n_boundary_overlap": sum(int(r["n_boundary_overlap"]) for r in reports),
         "gap_notes": [r["gap_note"] for r in reports if r["gap_note"]][:50],
@@ -362,6 +425,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Fold results into existing shards in this directory",
     )
+    parser.add_argument(
+        "--raw-dir",
+        type=Path,
+        default=None,
+        help=f"Content-addressed RAW HTTP capture (or set {RAW_DIR_ENV})",
+    )
     return parser
 
 
@@ -378,6 +447,7 @@ def main(argv: list[str] | None = None) -> int:
         progress_every=args.progress_every,
         only_tickers=args.tickers,
         merge_into=args.merge_into,
+        raw_dir=args.raw_dir,
     )
 
 
