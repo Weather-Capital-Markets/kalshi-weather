@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Apply three deliberate breaks. Each must turn the corresponding tests red."""
+"""Apply deliberate breaks. Each must turn the corresponding tests red.
+
+B3 trio: MarketView.store field, forbidden strategies→store import, era date.
+v0 pair: TRADE_DERIVED null returning raw mids, continuity golden edge +0.5.
+"""
 
 from __future__ import annotations
 
@@ -36,6 +40,10 @@ def _expect_fail(cmd: list[str], name: str) -> None:
     print(f"mutant killed: {name}")
 
 
+def _pytest(*paths: str) -> list[str]:
+    return [sys.executable, "-m", "pytest", "-q", *paths]
+
+
 def main() -> None:
     view = ROOT / "wxmm" / "strategy" / "view.py"
     orig_view = view.read_text(encoding="utf-8")
@@ -52,12 +60,10 @@ def main() -> None:
     )
     try:
         _expect_fail(
-            [
-                "pytest",
-                "-q",
+            _pytest(
                 "tests/canary/test_leakage_canary.py",
                 "tests/parity/test_market_view_parity.py",
-            ],
+            ),
             "MarketView.store field",
         )
     finally:
@@ -84,11 +90,53 @@ def main() -> None:
     _write(eras, mutated)
     try:
         _expect_fail(
-            ["pytest", "-q", "tests/golden/wxmm/test_era_dates.py"],
+            _pytest("tests/golden/wxmm/test_era_dates.py"),
             "settlement era effective_from +1 day",
         )
     finally:
         _write(eras, orig_eras)
+
+    model_trades = ROOT / "wxmm" / "fairvalue" / "model_trades.py"
+    orig_model = model_trades.read_text(encoding="utf-8")
+    raw_mid = orig_model.replace(
+        "    return apply_logit_adjustment(normalised, zero)\n",
+        "    return q\n",
+        1,
+    )
+    if raw_mid == orig_model:
+        print("cannot locate null_trade_recovery return to mutate", file=sys.stderr)
+        sys.exit(2)
+    _write(model_trades, raw_mid)
+    try:
+        _expect_fail(
+            _pytest(
+                "tests/fairvalue/test_v0.py",
+                "tests/fairvalue/test_v0_min.py",
+                "tests/fairvalue/test_anchor_trades.py",
+            ),
+            "anchor_trades null returns raw mid",
+        )
+    finally:
+        _write(model_trades, orig_model)
+
+    ladder = ROOT / "wxmm" / "fairvalue" / "ladder.py"
+    orig_ladder = ladder.read_text(encoding="utf-8")
+    shifted = orig_ladder.replace(
+        "            return self.floor_f - 0.5, self.cap_f + 0.5\n",
+        "            return self.floor_f, self.cap_f + 0.5\n",
+        1,
+    )
+    if shifted == orig_ladder:
+        print("cannot locate continuity_bounds_f lower edge to mutate", file=sys.stderr)
+        sys.exit(2)
+    _write(ladder, shifted)
+    try:
+        _expect_fail(
+            _pytest("tests/fairvalue/test_ladder.py"),
+            "continuity golden edge shifted by 0.5",
+        )
+    finally:
+        _write(ladder, orig_ladder)
 
 
 if __name__ == "__main__":
