@@ -173,6 +173,8 @@ def test_shard_accumulator_matches_concatenated_tape() -> None:
     assert split.inverted.rate == pytest.approx(whole.inverted.rate)
     assert split.n_block_excluded == whole.n_block_excluded
 
+
+def test_by_climate_day_buckets() -> None:
     by_day = crossed_by_climate_day(_oriented_tape(10, crossed_every=5))
     assert list(by_day) == ["2026-08-12"]
     assert 0.0 <= by_day["2026-08-12"] <= 1.0

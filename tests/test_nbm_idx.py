@@ -117,6 +117,11 @@ def test_max_product_alternation_12z_f018_is_max() -> None:
 
 
 def test_t24h_vintage_is_prior_day_12z_at_441min_latency() -> None:
+    """T−24h vintage is prior-day 12Z at measured 441 min latency, not 00Z.
+
+    Replaces ``test_t24h_vintage_is_00z_not_off_hour_cycle`` (Session 7e).
+    60-min 00Z was void; restoring that nodeid would re-pin a false cycle.
+    """
     from ingestion.nbm_archive import snapshot_utc_for_climate_date
 
     climate = date(2022, 7, 4)
