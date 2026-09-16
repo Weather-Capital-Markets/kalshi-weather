@@ -1,0 +1,8 @@
+{
+  "status": "OK",
+  "prereg_registered": true,
+  "unregistered_refused": true,
+  "leakage_raised": true,
+  "artifact_byte_identical_reread": true,
+  "artifact_sha256": "38b903e47653790e1aa8210b2eec29a47c3bfa18d7c8cafbafb8152d793f88e1"
+}

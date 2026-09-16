@@ -2,31 +2,33 @@
   "prereg_id": "c1-m1-v0-min",
   "crossed_rate": {
     "sign": 1,
-    "n_prints": 3335742,
-    "n_two_sided": 3299464,
-    "n_crossed": 192174,
-    "n_touching": 376701,
-    "rate": 0.0582440056930459,
-    "mean_gap_cents": 3.854120851144307,
+    "n_prints": 3405461,
+    "n_two_sided": 3368606,
+    "n_crossed": 195892,
+    "n_touching": 384667,
+    "rate": 0.05815224457832112,
+    "mean_gap_cents": 3.8635800684318675,
+    "mean_gap_uncrossed_cents": 4.335908941051731,
     "median_gap_cents": 2.0,
-    "n_tickers": 7571,
-    "n_tickers_two_sided": 6857,
-    "n_tickers_majority_crossed": 227,
+    "n_tickers": 7693,
+    "n_tickers_two_sided": 6974,
+    "n_tickers_majority_crossed": 230,
     "median_ticker_rate": 0.04586576898800757
   },
   "crossed_rate_inverted": {
     "sign": -1,
-    "n_prints": 3335742,
-    "n_two_sided": 3299464,
-    "n_crossed": 2730589,
-    "n_touching": 376701,
-    "rate": 0.8275856320905456,
-    "mean_gap_cents": -3.854120851144307,
+    "n_prints": 3405461,
+    "n_two_sided": 3368606,
+    "n_crossed": 2788047,
+    "n_touching": 384667,
+    "rate": 0.8276560096372209,
+    "mean_gap_cents": -3.8635800684318675,
+    "mean_gap_uncrossed_cents": 1.2775962477543195,
     "median_gap_cents": -2.0,
-    "n_tickers": 7571,
-    "n_tickers_two_sided": 6857,
-    "n_tickers_majority_crossed": 5969,
-    "median_ticker_rate": 0.8223684210526315
+    "n_tickers": 7693,
+    "n_tickers_two_sided": 6974,
+    "n_tickers_majority_crossed": 6074,
+    "median_ticker_rate": 0.8227438284095507
   },
   "crossed_verdict": "sign_confirmed",
   "coverage": {
@@ -35,6 +37,8 @@
     "share": 0.22781065088757396
   },
   "n_predictions": 615,
+  "n_clusters": 444,
+  "ess_note": "adequate_for_ridge",
   "mean_rps_improvement": -0.005568055159047568,
   "clustered_ci": [
     -0.02358702417728206,
@@ -367,5 +371,7 @@
     "is_strategy_pnl": false
   },
   "nbm_status": "NOT_IN_V0_MIN",
-  "is_strategy_pnl": false
+  "is_strategy_pnl": false,
+  "dual_run_byte_identical": true,
+  "dual_refit": "NOT_RUN_full_corpus \u2014 fixture dual-refit covered in unit tests; this run asserts serialisation identity of the live report"
 }

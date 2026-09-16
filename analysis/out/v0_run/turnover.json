@@ -1,7 +1,7 @@
 {
   "status": "OK",
   "band": "10_90",
-  "premium_definition": "yes_price * count per trade (YES-space, matches turnover_census mid*volume spirit on tape)",
+  "premium_definition": "yes_price * count per trade (YES-space; tape analogue of turnover_census mid*volume)",
   "start": "2022-12-11",
   "end": "2026-09-13",
   "measured": {

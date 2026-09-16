@@ -1,6 +1,6 @@
 {
   "start": "2022-12-11",
-  "end": "2026-09-13",
+  "end": null,
   "n_climate_days": 1369,
   "n_days_n_later_gt_0": 11,
   "measured_rate": 0.008035062089116142,

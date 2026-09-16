@@ -1,0 +1,619 @@
+{
+  "pooled": {
+    "n_grid": 2704,
+    "n_both_sides_uncrossed": 616,
+    "share": 0.22781065088757396
+  },
+  "by_season": [
+    {
+      "key": "DJF",
+      "n_grid": 694,
+      "n_both_sides_uncrossed": 157,
+      "share": 0.22622478386167147
+    },
+    {
+      "key": "JJA",
+      "n_grid": 720,
+      "n_both_sides_uncrossed": 175,
+      "share": 0.24305555555555555
+    },
+    {
+      "key": "MAM",
+      "n_grid": 724,
+      "n_both_sides_uncrossed": 183,
+      "share": 0.2527624309392265
+    },
+    {
+      "key": "SON",
+      "n_grid": 566,
+      "n_both_sides_uncrossed": 101,
+      "share": 0.1784452296819788
+    }
+  ],
+  "by_hours_to_close": [
+    {
+      "key": "12",
+      "n_grid": 1352,
+      "n_both_sides_uncrossed": 331,
+      "share": 0.2448224852071006
+    },
+    {
+      "key": "24",
+      "n_grid": 1352,
+      "n_both_sides_uncrossed": 285,
+      "share": 0.21079881656804733
+    }
+  ],
+  "by_bracket_position": [
+    {
+      "key": "T100",
+      "n_grid": 8,
+      "n_both_sides_uncrossed": 2,
+      "share": 0.25
+    },
+    {
+      "key": "T101",
+      "n_grid": 2,
+      "n_both_sides_uncrossed": 0,
+      "share": 0.0
+    },
+    {
+      "key": "T104",
+      "n_grid": 2,
+      "n_both_sides_uncrossed": 2,
+      "share": 1.0
+    },
+    {
+      "key": "T105",
+      "n_grid": 4,
+      "n_both_sides_uncrossed": 4,
+      "share": 1.0
+    },
+    {
+      "key": "T15",
+      "n_grid": 4,
+      "n_both_sides_uncrossed": 3,
+      "share": 0.75
+    },
+    {
+      "key": "T16",
+      "n_grid": 6,
+      "n_both_sides_uncrossed": 6,
+      "share": 1.0
+    },
+    {
+      "key": "T17",
+      "n_grid": 2,
+      "n_both_sides_uncrossed": 2,
+      "share": 1.0
+    },
+    {
+      "key": "T19",
+      "n_grid": 6,
+      "n_both_sides_uncrossed": 5,
+      "share": 0.8333333333333334
+    },
+    {
+      "key": "T20",
+      "n_grid": 4,
+      "n_both_sides_uncrossed": 2,
+      "share": 0.5
+    },
+    {
+      "key": "T21",
+      "n_grid": 2,
+      "n_both_sides_uncrossed": 1,
+      "share": 0.5
+    },
+    {
+      "key": "T22",
+      "n_grid": 12,
+      "n_both_sides_uncrossed": 8,
+      "share": 0.6666666666666666
+    },
+    {
+      "key": "T23",
+      "n_grid": 14,
+      "n_both_sides_uncrossed": 10,
+      "share": 0.7142857142857143
+    },
+    {
+      "key": "T24",
+      "n_grid": 8,
+      "n_both_sides_uncrossed": 5,
+      "share": 0.625
+    },
+    {
+      "key": "T26",
+      "n_grid": 24,
+      "n_both_sides_uncrossed": 15,
+      "share": 0.625
+    },
+    {
+      "key": "T27",
+      "n_grid": 18,
+      "n_both_sides_uncrossed": 7,
+      "share": 0.3888888888888889
+    },
+    {
+      "key": "T28",
+      "n_grid": 22,
+      "n_both_sides_uncrossed": 16,
+      "share": 0.7272727272727273
+    },
+    {
+      "key": "T29",
+      "n_grid": 24,
+      "n_both_sides_uncrossed": 16,
+      "share": 0.6666666666666666
+    },
+    {
+      "key": "T30",
+      "n_grid": 26,
+      "n_both_sides_uncrossed": 15,
+      "share": 0.5769230769230769
+    },
+    {
+      "key": "T31",
+      "n_grid": 36,
+      "n_both_sides_uncrossed": 16,
+      "share": 0.4444444444444444
+    },
+    {
+      "key": "T32",
+      "n_grid": 24,
+      "n_both_sides_uncrossed": 13,
+      "share": 0.5416666666666666
+    },
+    {
+      "key": "T33",
+      "n_grid": 48,
+      "n_both_sides_uncrossed": 34,
+      "share": 0.7083333333333334
+    },
+    {
+      "key": "T34",
+      "n_grid": 34,
+      "n_both_sides_uncrossed": 14,
+      "share": 0.4117647058823529
+    },
+    {
+      "key": "T35",
+      "n_grid": 58,
+      "n_both_sides_uncrossed": 31,
+      "share": 0.5344827586206896
+    },
+    {
+      "key": "T36",
+      "n_grid": 68,
+      "n_both_sides_uncrossed": 34,
+      "share": 0.5
+    },
+    {
+      "key": "T37",
+      "n_grid": 62,
+      "n_both_sides_uncrossed": 34,
+      "share": 0.5483870967741935
+    },
+    {
+      "key": "T38",
+      "n_grid": 60,
+      "n_both_sides_uncrossed": 35,
+      "share": 0.5833333333333334
+    },
+    {
+      "key": "T39",
+      "n_grid": 58,
+      "n_both_sides_uncrossed": 41,
+      "share": 0.7068965517241379
+    },
+    {
+      "key": "T40",
+      "n_grid": 80,
+      "n_both_sides_uncrossed": 45,
+      "share": 0.5625
+    },
+    {
+      "key": "T41",
+      "n_grid": 70,
+      "n_both_sides_uncrossed": 37,
+      "share": 0.5285714285714286
+    },
+    {
+      "key": "T42",
+      "n_grid": 72,
+      "n_both_sides_uncrossed": 42,
+      "share": 0.5833333333333334
+    },
+    {
+      "key": "T43",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 50,
+      "share": 0.5681818181818182
+    },
+    {
+      "key": "T44",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 39,
+      "share": 0.4431818181818182
+    },
+    {
+      "key": "T45",
+      "n_grid": 74,
+      "n_both_sides_uncrossed": 40,
+      "share": 0.5405405405405406
+    },
+    {
+      "key": "T46",
+      "n_grid": 82,
+      "n_both_sides_uncrossed": 41,
+      "share": 0.5
+    },
+    {
+      "key": "T47",
+      "n_grid": 92,
+      "n_both_sides_uncrossed": 48,
+      "share": 0.5217391304347826
+    },
+    {
+      "key": "T48",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 39,
+      "share": 0.4431818181818182
+    },
+    {
+      "key": "T49",
+      "n_grid": 80,
+      "n_both_sides_uncrossed": 32,
+      "share": 0.4
+    },
+    {
+      "key": "T50",
+      "n_grid": 94,
+      "n_both_sides_uncrossed": 50,
+      "share": 0.5319148936170213
+    },
+    {
+      "key": "T51",
+      "n_grid": 84,
+      "n_both_sides_uncrossed": 44,
+      "share": 0.5238095238095238
+    },
+    {
+      "key": "T52",
+      "n_grid": 92,
+      "n_both_sides_uncrossed": 51,
+      "share": 0.5543478260869565
+    },
+    {
+      "key": "T53",
+      "n_grid": 92,
+      "n_both_sides_uncrossed": 50,
+      "share": 0.5434782608695652
+    },
+    {
+      "key": "T54",
+      "n_grid": 84,
+      "n_both_sides_uncrossed": 49,
+      "share": 0.5833333333333334
+    },
+    {
+      "key": "T55",
+      "n_grid": 76,
+      "n_both_sides_uncrossed": 38,
+      "share": 0.5
+    },
+    {
+      "key": "T56",
+      "n_grid": 84,
+      "n_both_sides_uncrossed": 44,
+      "share": 0.5238095238095238
+    },
+    {
+      "key": "T57",
+      "n_grid": 96,
+      "n_both_sides_uncrossed": 54,
+      "share": 0.5625
+    },
+    {
+      "key": "T58",
+      "n_grid": 82,
+      "n_both_sides_uncrossed": 48,
+      "share": 0.5853658536585366
+    },
+    {
+      "key": "T59",
+      "n_grid": 84,
+      "n_both_sides_uncrossed": 52,
+      "share": 0.6190476190476191
+    },
+    {
+      "key": "T60",
+      "n_grid": 86,
+      "n_both_sides_uncrossed": 46,
+      "share": 0.5348837209302325
+    },
+    {
+      "key": "T61",
+      "n_grid": 74,
+      "n_both_sides_uncrossed": 45,
+      "share": 0.6081081081081081
+    },
+    {
+      "key": "T62",
+      "n_grid": 80,
+      "n_both_sides_uncrossed": 49,
+      "share": 0.6125
+    },
+    {
+      "key": "T63",
+      "n_grid": 70,
+      "n_both_sides_uncrossed": 42,
+      "share": 0.6
+    },
+    {
+      "key": "T64",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 49,
+      "share": 0.5568181818181818
+    },
+    {
+      "key": "T65",
+      "n_grid": 74,
+      "n_both_sides_uncrossed": 43,
+      "share": 0.581081081081081
+    },
+    {
+      "key": "T66",
+      "n_grid": 66,
+      "n_both_sides_uncrossed": 38,
+      "share": 0.5757575757575758
+    },
+    {
+      "key": "T67",
+      "n_grid": 78,
+      "n_both_sides_uncrossed": 35,
+      "share": 0.44871794871794873
+    },
+    {
+      "key": "T68",
+      "n_grid": 80,
+      "n_both_sides_uncrossed": 47,
+      "share": 0.5875
+    },
+    {
+      "key": "T69",
+      "n_grid": 82,
+      "n_both_sides_uncrossed": 47,
+      "share": 0.573170731707317
+    },
+    {
+      "key": "T70",
+      "n_grid": 86,
+      "n_both_sides_uncrossed": 46,
+      "share": 0.5348837209302325
+    },
+    {
+      "key": "T71",
+      "n_grid": 78,
+      "n_both_sides_uncrossed": 34,
+      "share": 0.4358974358974359
+    },
+    {
+      "key": "T72",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 51,
+      "share": 0.5795454545454546
+    },
+    {
+      "key": "T73",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 46,
+      "share": 0.5227272727272727
+    },
+    {
+      "key": "T74",
+      "n_grid": 72,
+      "n_both_sides_uncrossed": 34,
+      "share": 0.4722222222222222
+    },
+    {
+      "key": "T75",
+      "n_grid": 92,
+      "n_both_sides_uncrossed": 63,
+      "share": 0.6847826086956522
+    },
+    {
+      "key": "T76",
+      "n_grid": 106,
+      "n_both_sides_uncrossed": 43,
+      "share": 0.4056603773584906
+    },
+    {
+      "key": "T77",
+      "n_grid": 128,
+      "n_both_sides_uncrossed": 81,
+      "share": 0.6328125
+    },
+    {
+      "key": "T78",
+      "n_grid": 94,
+      "n_both_sides_uncrossed": 51,
+      "share": 0.5425531914893617
+    },
+    {
+      "key": "T79",
+      "n_grid": 124,
+      "n_both_sides_uncrossed": 79,
+      "share": 0.6370967741935484
+    },
+    {
+      "key": "T80",
+      "n_grid": 122,
+      "n_both_sides_uncrossed": 59,
+      "share": 0.48360655737704916
+    },
+    {
+      "key": "T81",
+      "n_grid": 112,
+      "n_both_sides_uncrossed": 57,
+      "share": 0.5089285714285714
+    },
+    {
+      "key": "T82",
+      "n_grid": 122,
+      "n_both_sides_uncrossed": 70,
+      "share": 0.5737704918032787
+    },
+    {
+      "key": "T83",
+      "n_grid": 112,
+      "n_both_sides_uncrossed": 63,
+      "share": 0.5625
+    },
+    {
+      "key": "T84",
+      "n_grid": 120,
+      "n_both_sides_uncrossed": 65,
+      "share": 0.5416666666666666
+    },
+    {
+      "key": "T85",
+      "n_grid": 104,
+      "n_both_sides_uncrossed": 53,
+      "share": 0.5096153846153846
+    },
+    {
+      "key": "T86",
+      "n_grid": 92,
+      "n_both_sides_uncrossed": 50,
+      "share": 0.5434782608695652
+    },
+    {
+      "key": "T87",
+      "n_grid": 88,
+      "n_both_sides_uncrossed": 53,
+      "share": 0.6022727272727273
+    },
+    {
+      "key": "T88",
+      "n_grid": 100,
+      "n_both_sides_uncrossed": 46,
+      "share": 0.46
+    },
+    {
+      "key": "T89",
+      "n_grid": 98,
+      "n_both_sides_uncrossed": 49,
+      "share": 0.5
+    },
+    {
+      "key": "T90",
+      "n_grid": 58,
+      "n_both_sides_uncrossed": 33,
+      "share": 0.5689655172413793
+    },
+    {
+      "key": "T91",
+      "n_grid": 52,
+      "n_both_sides_uncrossed": 28,
+      "share": 0.5384615384615384
+    },
+    {
+      "key": "T92",
+      "n_grid": 44,
+      "n_both_sides_uncrossed": 28,
+      "share": 0.6363636363636364
+    },
+    {
+      "key": "T93",
+      "n_grid": 34,
+      "n_both_sides_uncrossed": 27,
+      "share": 0.7941176470588235
+    },
+    {
+      "key": "T94",
+      "n_grid": 26,
+      "n_both_sides_uncrossed": 18,
+      "share": 0.6923076923076923
+    },
+    {
+      "key": "T95",
+      "n_grid": 24,
+      "n_both_sides_uncrossed": 19,
+      "share": 0.7916666666666666
+    },
+    {
+      "key": "T96",
+      "n_grid": 20,
+      "n_both_sides_uncrossed": 16,
+      "share": 0.8
+    },
+    {
+      "key": "T97",
+      "n_grid": 14,
+      "n_both_sides_uncrossed": 12,
+      "share": 0.8571428571428571
+    },
+    {
+      "key": "T98",
+      "n_grid": 10,
+      "n_both_sides_uncrossed": 4,
+      "share": 0.4
+    },
+    {
+      "key": "T99",
+      "n_grid": 4,
+      "n_both_sides_uncrossed": 2,
+      "share": 0.5
+    },
+    {
+      "key": "bracket_0_of_5",
+      "n_grid": 6,
+      "n_both_sides_uncrossed": 0,
+      "share": 0.0
+    },
+    {
+      "key": "bracket_0_of_6",
+      "n_grid": 2698,
+      "n_both_sides_uncrossed": 1758,
+      "share": 0.6515937731653076
+    },
+    {
+      "key": "bracket_1_of_5",
+      "n_grid": 6,
+      "n_both_sides_uncrossed": 4,
+      "share": 0.6666666666666666
+    },
+    {
+      "key": "bracket_1_of_6",
+      "n_grid": 2698,
+      "n_both_sides_uncrossed": 2076,
+      "share": 0.7694588584136397
+    },
+    {
+      "key": "bracket_2_of_5",
+      "n_grid": 6,
+      "n_both_sides_uncrossed": 4,
+      "share": 0.6666666666666666
+    },
+    {
+      "key": "bracket_2_of_6",
+      "n_grid": 2698,
+      "n_both_sides_uncrossed": 2133,
+      "share": 0.7905856189770201
+    },
+    {
+      "key": "bracket_3_of_6",
+      "n_grid": 2698,
+      "n_both_sides_uncrossed": 1970,
+      "share": 0.7301704966641956
+    }
+  ],
+  "staleness": {
+    "p50_bid_staleness_seconds": 2550.932038,
+    "p90_bid_staleness_seconds": 35956.422381799995,
+    "p50_ask_staleness_seconds": 1936.7321235,
+    "p90_ask_staleness_seconds": 24536.821637200002
+  }
+}

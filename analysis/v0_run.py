@@ -23,10 +23,9 @@ from analysis.v0_bracket_structure import bracket_structure_report
 from analysis.v0_label_noise import label_noise_report
 from analysis.v0_settlement_audit import edt_midnight_hour_max_count, settlement_era_audit
 from analysis.v0_turnover import turnover_from_trades
+from analysis.v0_x1_sign import stream_sign_gate
 from wxmm.analysis.complement import complement_census_parquet
 from wxmm.analysis.fee_deciles import fee_decile_table
-from wxmm.analysis.maker_taker import select_primary, x1a_report
-from wxmm.analysis.population import x1b_report
 from wxmm.analysis.trades_ingest import SIX_BRACKET_ERA_START, read_trades_parquet
 from wxmm.backtest.ledger import Ledger, refuse_unless_preregistered
 from wxmm.core.errors import LeakageError
@@ -312,9 +311,11 @@ def phase_b_rest() -> dict[str, Any]:
         },
         "B7_ledger": b7,
         "B8_fee_deciles": {
-            "n_prices": fees.get("n_prices"),
-            "contracts": fees.get("contracts"),
+            "n_trades": fees.get("n_trades"),
+            "decile_prices": fees.get("decile_prices"),
+            "contracts": list((fees.get("fees_by_contract_and_rounding") or {}).keys()),
             "roundings": [r.value for r in FeeRounding],
+            "artifact": "analysis/out/v0_run/fee_deciles.json",
         },
         "stop_and_report": "B",
     }
@@ -477,67 +478,18 @@ def phase_e() -> dict[str, Any]:
     working = OUT_DIR / "c1-x1-v1.working.yaml"
     working.write_text(yaml.safe_dump(x1_prereg, sort_keys=False), encoding="utf-8")
 
-    trades = read_trades_parquet(TRADES)
     labels = read_labels(LABELS)
-    primary, blocks, n_unlabelled = select_primary(trades, labels)
-    x1a = x1a_report(primary, blocks, n_unlabelled=n_unlabelled, seed=0, n_resample=200)
-    x1b = x1b_report(primary)
-
-    jja_maker = [
-        s
-        for s in x1a.slices
-        if s.season == "JJA" and s.side == "maker" and s.net_of_fee
-    ]
+    sign_gate = stream_sign_gate(TRADES, labels, seed=0, n_resample=200)
     e2 = {
         "status": "OK",
         "packaged_run_c1_x1": _not_run(
             "prereg go_no_go still FILL_IN for maker_mean_net_return / "
             "near_flat_bracket_day_share / resting_offer_below_10c_net_return; "
             "those thresholds come from the root chat and were not invented. "
-            "Sign-gate statistics below are computed via x1a/x1b directly."
+            "Sign-gate statistics below are computed via a streaming x1a/x1b path."
         ),
         "gate0_inputs": gate0,
-        "sign_gate": {
-            "n_primary_trades": x1a.n_primary_trades,
-            "maker_mean_net": str(x1a.maker_mean_net),
-            "maker_ci_net": (
-                [str(x1a.maker_ci_net[0]), str(x1a.maker_ci_net[1])]
-                if x1a.maker_ci_net
-                else None
-            ),
-            "maker_ci_excludes_zero_positive": bool(
-                x1a.maker_ci_net and x1a.maker_ci_net[0] > 0
-            ),
-            "jja_maker_net_slices": [
-                {
-                    "price_band": s.price_band,
-                    "season": s.season,
-                    "n_trades": s.stats.n_trades,
-                    "mean_return": str(s.stats.mean_return),
-                    "ci": (
-                        [str(s.stats.ci_low), str(s.stats.ci_high)]
-                        if s.stats.ci_low is not None
-                        else None
-                    ),
-                }
-                for s in jja_maker
-            ],
-            "x1b_near_flat": {
-                "n_bracket_days": x1b.n_bracket_days,
-                "shares": [
-                    {
-                        "threshold": str(share.threshold),
-                        "share_below": str(share.share_below),
-                        "n_below": share.n_below,
-                        "maker_mean_net_return": str(share.maker_mean_net_return),
-                    }
-                    for share in x1b.thresholds
-                ],
-            },
-            "headline": "JJA season-stratified; weather maker fee $0 so gross=net",
-        },
-        "n_unlabelled": n_unlabelled,
-        "n_block_trades": len(blocks),
+        "sign_gate": sign_gate,
     }
     _write("phase_e2_x1_sign.json", e2["sign_gate"])
 

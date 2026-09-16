@@ -640,6 +640,13 @@ def trade_anchor_coverage_report(
     by_day = index_by_climate_day(trades)
     days = sorted({label.climate_day for label in labels.values()})
     hours_tuple = tuple(int(h) for h in hours_to_close)
+    # Mapping is a corpus property. Resolve once so a one-sided ticker as-of
+    # slice cannot fail the bijection gate that the full tape already cleared.
+    verified = mapping
+    if verified is None:
+        non_block = [trade for trade in trades if not trade.is_block_trade]
+        if non_block:
+            verified = assert_outcome_bookside_mapping(non_block)
 
     pooled_n_grid = 0
     pooled_n_ok = 0
@@ -671,7 +678,7 @@ def trade_anchor_coverage_report(
 
             as_of_trades = filter_trades_as_of(day_trades, as_of)
             ladder = trade_ladder_or_none(
-                as_of_trades, tickers, as_of=as_of, mapping=mapping
+                as_of_trades, tickers, as_of=as_of, mapping=verified
             )
             if ladder is not None:
                 pooled_n_ok += 1
@@ -692,7 +699,7 @@ def trade_anchor_coverage_report(
                         as_of_trades,
                         as_of=as_of,
                         ticker=ticker,
-                        mapping=mapping,
+                        mapping=verified,
                     )
                     if _book_is_covered(book):
                         bracket_counts[bracket_key][1] += 1

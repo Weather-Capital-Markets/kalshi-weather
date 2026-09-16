@@ -430,8 +430,15 @@ def select_primary(
     labels: Mapping[str, SettlementLabel],
     *,
     era_start: date = SIX_BRACKET_ERA_START,
+    skip_non_integer_count: bool = False,
 ) -> tuple[list[AttributedTrade], list[AttributedTrade], int]:
-    """Primary = non-block, six-bracket era, labelled. Blocks reported separately."""
+    """Primary = non-block, six-bracket era, labelled. Blocks reported separately.
+
+    Kalshi ``count_fp`` can be fractional. The fee schedule is per integer
+    contract, so ``attribute_trade`` refuses those rows. Pass
+    ``skip_non_integer_count=True`` on a real-corpus run to drop them and keep
+    going; the caller must report how many were skipped.
+    """
     primary: list[AttributedTrade] = []
     blocks: list[AttributedTrade] = []
     n_unlabelled = 0
@@ -444,12 +451,18 @@ def select_primary(
         if label is None:
             n_unlabelled += 1
             continue
+        if skip_non_integer_count and Decimal(int(trade.count)) != trade.count:
+            continue
         attributed = attribute_trade(trade, label)
         if trade.is_block_trade:
             blocks.append(attributed)
         else:
             primary.append(attributed)
     return primary, blocks, n_unlabelled
+
+
+def count_non_integer_trades(trades: Sequence[RawTrade]) -> int:
+    return sum(1 for trade in trades if Decimal(int(trade.count)) != trade.count)
 
 
 def x1a_report(

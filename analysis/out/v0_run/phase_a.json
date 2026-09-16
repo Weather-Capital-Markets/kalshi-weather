@@ -1,0 +1,66 @@
+{
+  "phase": "A",
+  "status": "OK",
+  "trades": {
+    "parquet_root": "data/trades/KXHIGHNY",
+    "n_merged": 3403660,
+    "start": "2022-12-11",
+    "end": "2026-09-15",
+    "cutoff_market_settled_ts": 1784160000,
+    "cutoff_iso": "2026-07-16T00:00:00+00:00",
+    "n_duplicate_ids": 0,
+    "n_boundary_overlap": 0,
+    "gap_notes": [
+      "time hole at cutoff: last_historical=2026-07-15T23:27:58.415171+00:00 first_live=2026-07-16T00:50:26.613577+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:48:15.244821+00:00 first_live=2026-07-16T00:00:17.914037+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T22:43:11.686448+00:00 first_live=2026-07-16T00:25:51.752956+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:57:08.489410+00:00 first_live=2026-07-16T00:00:06.209259+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:56:03.970016+00:00 first_live=2026-07-16T00:00:19.466294+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:56:04.211983+00:00 first_live=2026-07-16T00:00:16.458516+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:48:15.245848+00:00 first_live=2026-07-16T00:00:19.322574+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:55:36.186641+00:00 first_live=2026-07-16T00:28:17.976633+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:39:05.301180+00:00 first_live=2026-07-16T00:13:34.536408+00:00 cutoff=2026-07-16T00:00:00+00:00",
+      "time hole at cutoff: last_historical=2026-07-15T23:59:10.827006+00:00 first_live=2026-07-16T00:00:15.009357+00:00 cutoff=2026-07-16T00:00:00+00:00"
+    ],
+    "failed_tickers": null,
+    "n_shards": 46,
+    "first_shard": "climate_month=2022-12.parquet",
+    "last_shard": "climate_month=2026-09.parquet"
+  },
+  "complement": {
+    "n_trades": 3405461,
+    "n_violations": 0,
+    "worst_abs_deviation": null,
+    "worst_trade_id": null,
+    "tolerance": 0.0001
+  },
+  "raw_trades": {
+    "status": "NOT_RUN",
+    "reason": "prior pull wrote only parquet; content-addressed RAW capture is wired via --raw-dir / WXMM_RAW_DIR but was not used for this corpus"
+  },
+  "labels": {
+    "n_labelled_tickers": 8109,
+    "n_climate_days": 1352,
+    "date_range": {
+      "start": "2022-12-11",
+      "end": "2026-09-13"
+    },
+    "day_audit": {
+      "n_no_issuance": 0,
+      "n_missing_high": 0,
+      "n_revised_cli": 8,
+      "no_issuance_days": [],
+      "revised_cli_days": [
+        "2023-03-22",
+        "2024-09-24",
+        "2024-09-25",
+        "2025-01-19",
+        "2025-12-03",
+        "2026-01-01",
+        "2026-03-04",
+        "2026-08-29"
+      ]
+    }
+  },
+  "stop_and_report": "A"
+}

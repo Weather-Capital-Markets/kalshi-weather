@@ -1,0 +1,20 @@
+{
+  "no_issuance_days": [],
+  "missing_high_days": [],
+  "revised_cli_days": [
+    "2023-03-22",
+    "2024-09-24",
+    "2024-09-25",
+    "2025-01-19",
+    "2025-12-03",
+    "2026-01-01",
+    "2026-03-04",
+    "2026-08-29"
+  ],
+  "n_no_issuance": 0,
+  "n_missing_high": 0,
+  "n_revised_cli": 8,
+  "days_with_issuance": 1352,
+  "days_with_revision": 8,
+  "label_noise_rate": 0.005917159763313609
+}

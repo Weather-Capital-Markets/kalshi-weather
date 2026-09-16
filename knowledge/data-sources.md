@@ -191,11 +191,17 @@ intervals exclude zero are staleness and liveness terms — per-side staleness,
 the staleness ratio, the 4h gap since last trade, and the 1h change in implied
 spread. Those describe how current the anchor is, not which way flow is pushing.
 
+**Effective sample size:** 444 independent climate-day clusters among the 615
+scored predictions — above the ~400 ridge-limit flag.
+
 Two limits on how far this generalises. Coverage is 23%, and the covered subset
 is selected on anchor completeness, so the estimate speaks to days where every
 bracket printed on both sides and not to thin ones. And `notional` is the only
 size term in the design; queue position and depth stay behind the Stage-0
 reconstruction gate.
+
+The ordered v0 RUN that produced these numbers (and the B1–B8 / E2 companions)
+lives under `analysis/out/v0_run/` and is driven by `python -m analysis.v0_run`.
 
 ---
 
