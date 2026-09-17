@@ -1,0 +1,45 @@
+{
+  "n_trades": 3405461,
+  "span": "2022-12-10T15:37:12.271175+00:00 .. 2026-09-15T01:45:48.342558+00:00",
+  "cross_tab": {
+    "yesxask": 0,
+    "yesxbid": 1899605,
+    "noxask": 1505856,
+    "noxbid": 0
+  },
+  "outcome_to_book": {
+    "yes": "bid",
+    "no": "ask"
+  },
+  "as_specified": {
+    "sign": 1,
+    "n_prints": 3405461,
+    "n_two_sided": 3368606,
+    "n_crossed": 195892,
+    "n_touching": 384667,
+    "rate": 0.05815224457832112,
+    "mean_gap_cents": 3.8635800684318675,
+    "median_gap_cents": 2.0,
+    "n_tickers": 7693,
+    "n_tickers_two_sided": 6974,
+    "n_tickers_majority_crossed": 230,
+    "median_ticker_rate": 0.04586576898800757
+  },
+  "inverted": {
+    "sign": -1,
+    "n_prints": 3405461,
+    "n_two_sided": 3368606,
+    "n_crossed": 2788047,
+    "n_touching": 384667,
+    "rate": 0.8276560096372209,
+    "mean_gap_cents": -3.8635800684318675,
+    "median_gap_cents": -2.0,
+    "n_tickers": 7693,
+    "n_tickers_two_sided": 6974,
+    "n_tickers_majority_crossed": 6074,
+    "median_ticker_rate": 0.8227438284095507
+  },
+  "verdict": "sign_confirmed",
+  "note": "as-specified crossed 0.0582 <= 0.35; ask sits above bid (median implied spread +2.0c), crossing is staleness",
+  "n_block_excluded": 0
+}

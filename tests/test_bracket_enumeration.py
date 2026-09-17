@@ -11,11 +11,10 @@ from analysis.bracket_enumeration import (
     build_regime_table,
     contiguous_interior,
     event_structure,
-    parse_market_strike,
-    parse_strike_from_subtitle,
     verdict_on_two_degree_hypothesis,
 )
 from ingestion.writer import RawJsonlWriter, utc_now_iso
+from wxmm.settlement.brackets import parse_market_strike, parse_strike_from_subtitle
 
 
 def _write_markets(raw_dir: Path, key: str, markets: list[dict]) -> None:

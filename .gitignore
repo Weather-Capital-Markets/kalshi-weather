@@ -218,7 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Project data (raw captures, sqlite heartbeat/state)
-data/
+/data/
 *.sqlite
 *.sqlite-journal
 
@@ -226,4 +226,14 @@ data/
 .cursor/
 
 # Analysis outputs (generated)
-analysis/out/
+analysis/out/*
+!analysis/out/emission_convention_sweep.json
+!analysis/out/emission_convention_sweep_inputs.json
+!analysis/out/emission_convention_sweep.txt
+!analysis/out/crossed_rate.json
+!analysis/out/crossed_by_day.json
+!analysis/out/c1_m1_v0_min.json
+!analysis/out/v0_run/
+!analysis/out/v0_run/**
+!analysis/out/v0_reconcile/
+!analysis/out/v0_reconcile/**

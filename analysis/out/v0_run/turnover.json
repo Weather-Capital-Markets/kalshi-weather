@@ -1,0 +1,38 @@
+{
+  "status": "OK",
+  "band": "10_90",
+  "premium_definition": "yes_price * count per trade (YES-space; tape analogue of turnover_census mid*volume)",
+  "start": "2022-12-11",
+  "end": "2026-09-13",
+  "measured": {
+    "M_mean_daily_premium": 16101.901298905905,
+    "median_daily_premium": 5141.499999999997,
+    "p75_daily_premium": 25670.190000000024,
+    "p90_daily_premium": 44337.12000000001,
+    "p99_daily_premium": 91840.78499999992,
+    "top_decile_share": 0.40498729265939,
+    "A_volume_weighted_avg_price": 0.3918871214355522,
+    "A_trade_weighted_avg_price": 0.3944328136642686,
+    "mean_brackets_with_volume_per_climate_day": 4.482859226841722,
+    "median_brackets_with_volume_per_climate_day": 4.0,
+    "median_premium_per_market_day": 390.63500000000005,
+    "zero_volume_market_day_share": 0.2542167212716903,
+    "zero_volume_market_day_share_pct": 25.421672127169032,
+    "n_climate_days": 1371,
+    "n_market_days_with_band_volume": 6146,
+    "n_trades_in_band": 2426416,
+    "total_premium_in_band": 22075706.680799995,
+    "total_contracts_in_band": 56331799.32
+  },
+  "recorded": {
+    "median_daily_premium_climate_day": 2400.0,
+    "p75_daily_premium_climate_day_range": [
+      15000.0,
+      26000.0
+    ],
+    "median_brackets_with_volume_per_climate_day": 4.0,
+    "median_premium_per_market_day": 214.0,
+    "zero_volume_market_day_share_pct": 22.3
+  },
+  "note": "M and A are threshold inputs for Gate 0 / C1-X1, not outcomes of a test."
+}

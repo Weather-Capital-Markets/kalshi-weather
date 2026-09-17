@@ -1,0 +1,14 @@
+n_trades_seen: 3405461
+n_primary_trades: 2915516
+n_block_trades: 0
+n_unlabelled: 69719
+n_fractional_count_fp_skipped: 420226
+maker_mean_net: 0.05051012071976741104073191531
+maker_ci_net: ['0.01058452491242199', '0.09543490921478807']
+maker_ci_excludes_zero_positive: True
+jja_maker_net_slices: [6 rows]
+x1b_near_flat:
+  n_bracket_days: 7571
+  shares: [3 rows]
+headline: JJA season-stratified; weather maker fee $0 so gross=net
+fractional_note: Kalshi count_fp can be fractional; fee schedule is per integer contract so fractional rows are skipped rather than floored

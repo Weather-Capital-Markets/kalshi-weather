@@ -1,6 +1,8 @@
 # plan.md — Kalshi KXHIGHNY session 2 execution plan
 
-**Status:** ACTIVE — source of truth for run order, gates, and K1 pre-registration.
+**Status:** ACTIVE — source of truth for **research** run order, gates, and K1
+pre-registration. Trading-stack mechanics live in `wxmm/` (Stages B1–B3) and do
+**not** ratify edge or lift these gates. See §11.
 **Owner:** root chat ratifies; this file records what landed in code.
 
 ## 1. Scope
@@ -83,6 +85,18 @@ asos_obs → clockb_check → [write Clock B conclusion to data-sources.md]
 window_mismatch (K2 prep)
 validate_emission_forward (run when VPS alive; rsync or on-box)
 ```
+
+**C1-X1 (2026-09-13) — not blocked by Stage 0.** Maker/taker returns on the
+public trade record (`wxmm/analysis/`, `wxmm/eval/flb.py`). Reads no book and
+no candle. Prereg `prereg/c1-x1-v1.yaml` (go/no-go still `FILL_IN`; `run()`
+refuses until the root chat fills them). X1a without X1b is uninterpretable.
+
+**Stage 0 (C1-M1) — before any VPS 12-way sweep.** Decision bands locked in
+`prereg/c1-m1-v1-stage0-decision.yaml`: max≥0.60 → JOIN_BUG / full_corpus;
+0.10≤max<0.60 → PARTIAL (no auto-branch; `winner_match_distribution` by market/day);
+max<0.10 → LOW then well-posedness check before falsified vs ILL_POSED.
+Orphan prose 0.9%/2026 is unreproducible (`knowledge/venue-facts.md` §1.12); do not
+recover its window. Declared window: 2026-08-19 → latest complete climate day.
 
 **Code landed 2026-08-14** — 71 tests passing; census still not executed.
 
@@ -183,4 +197,31 @@ bracket_enumeration → nbm_latency_check → nbm_availability_watch → (6c gat
 Do **not** build forecast-vs-market comparison until A and B pass. If B hard-stops,
 re-run `nbm_archive` with corrected latency before 6c. **Do not re-run backfill**
 until B-fix settles first-availability vs Last-Modified.
+
+## 11. WXMM instrument (Stages B1–B3) — orthogonal to K1/K2
+
+**Status:** IN TREE — mechanics only. Does **not** execute the K1 census, lift
+the K2 gate, or ship a fair-value model.
+
+Thesis: **instrument before edge**. `wxmm/` encodes as-of reads, LST climate
+days, non-fungible KNYC vs KLGA underlyings, human send-gate, last-in-queue
+paper fills, and a fake venue. `NullFairValue` and `strategies.idle.Idle` are
+the only shipped policies. Live and replay share `wxmm.core.view.build_market_view`.
+
+Two consumers of that view are **not** the same policy:
+
+- Replay: `Strategy.on_snapshot` (Idle returns `[]`).
+- Live quote candidates: `wxmm.decide.engine.propose` (at-touch makers, no
+  fair value, no send).
+
+Identical views do not imply identical orders until a strategy is wired on
+both sides. Cross-underlying size requires an explicit `BasisModel` and never
+reports residual 0; positions are never aggregated across non-fungible
+underlyings.
+
+Research gates in §§3–10 still bind any capital or edge claim. Kalshi maker
+fee $0 is modelled; `require_for_capital` on that fact expires the next day
+and blocks the ops checklist until re-verified. Polymarket fills cannot be
+priced until the fee schedule is verified.
+
 

@@ -1,0 +1,39 @@
+{
+  "phase": "C",
+  "status": "OK",
+  "verdict": "flow_adds_nothing",
+  "mean_rps_improvement": -0.005568055159047568,
+  "clustered_ci": [
+    -0.02358702417728206,
+    0.013150082186674782
+  ],
+  "n_predictions": 615,
+  "n_clusters": 444,
+  "ess_note": "adequate_for_ridge",
+  "coverage_share": 0.22781065088757396,
+  "dual_run_byte_identical": true,
+  "signed_ofi": [
+    {
+      "name": "w14400s_signed_ofi",
+      "point": 0.01553297755401177,
+      "ci_low": -0.10045852919882856,
+      "ci_high": 0.1742360481404557
+    },
+    {
+      "name": "w3600s_signed_ofi",
+      "point": -0.05252658863761928,
+      "ci_low": -0.30903882956939477,
+      "ci_high": 0.08893112645169043
+    },
+    {
+      "name": "w900s_signed_ofi",
+      "point": -0.037488688098024456,
+      "ci_low": -0.28791750019192863,
+      "ci_high": 0.14546269717186236
+    }
+  ],
+  "residual_gbm": "NOT_RUN \u2014 gated on flow_carries_information",
+  "is_strategy_pnl": false,
+  "artifact": "analysis/out/c1_m1_v0_min.json",
+  "stop_and_report": "C"
+}

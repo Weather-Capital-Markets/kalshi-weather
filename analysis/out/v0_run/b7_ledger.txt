@@ -1,0 +1,6 @@
+status: OK
+prereg_registered: True
+unregistered_refused: True
+leakage_raised: True
+artifact_byte_identical_reread: True
+artifact_sha256: 38b903e47653790e1aa8210b2eec29a47c3bfa18d7c8cafbafb8152d793f88e1

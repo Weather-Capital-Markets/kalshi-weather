@@ -1,0 +1,89 @@
+{
+  "flag_for_root_chat": true,
+  "title": "Candle census vs trade-tape turnover \u2014 K1/S2 may be understated",
+  "note": "Tape median daily premium is ~2.1\u00d7 the recorded candle median. If candles omit emission-on-change volume, K1 spread/depth frequency findings and Gate 0 capacity arithmetic that used the candle path are systematically low. This file does not restate the gate record; root chat owns whether K1 and S2 need revisiting.",
+  "believe": "trade tape (direct executions)",
+  "comparison_rows": [
+    {
+      "quantity": "median_daily_premium_10_90",
+      "candle_recorded": 2400.0,
+      "tape_measured": 5141.499999999997,
+      "ratio_tape_over_candle": 2.1422916666666656
+    },
+    {
+      "quantity": "p75_daily_premium_10_90",
+      "candle_recorded": [
+        15000.0,
+        26000.0
+      ],
+      "tape_measured": 25670.190000000024
+    },
+    {
+      "quantity": "median_brackets_with_volume_per_climate_day",
+      "candle_recorded": 4.0,
+      "tape_measured": 4.0
+    },
+    {
+      "quantity": "median_premium_per_market_day",
+      "candle_recorded": 214.0,
+      "tape_measured": 390.63500000000005
+    },
+    {
+      "quantity": "zero_volume_market_day_share_pct",
+      "candle_recorded": 22.3,
+      "tape_measured": 25.584211163579123
+    },
+    {
+      "quantity": "M_mean_daily_premium_10_90",
+      "candle_recorded": "NOT_IN_CANDLE_CENSUS",
+      "tape_measured": 16101.901298905905
+    },
+    {
+      "quantity": "A_volume_weighted_avg_price_10_90",
+      "candle_recorded": "NOT_IN_CANDLE_CENSUS",
+      "tape_measured": 0.3918871214355522
+    }
+  ],
+  "tape_full": {
+    "status": "OK",
+    "band": "10_90",
+    "premium_definition": "yes_price * count per trade (YES-space; tape analogue of turnover_census mid*volume)",
+    "start": "2022-12-11",
+    "end": "2026-09-13",
+    "measured": {
+      "M_mean_daily_premium": 16101.901298905905,
+      "median_daily_premium": 5141.499999999997,
+      "p75_daily_premium": 25670.190000000024,
+      "p90_daily_premium": 44337.12000000001,
+      "p99_daily_premium": 91840.78499999992,
+      "top_decile_share": 0.40498729265939,
+      "A_volume_weighted_avg_price": 0.3918871214355522,
+      "A_trade_weighted_avg_price": 0.3944328136642686,
+      "mean_brackets_with_volume_per_climate_day": 4.482859226841722,
+      "median_brackets_with_volume_per_climate_day": 4.0,
+      "median_premium_per_market_day": 390.63500000000005,
+      "zero_volume_market_day_share": 0.25584211163579124,
+      "zero_volume_market_day_share_pct": 25.584211163579123,
+      "n_climate_days": 1371,
+      "n_market_days_with_band_volume": 6146,
+      "n_trades_in_band": 2426416,
+      "total_premium_in_band": 22075706.680799995,
+      "total_contracts_in_band": 56331799.32
+    },
+    "recorded": {
+      "median_daily_premium_climate_day": 2400.0,
+      "p75_daily_premium_climate_day_range": [
+        15000.0,
+        26000.0
+      ],
+      "median_brackets_with_volume_per_climate_day": 4.0,
+      "median_premium_per_market_day": 214.0,
+      "zero_volume_market_day_share_pct": 22.3
+    },
+    "note": "M and A are threshold inputs for Gate 0 / C1-X1, not outcomes of a test."
+  },
+  "edt_midnight_1am_from_run_A": {
+    "n": 52,
+    "note": "Carried from Run A (integration-v0-run); Run B lacked ASOS and reported NOT_RUN. Not recomputed here."
+  }
+}

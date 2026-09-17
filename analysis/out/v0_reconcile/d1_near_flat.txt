@@ -1,0 +1,19 @@
+D1 — Near-flat maker return 2×2
+================================
+Flatness definition (BOTH runs): |bought−sold|/(bought+sold) on CONTRACTS,
+threshold 0.10. Same universe: six_bracket, labelled, non-block, integer
+count_fp. n_near_flat = 1141 /
+7571 bracket-days.
+
+                    point                         day-clustered 95% CI
+day-weighted (B)    -0.06632376706995207369103787252   ['-0.1261958684453787', '0.0008859504127092767']
+trade-weighted (A)  0.03454164279997775390783615123    ['-0.032567548071209804', '0.11261170957727544']
+
+Verdict: definitions of flatness MATCH. Disagreement was the reported
+statistic. B's −6.6% is the day-weighted point. A's [−0.03257, +0.11261]
+is the trade-weighted clustered CI (exact match). Cross-reading B's point
+against A's CI is invalid. Neither implementation is buggy.
+
+FOR ROOT CHAT / entry 09: pick weighting before reading the sign.
+  day-weighted point ≈ −6.6%, CI [−12.6%, +0.09%] (touches zero)
+  trade-weighted point ≈ +3.5%, CI [−3.3%, +11.3%] (includes zero)

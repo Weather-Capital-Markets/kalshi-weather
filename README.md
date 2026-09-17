@@ -1,8 +1,19 @@
 # kalshi-weather
 
-Research and trading system for Kalshi KXHIGHNY/KNYC Central Park daily
-maximum-temperature markets. Session 1 delivers a production-quality market-data
-logger; analysis, models, and weather ingestion come in later sessions.
+Research and trading **instrument** for Kalshi KXHIGHNY (Central Park / KNYC /
+CLINYC daily maximum temperature) and, separately, Polymarket NYC daily-high
+(LaGuardia / KLGA / Weather Underground). Those are different underlyings —
+not an arbitrage.
+
+**Instrument before edge.** `ingestion/` and `analysis/` measure. K1 census
+execution is still gated on root-chat ratification; K2 is blocked on NBM
+first-availability. `wxmm/` is the as-of trading/backtest stack: no fair-value
+model, no production strategy, no order router. Live send is a human token
+against a fake venue. Capital still requires a re-verified Kalshi maker-fee
+fact and a verified Polymarket fee schedule.
+
+Session 1 delivered the market-data logger. Later sessions added historical
+backfill, measurement, and the WXMM instrument (Stages B1–B3).
 
 ## Requirements
 
@@ -193,9 +204,12 @@ Tests mock HTTP; no live API calls in CI.
 ## Project layout
 
 ```
-knowledge/          Source-of-truth docs (weather, venue facts)
-ingestion/          Kalshi market-data logger
-tests/              Unit tests
+knowledge/          Source-of-truth docs (weather, venue facts, research gates)
+ingestion/          Kalshi / Polymarket market-data loggers
+analysis/           Measurement (census, clocks, NBM, basis) — not models
+wxmm/               As-of trading/backtest instrument (no FV, no router)
+strategies/         Idle example only
+tests/              Unit / canary / parity / golden
 deploy/             systemd unit files + VPS scripts in scripts/
 data/               Runtime captures (gitignored)
 ```
@@ -393,4 +407,25 @@ python -m analysis.nbm_latency_check   # exit 2 = hard stop if p90 lag > 60 min
 python -m analysis.nbm_availability_watch --mode tick   # VPS timer: first-availability poll
 python -m analysis.nbm_availability_watch --mode report   # summarize CSV
 ```
+
+## Stage B1 — WXMM trading & backtest infrastructure
+
+`wxmm/` is the as-of trading/backtest stack. It does **not** replace `ingestion/` or
+`analysis/`, and it contains **no** fair-value models, production strategies, or
+order router.
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+mypy --strict wxmm
+pytest -q
+python -m wxmm.cli console   # propose-only skeleton; does not send orders
+```
+
+Design rules: one time authority (`wxmm.core.timeauth`), every read is
+`get(key, as_of)`, backtest clock is the only now, Kalshi NYC and Polymarket NYC
+are different underlyings, Polymarket fills cannot be priced until the fee
+schedule is verified, coverage reports are mandatory on backtest results,
+configs must be listed in `prereg/`.
+
 

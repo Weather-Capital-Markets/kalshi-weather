@@ -88,6 +88,170 @@ the archive would mis-select the issuance for most market days — a 10 AM snaps
 CLINYC revision an 8 AM snapshot cannot. `[V-LOCAL]` — `python -m analysis.venue_eras` over
 all 9,364 markets, 2026-08-14. Tracked as O9.
 
+### 1.3.1 Label noise — DECIDED definition `[V-LOCAL]`
+
+**"Label noise" for this project means venue disagreement**, not CLINYC revision
+activity. Two instruments on the same corpus reported rates that differ by a
+factor of ~32 because they measured different events:
+
+| Instrument | Definition | Count | Denominator | Rate |
+|---|---|---|---|---|
+| Run A (`c1_m1_run` / `v0_labels`) | CLINYC-as-issued `yes_won` ≠ Kalshi `result` on labelled tickers with a yes/no result | **2** | **8,109** tickers | **0.0247%** |
+| Run B (`v0_run` / `v0_label_noise`) | climate day with `n_later > 0` (any full-day CLINYC issuance after the era snapshot) | **11** | **1,372** era climate days | **0.802%** |
+| K2 recorded baseline | revision-like event | **1** | **2,416** climate days | **0.0414%** |
+
+Flagged venue-disagreement tickers (Run A, both on 2025-12-03, snapshot high 40°F):
+`KXHIGHNY-25DEC03-B41.5` (CLINYC no / venue yes), `KXHIGHNY-25DEC03-B39.5`
+(CLINYC yes / venue no). That is **one climate day** on a common per-day
+denominator (1 / 1,352 labelled days = 0.0740%).
+
+Revisions that **change** the settled high are rarer still: of the 8 labelled
+days with `n_later > 0`, only **2025-12-03** has a later high different from the
+snapshot (40 → 41). Rate on labelled days: 1 / 1,352 = 0.0740%. Revisions do
+not overwrite the Kalshi label under current policy; they are a CLINYC hygiene
+metric and must not be called label noise.
+
+Common per-day rates (do not mix denominators):
+
+| Quantity | Per-day rate |
+|---|---|
+| K2 recorded | 1 / 2,416 = 0.0414% |
+| Run B revisions (`n_later > 0`) on era days | 11 / 1,372 = 0.802% |
+| Run B revisions on labelled days | 8 / 1,352 = 0.592% |
+| Revisions that change high (labelled) | 1 / 1,352 = 0.0740% |
+| Venue disagreement (labelled days with ≥1 disagreeing ticker) | 1 / 1,352 = 0.0740% |
+
+Artifact: `analysis/out/v0_reconcile/d2_label_noise.json`.
+
+### 1.3.2 Settlement "raising" days — two definitions `[V-LOCAL]`
+
+Run A reported 1,351 clean / **1 raising**. Run B reported 1,344 clean / **8 raising**
+and separately **8 revised-CLI days**. The sets reconcile:
+
+- **Run A raising** = later full-day high **differs** from snapshot high → `{2025-12-03}`
+- **Run B raising** = `n_later > 0` on a labelled day (revision exists, value may be
+  unchanged) → the same 8 as revised-CLI:
+  `2023-03-22`, `2024-09-24`, `2024-09-25`, `2025-01-19`, `2025-12-03`,
+  `2026-01-01`, `2026-03-04`, `2026-08-29`
+
+B is better at noticing revisions; A's count answers whether the settled high
+moved. Artifact: `analysis/out/v0_reconcile/d3_settlement.json`.
+
+### 1.4 `taker_outcome_side` × `taker_book_side` (trade-derived anchor)
+
+C1-M1 addendum 2 must not assume `taker_book_side`'s frame of reference. The docs call it
+only "book side equivalent to `taker_outcome_side`". Direction for the YES-space estimator
+uses `taker_outcome_side` alone (`yes` → d=+1 / offer; `no` → d=−1 / bid). The cross-tab
+is a gate: it must be a clean one-to-one bijection or the estimator stops.
+
+**Addendum 2's stated pairing was wrong, and the correction matters less than what it
+reveals.** Addendum 2 asserted `yes` pairs with `ask`, reasoning that buying YES lifts a YES
+offer. The observed table is the opposite, `yes↔bid` / `no↔ask`, so `taker_book_side` is not
+in the YES-book frame addendum 2 assumed. That is a bookkeeping correction. The load-bearing
+observation is the **off-diagonal being exactly zero**: `taker_book_side` is a deterministic
+function of `taker_outcome_side`, carries zero independent information, and therefore
+**cannot corroborate the direction sign**. A bijection is a consistency gate, not a second
+source. Any code or prose that treats a clean cross-tab as sign verification is wrong.
+
+| Item | Status |
+|---|---|
+| Observed mapping | **clean anti-diagonal** (re-probed 2026-09-15, C1-M1 v0-MINIMAL). `yes → bid` (17,813), `no → ask` (10,775). `yes×ask` = 0, `no×bid` = 0. Prior 2026-09-13 sample (68,305 / 47,082) agreed. |
+| Sample | `python -m analysis.probe_taker_mapping --series KXHIGHNY --max-markets 50 --limit 1000`. n=28,588 non-block prints. 0 parse errors. 0 complement failures. Gate passed before any v0-MINIMAL anchor edit. |
+| Gate | `wxmm.fairvalue.anchor_trades.assert_outcome_bookside_mapping` |
+| Information content | **None.** Off-diagonal is exactly 0, so `taker_book_side` is redundant with `taker_outcome_side`. It is not a second source and never verifies d. |
+| Direction | From `taker_outcome_side` only (`yes` → d=+1 / YES-space ask print; `no` → d=−1 / YES-space bid print). The economics are unambiguous: a taker who bought YES at `yes_price` lifted someone's offer, so the print sets the ask. |
+| Probe | `python -m analysis.probe_taker_mapping --series KXHIGHNY` |
+
+#### 1.4.1 Sign verification: the crossed-state rate
+
+The only independent check on d is a property the mapping implies but the mapping did not
+manufacture. Replay prints per ticker into the trade-implied book. If d is right, ask prints
+land above bid prints most of the time and a crossed state (`ask < bid`) is occasional
+staleness. If d is inverted, the anchor is crossed nearly always and the rate approaches 100%.
+The inverted-d replay is run as a paired control on the same prints, so the two rates are
+reported together.
+
+A synthetic fixture cannot settle this — the fixture is built from the same assumption it
+would be testing. The number must come from the real corpus, and it must be reported before
+anything is fitted.
+
+One caveat on how the number is presented. Flipping d swaps which side each print
+writes, so the inverted rate is the exact complement of the as-specified rate except
+where `ask == bid`. The inverted column is a reading aid, **not corroboration**; the
+evidence is the *level* of the as-specified rate against the 0.5 coin flip, which is a
+property of the prices and not of any label field.
+
+| Item | Status |
+|---|---|
+| Diagnostic | `wxmm.fairvalue.crossed.crossed_state_rate` |
+| Runner | `python -m analysis.crossed_rate --parquet data/trades/KXHIGHNY` |
+| Gate | `wxmm.fairvalue.v0_min.run_c1_m1_v0_min` refuses to fit on `sign_inverted` |
+
+#### 1.4.2 Result: crossed rate 5.82% `[V-LOCAL]`
+
+Run 2026-09-15 on the full pulled corpus (3,405,461 prints, 6,974 tickers, 1,374
+climate days 2022-12-11 → 2026-09-15, `analysis/out/crossed_rate.json`):
+
+| Quantity | As specified (`yes` → ask) | Inverted d (mirror) |
+|---|---|---|
+| Crossed rate | **0.0582** (195,892 / 3,368,606) | 0.8277 |
+| Median implied spread | **+2.0c** | −2.0c |
+| Ties (`ask == bid`) | 384,667 | 384,667 |
+| Tickers majority-crossed | **230 / 6,974** | 6,074 / 6,974 |
+
+An earlier partial pull (2.83M prints, through the 2026-07-16 historical cutoff only)
+gave 0.0625 on the same corpus definition, so the number is not sensitive to the
+sample boundary.
+
+**The sign is confirmed.** Trade-implied ask sits above trade-implied bid 94.2% of the
+time and the median trade-implied spread is positive, which is what a correctly oriented
+anchor looks like. An inverted sign would have driven this toward 100% and the median
+spread negative. Crossing at 5.8% is the staleness the anchor's docstring predicts — the
+two sides are drawn from different instants — not a direction error. Only 3.3% of tickers
+are majority-crossed.
+
+This was run before the first fit, and the fit path refuses to proceed on a
+`sign_inverted` verdict.
+
+#### 1.4.3 Result: C1-M1 v0-MINIMAL out of sample `[V-LOCAL]`
+
+Walk-forward expanding window over 1,352 climate days (2022-12-11 → 2026-09-13),
+prediction grid T−24h and T−12h, scored by ranked probability score against the
+β=0 null. `analysis/out/c1_m1_v0_min.json`, runner `python -m analysis.c1_m1_run`.
+
+| Quantity | Value |
+|---|---|
+| Anchor coverage | 0.2278 (616 / 2,704 grid points) |
+| Scored predictions | 615 |
+| Mean RPS improvement vs null | **−0.005568** |
+| Day-clustered 95% CI | **[−0.023587, +0.013150]** |
+| Contract-level 95% CI | [−0.024270, +0.013197] |
+| Verdict | **`flow_adds_nothing`** |
+
+The interval covers zero, so by the preregistered sign test flow carries no
+information at this horizon. It is not the `harmful_check_sign` branch either:
+the point estimate is a fifth of the interval half-width, and the crossed-state
+rate already ruled out an inverted anchor independently.
+
+`signed_ofi`, the coefficient the preregistration names as the one to watch,
+spans zero at all three windows (15m −0.037 [−0.288, +0.145], 1h −0.053
+[−0.309, +0.089], 4h +0.016 [−0.100, +0.174]). The only coefficients whose
+intervals exclude zero are staleness and liveness terms — per-side staleness,
+the staleness ratio, the 4h gap since last trade, and the 1h change in implied
+spread. Those describe how current the anchor is, not which way flow is pushing.
+
+**Effective sample size:** 444 independent climate-day clusters among the 615
+scored predictions — above the ~400 ridge-limit flag.
+
+Two limits on how far this generalises. Coverage is 23%, and the covered subset
+is selected on anchor completeness, so the estimate speaks to days where every
+bracket printed on both sides and not to thin ones. And `notional` is the only
+size term in the design; queue position and depth stay behind the Stage-0
+reconstruction gate.
+
+The ordered v0 RUN that produced these numbers (and the B1–B8 / E2 companions)
+lives under `analysis/out/v0_run/` and is driven by `python -m analysis.v0_run`.
+
 ---
 
 ## 2. NBM gridded archive (AWS)

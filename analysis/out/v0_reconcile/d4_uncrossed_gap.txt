@@ -1,0 +1,14 @@
+D4 — Mean uncrossed gap
+=======================
+Run A: mean (ask−bid)¢ over ask > bid (ties excluded) = 4.9379
+Run B: mean (ask−bid)¢ over ask >= bid (ties at 0)   = 4.3391
+
+counts: two_sided=3360605 crossed=195697
+        ties=383748 strict_uncrossed=2781160
+
+Weighting: equal per print update on both. No outlier trim. Grid is
+per-ticker trade-implied book (same construction).
+
+Verdict: crossed rates agree because ties are not crossed under either
+predicate. The mean differs because B folds zero-gap ties into the
+uncrossed average. Prefer A's ask>bid for 'mean uncrossed gap'.

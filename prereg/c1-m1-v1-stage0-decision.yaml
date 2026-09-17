@@ -1,0 +1,72 @@
+# Stage 0 emission-convention decision — preregistered BEFORE the VPS sweep
+
+prereg_id: c1-m1-v1-stage0-decision
+locked: true
+artifact: analysis/out/emission_convention_sweep.json
+decision_module: analysis/emission_decision.py
+wellposedness_module: analysis/emission_wellposedness.py
+
+# Declared window for the fresh 12-way sweep. Do not recover the orphan prose window.
+declared_window:
+  start: "2026-08-19"
+  end: LATEST_COMPLETE_CLIMATE_DAY_ON_VPS_LOGGER
+  note: >
+    Fresh computed interval_start|UTC|+0 on this window supersedes the transcribed
+    0.9%/2026 prose row. Transcribed figures stay in the inputs manifest only.
+    Per-market and per-day coverage must be recorded, not just pooled n.
+
+orphan_prose_figures:
+  match_rate: 0.009
+  silent_count: 2026
+  status: UNREPRODUCIBLE_ABANDONED
+  n_225111: >
+    Confabulated as round(2026/0.009) treating silent_count as a match count.
+    Wrong twice. Withdrawn. See knowledge/venue-facts.md §1.12.
+
+# Decision on max match_rate across the 12 computed rows.
+decision_on_max_match_rate:
+  JOIN_BUG:
+    when: "max >= 0.60"
+    action: >
+      Join bug located. Adopt that convention.
+      reconstruction_error_bound = 1 - match_rate.
+      branch = full_corpus.
+  PARTIAL:
+    when: "0.10 <= max < 0.60"
+    action: >
+      Do NOT branch automatically. Do NOT average.
+      Split the winning convention's match rate by market and by day and report
+      the distribution; this is what a mixture or mid-period convention change
+      looks like. Written adjudication required before any branch.
+  LOW:
+    when: "max < 0.10"
+    action: >
+      Do NOT conclude emission-on-change falsified yet.
+      Run the well-posedness check (analysis/emission_wellposedness.py) first:
+      hand-audit ~10 logger book changes against corresponding candles.
+      If both series describe the same object at the same granularity ->
+      WELL_POSED_SAME_OBJECT, then may proceed to forward_logger_only after
+      writing the falsification.
+      If they do not -> CROSS_CHECK_ILL_POSED: redesign the cross-check;
+      historical corpus is unvalidated by this test, not proven degraded.
+
+branches_after_decision:
+  full_corpus: prereg/c1-m1-v1-full-corpus.yaml
+  forward_logger_only: prereg/c1-m1-v1-forward-logger.yaml
+  partial_pending_adjudication: no branch file; written adjudication first
+  cross_check_ill_posed: no C1-M1 fit on reconstructed books via this test
+
+coverage_required:
+  - per_market logger_rows and candles
+  - per_day markets_with_books, logger_rows, candles
+  - >
+    on PARTIAL: winner_match_distribution.by_market and by_day match rates
+    (auto-written into the sweep artifact; written adjudication before branch)
+
+partial_artifact_field: winner_match_distribution
+low_finalization: >
+  After wellposedness hand audit, patch the sweep via
+  `python -m analysis.emission_wellposedness --start ... --end ...
+  --apply-finding WELL_POSED_SAME_OBJECT|CROSS_CHECK_ILL_POSED`.
+  Record corpus_consequence: emission_on_change_falsified vs
+  cross_check_ill_posed_redesign_required.

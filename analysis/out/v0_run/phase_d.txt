@@ -1,0 +1,11 @@
+phase: D
+status: PARTIAL
+provider_from_report: True
+provider_error: None
+fit_feature_count: 27
+real_tape_shadow:
+  status: NOT_RUN
+  reason: no logger orderbook JSONL in data/raw or known VPS paths; shadow against real tape requires the VPS logger capture
+parity_tests: see tests/shadow/ and tests/parity/ — synthetic provider parity passes
+is_strategy_pnl: False
+note: Even a null model would generate fill/mark-out data; without a logger tape this session records NOT_RUN for the real-tape shadow.

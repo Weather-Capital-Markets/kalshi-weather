@@ -1,0 +1,15 @@
+D2 — Label noise definitions
+=============================
+Run A (venue disagreement): 2 / 8109 tickers = 0.0247%
+  Flagged: KXHIGHNY-25DEC03-B41.5, KXHIGHNY-25DEC03-B39.5
+  Intended project definition of "label noise".
+
+Run B (CLINYC n_later > 0 on era days): 11 / 1372 = 0.802%
+  Hygiene metric; must not be called label noise.
+
+K2 recorded: 1 / 2416 days = 0.0414%
+
+Common per-day denominator (labelled days = 1352):
+  venue-disagree days: 1 / 1352 = 0.0740%
+  revision days (n_later>0): 8 / 1352 = 0.592%
+  revisions that change high: 1 / 1352 = 0.0740% (2025-12-03, 40→41)
