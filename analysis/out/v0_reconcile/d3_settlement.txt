@@ -1,0 +1,18 @@
+D3 — Settlement raising vs revised-CLI
+======================================
+Hypothesis CONFIRMED: B's 8 raising days == B's 8 revised-CLI days.
+A counts only revisions that change the settled high.
+
+Run A (high changes): 1351 clean / 1 raising
+  raising: 2025-12-03 (snapshot 40, later 41)
+
+Run B (n_later > 0 on labelled days): 1344 clean / 8 raising
+  2023-03-22, 2024-09-24, 2024-09-25, 2025-01-19,
+  2025-12-03, 2026-01-01, 2026-03-04, 2026-08-29
+
+only_in_B (revision exists, high unchanged): 7 days
+in_both: 2025-12-03
+only_in_A: none
+
+B is better at noticing revisions; A's settlement path misses the
+no-value-change case. Revisions are ignored for Kalshi settlement today.

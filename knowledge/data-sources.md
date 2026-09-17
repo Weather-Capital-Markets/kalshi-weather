@@ -88,6 +88,55 @@ the archive would mis-select the issuance for most market days — a 10 AM snaps
 CLINYC revision an 8 AM snapshot cannot. `[V-LOCAL]` — `python -m analysis.venue_eras` over
 all 9,364 markets, 2026-08-14. Tracked as O9.
 
+### 1.3.1 Label noise — DECIDED definition `[V-LOCAL]`
+
+**"Label noise" for this project means venue disagreement**, not CLINYC revision
+activity. Two instruments on the same corpus reported rates that differ by a
+factor of ~32 because they measured different events:
+
+| Instrument | Definition | Count | Denominator | Rate |
+|---|---|---|---|---|
+| Run A (`c1_m1_run` / `v0_labels`) | CLINYC-as-issued `yes_won` ≠ Kalshi `result` on labelled tickers with a yes/no result | **2** | **8,109** tickers | **0.0247%** |
+| Run B (`v0_run` / `v0_label_noise`) | climate day with `n_later > 0` (any full-day CLINYC issuance after the era snapshot) | **11** | **1,372** era climate days | **0.802%** |
+| K2 recorded baseline | revision-like event | **1** | **2,416** climate days | **0.0414%** |
+
+Flagged venue-disagreement tickers (Run A, both on 2025-12-03, snapshot high 40°F):
+`KXHIGHNY-25DEC03-B41.5` (CLINYC no / venue yes), `KXHIGHNY-25DEC03-B39.5`
+(CLINYC yes / venue no). That is **one climate day** on a common per-day
+denominator (1 / 1,352 labelled days = 0.0740%).
+
+Revisions that **change** the settled high are rarer still: of the 8 labelled
+days with `n_later > 0`, only **2025-12-03** has a later high different from the
+snapshot (40 → 41). Rate on labelled days: 1 / 1,352 = 0.0740%. Revisions do
+not overwrite the Kalshi label under current policy; they are a CLINYC hygiene
+metric and must not be called label noise.
+
+Common per-day rates (do not mix denominators):
+
+| Quantity | Per-day rate |
+|---|---|
+| K2 recorded | 1 / 2,416 = 0.0414% |
+| Run B revisions (`n_later > 0`) on era days | 11 / 1,372 = 0.802% |
+| Run B revisions on labelled days | 8 / 1,352 = 0.592% |
+| Revisions that change high (labelled) | 1 / 1,352 = 0.0740% |
+| Venue disagreement (labelled days with ≥1 disagreeing ticker) | 1 / 1,352 = 0.0740% |
+
+Artifact: `analysis/out/v0_reconcile/d2_label_noise.json`.
+
+### 1.3.2 Settlement "raising" days — two definitions `[V-LOCAL]`
+
+Run A reported 1,351 clean / **1 raising**. Run B reported 1,344 clean / **8 raising**
+and separately **8 revised-CLI days**. The sets reconcile:
+
+- **Run A raising** = later full-day high **differs** from snapshot high → `{2025-12-03}`
+- **Run B raising** = `n_later > 0` on a labelled day (revision exists, value may be
+  unchanged) → the same 8 as revised-CLI:
+  `2023-03-22`, `2024-09-24`, `2024-09-25`, `2025-01-19`, `2025-12-03`,
+  `2026-01-01`, `2026-03-04`, `2026-08-29`
+
+B is better at noticing revisions; A's count answers whether the settled high
+moved. Artifact: `analysis/out/v0_reconcile/d3_settlement.json`.
+
 ### 1.4 `taker_outcome_side` × `taker_book_side` (trade-derived anchor)
 
 C1-M1 addendum 2 must not assume `taker_book_side`'s frame of reference. The docs call it

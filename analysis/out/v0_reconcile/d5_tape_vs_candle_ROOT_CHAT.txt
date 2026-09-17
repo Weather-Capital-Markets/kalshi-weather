@@ -1,0 +1,18 @@
+D5 — FLAG FOR ROOT CHAT: candle vs tape turnover
+================================================
+Tape median daily premium is ~2.1× the recorded candle median. If candles omit emission-on-change volume, K1 spread/depth frequency findings and Gate 0 capacity arithmetic that used the candle path are systematically low. This file does not restate the gate record; root chat owns whether K1 and S2 need revisiting.
+
+Believe: trade tape (direct executions)
+
+Side-by-side:
+  median_daily_premium_10_90: candle=2400.0 tape=5141.499999999997 ratio=2.142
+  p75_daily_premium_10_90: candle=[15000.0, 26000.0] tape=25670.190000000024
+  median_brackets_with_volume_per_climate_day: candle=4.0 tape=4.0
+  median_premium_per_market_day: candle=214.0 tape=390.63500000000005
+  zero_volume_market_day_share_pct: candle=22.3 tape=25.584211163579123
+  M_mean_daily_premium_10_90: candle=NOT_IN_CANDLE_CENSUS tape=16101.901298905905
+  A_volume_weighted_avg_price_10_90: candle=NOT_IN_CANDLE_CENSUS tape=0.3918871214355522
+
+EDT midnight–1 AM: n=52 (carried from Run A; not recomputed).
+
+Root chat owns whether K1 and S2 need revisiting.

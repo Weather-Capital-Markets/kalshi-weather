@@ -1,0 +1,81 @@
+{
+  "hypothesis": "B's 8 raising days are B's revised-CLI days; A only counts revisions that change the high value.",
+  "run_A_definition": "raising iff a later full-day CLINYC issuance after the era snapshot has high_f different from the snapshot high",
+  "run_B_definition": "raising iff n_later > 0 on a labelled day (revision exists), regardless of whether the high changes",
+  "run_A": {
+    "n_clean": 1351,
+    "n_raising": 1,
+    "raising_days": [
+      {
+        "climate_day": "2025-12-03",
+        "high_at_snapshot": 40,
+        "later_highs": [
+          41
+        ],
+        "n_later": 1
+      }
+    ]
+  },
+  "run_B": {
+    "n_raising": 8,
+    "raising_days": [
+      {
+        "climate_day": "2023-03-22",
+        "high_at_snapshot": 62,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2024-09-24",
+        "high_at_snapshot": 68,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2024-09-25",
+        "high_at_snapshot": 68,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2025-01-19",
+        "high_at_snapshot": 41,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2025-12-03",
+        "high_at_snapshot": 40,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2026-01-01",
+        "high_at_snapshot": 36,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2026-03-04",
+        "high_at_snapshot": 49,
+        "n_later": 1
+      },
+      {
+        "climate_day": "2026-08-29",
+        "high_at_snapshot": 76,
+        "n_later": 1
+      }
+    ],
+    "matches_revised_cli_with_high": true
+  },
+  "set_diff": {
+    "only_in_B": [
+      "2023-03-22",
+      "2024-09-24",
+      "2024-09-25",
+      "2025-01-19",
+      "2026-01-01",
+      "2026-03-04",
+      "2026-08-29"
+    ],
+    "only_in_A": [],
+    "in_both": [
+      "2025-12-03"
+    ]
+  },
+  "verdict": "Hypothesis confirmed in spirit: B flags any post-snapshot revision; A flags only revisions that change the settled high. B is stricter at noticing revisions; A's raising count answers a different question (did the label value move). Revisions do not change Kalshi settlement under current policy, but failing to notice them hides policy-risk."
+}
