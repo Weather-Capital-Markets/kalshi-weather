@@ -51,6 +51,20 @@ class SettlementRule:
 
 
 @dataclass(frozen=True, slots=True)
+class RevisionNotice:
+    """Post-snapshot full-day issuances visible at ``as_of``.
+
+    Kalshi settlement ignores these: ``high_f`` stays the snapshot value.
+    A notice with ``n_later > 0`` is how the layer records that it saw them.
+    """
+
+    n_later: int
+    later_highs: tuple[int | None, ...]
+    high_changed: bool
+    ignored_for_resolution: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class SettlementResult:
     climate_day: date
     venue: str
@@ -61,3 +75,4 @@ class SettlementResult:
     tagged_assumption: str | None
     pending: bool
     source: str
+    revision: RevisionNotice | None = None

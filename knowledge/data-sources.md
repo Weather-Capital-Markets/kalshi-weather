@@ -74,8 +74,10 @@ tool's *interpretation* — only on quoted raw output cross-checked against prim
 
 > For each market day, the label is taken from the **latest CLINYC issuance visible at Kalshi's
 > settlement snapshot time** (first 7:00/8:00 AM ET check per `venue-facts.md`) **that covers the
-> full prior climate day**. Later issuances and corrections are logged separately and never
-> overwrite the label; the preliminary-vs-final disagreement rate is itself a tracked metric.
+> full prior climate day**. Later issuances and corrections are logged as a
+> `RevisionNotice` (`n_later`, and whether the later high differs) and never
+> overwrite the resolved high. Label noise is venue disagreement (§1.3.1), not
+> this revision count.
 
 Do **not** label from METAR-derived maxima, GHCN-D, or "final" climate data — those can disagree
 with what Kalshi settled on. Rationale and settlement mechanics: `venue-facts.md`.

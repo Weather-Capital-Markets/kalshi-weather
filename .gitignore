@@ -237,3 +237,5 @@ analysis/out/*
 !analysis/out/v0_run/**
 !analysis/out/v0_reconcile/
 !analysis/out/v0_reconcile/**
+!analysis/out/c1_m2/
+!analysis/out/c1_m2/**
