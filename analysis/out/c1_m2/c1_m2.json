@@ -1,0 +1,474 @@
+{
+  "status": "OK",
+  "unit": "cents_per_contract",
+  "uncrossed_definition": "ask > bid; ties excluded from the strict touch mid",
+  "mm_program_start": "2024-03-11",
+  "mm_program_source": "CFTC Kalshi Market Maker Program terms, effective 2024-03-11 (rules02262412176). Designated-contract scope is not verified for every KXHIGHNY bracket.",
+  "label_noise_definition": "venue disagreement, data-sources.md \u00a71.3.1; not recomputed here",
+  "edt_midnight_1am_carried_from_run_A": 52,
+  "x1_go_no_go": "FILL_IN",
+  "n_primary_fills": 2915516,
+  "n_block_excluded": 0,
+  "n_unlabelled_excluded": 61681,
+  "n_strict_pre_mid": 2355088,
+  "fractional_count_fp": {
+    "n_skipped": 420226,
+    "premium_skipped": 4093523.358099657,
+    "premium_kept": 32250241.909994762,
+    "premium_share_skipped": 0.11263344146934859,
+    "note": "Non-integer count_fp excluded from retention. Counted, not floored."
+  },
+  "revision_detection": {
+    "definition": "n_later > 0 on a labelled day: full-day CLINYC after the era snapshot and at or before as_of. high_f is the snapshot value.",
+    "n_raising": 8,
+    "raising_days": [
+      {
+        "climate_day": "2023-03-22",
+        "high_f": 62,
+        "n_later": 1,
+        "later_highs": [
+          62
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2024-09-24",
+        "high_f": 68,
+        "n_later": 1,
+        "later_highs": [
+          68
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2024-09-25",
+        "high_f": 68,
+        "n_later": 1,
+        "later_highs": [
+          68
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2025-01-19",
+        "high_f": 41,
+        "n_later": 1,
+        "later_highs": [
+          41
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2025-12-03",
+        "high_f": 40,
+        "n_later": 1,
+        "later_highs": [
+          41
+        ],
+        "high_changed": true,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2026-01-01",
+        "high_f": 36,
+        "n_later": 1,
+        "later_highs": [
+          36
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2026-03-04",
+        "high_f": 49,
+        "n_later": 1,
+        "later_highs": [
+          49
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      },
+      {
+        "climate_day": "2026-08-29",
+        "high_f": 76,
+        "n_later": 1,
+        "later_highs": [
+          76
+        ],
+        "high_changed": false,
+        "ignored_for_resolution": true
+      }
+    ],
+    "n_high_changed": 1,
+    "high_changed_days": [
+      "2025-12-03"
+    ]
+  },
+  "settlement_retention": {
+    "unit": "cents_per_contract",
+    "both_weightings_required": true,
+    "headline_settlement_retention": {
+      "trade_weighted": {
+        "point_cents_per_contract": 1.1855503451190115,
+        "ci_low_cents_per_contract": 0.9631711487837822,
+        "ci_high_cents_per_contract": 1.4054806886745181,
+        "n_fills": 2915516,
+        "n_days": 1352,
+        "unit": "cents_per_contract"
+      },
+      "day_weighted": {
+        "point_cents_per_contract": 0.8595148713226128,
+        "ci_low_cents_per_contract": 0.5242723413512695,
+        "ci_high_cents_per_contract": 1.2233191879953809,
+        "n_fills": 2915516,
+        "n_days": 1352,
+        "unit": "cents_per_contract"
+      }
+    },
+    "by_volume_decile": {
+      "1": {
+        "trade_weighted": {
+          "point_cents_per_contract": -1.4715116279069766,
+          "ci_low_cents_per_contract": -2.9080143540669856,
+          "ci_high_cents_per_contract": -0.06054355738898325,
+          "n_fills": 8600,
+          "n_days": 136,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": -1.0034944012998452,
+          "ci_low_cents_per_contract": -2.771062380159773,
+          "ci_high_cents_per_contract": 0.779611976884274,
+          "n_fills": 8600,
+          "n_days": 136,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 136
+      },
+      "2": {
+        "trade_weighted": {
+          "point_cents_per_contract": 0.11373873873873874,
+          "ci_low_cents_per_contract": -1.209747269084093,
+          "ci_high_cents_per_contract": 1.5615621650589495,
+          "n_fills": 15096,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 0.3382541264323615,
+          "ci_low_cents_per_contract": -1.1762527251913883,
+          "ci_high_cents_per_contract": 1.9234594352239305,
+          "n_fills": 15096,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "3": {
+        "trade_weighted": {
+          "point_cents_per_contract": 0.029978039936673306,
+          "ci_low_cents_per_contract": -1.39878332261734,
+          "ci_high_cents_per_contract": 1.4371500488005342,
+          "n_fills": 19581,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 0.4908979041566472,
+          "ci_low_cents_per_contract": -0.8522831434520349,
+          "ci_high_cents_per_contract": 1.8980814805218083,
+          "n_fills": 19581,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "4": {
+        "trade_weighted": {
+          "point_cents_per_contract": 0.43606073550541724,
+          "ci_low_cents_per_contract": -0.6166048866036908,
+          "ci_high_cents_per_contract": 1.475679065574413,
+          "n_fills": 25751,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 0.9509940189058433,
+          "ci_low_cents_per_contract": -0.22578907625675793,
+          "ci_high_cents_per_contract": 2.1036700601920018,
+          "n_fills": 25751,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "5": {
+        "trade_weighted": {
+          "point_cents_per_contract": 1.3802603926392947,
+          "ci_low_cents_per_contract": 0.21269011406844107,
+          "ci_high_cents_per_contract": 2.6279895927149006,
+          "n_fills": 39018,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 1.7054525346949283,
+          "ci_low_cents_per_contract": 0.3466752008250991,
+          "ci_high_cents_per_contract": 3.090865117280605,
+          "n_fills": 39018,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "6": {
+        "trade_weighted": {
+          "point_cents_per_contract": 0.19115782355095945,
+          "ci_low_cents_per_contract": -0.48418491484184917,
+          "ci_high_cents_per_contract": 0.8326426116352423,
+          "n_fills": 212934,
+          "n_days": 136,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 0.17548430102784587,
+          "ci_low_cents_per_contract": -0.4900256766890475,
+          "ci_high_cents_per_contract": 0.8789233751035315,
+          "n_fills": 212934,
+          "n_days": 136,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 136
+      },
+      "7": {
+        "trade_weighted": {
+          "point_cents_per_contract": 0.903190746276997,
+          "ci_low_cents_per_contract": 0.38624736951302646,
+          "ci_high_cents_per_contract": 1.5022718865768219,
+          "n_fills": 357910,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 1.2514228321088674,
+          "ci_low_cents_per_contract": 0.5709877158649652,
+          "ci_high_cents_per_contract": 1.9393193335558323,
+          "n_fills": 357910,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "8": {
+        "trade_weighted": {
+          "point_cents_per_contract": 0.8668546161493258,
+          "ci_low_cents_per_contract": 0.5002065150539554,
+          "ci_high_cents_per_contract": 1.2192227286814972,
+          "n_fills": 521062,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 1.0961018874556685,
+          "ci_low_cents_per_contract": 0.6319685328371115,
+          "ci_high_cents_per_contract": 1.5753424523816015,
+          "n_fills": 521062,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "9": {
+        "trade_weighted": {
+          "point_cents_per_contract": 1.075820740319689,
+          "ci_low_cents_per_contract": 0.6952751429795235,
+          "ci_high_cents_per_contract": 1.45862003745468,
+          "n_fills": 742409,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 1.5508716372555356,
+          "ci_low_cents_per_contract": 1.0304782113763997,
+          "ci_high_cents_per_contract": 2.127396171356498,
+          "n_fills": 742409,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      },
+      "10": {
+        "trade_weighted": {
+          "point_cents_per_contract": 1.8367156311173451,
+          "ci_low_cents_per_contract": 1.323237663820665,
+          "ci_high_cents_per_contract": 2.3507553572825217,
+          "n_fills": 973155,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 2.0580308342876625,
+          "ci_low_cents_per_contract": 1.5318745388517798,
+          "ci_high_cents_per_contract": 2.602519716782629,
+          "n_fills": 973155,
+          "n_days": 135,
+          "unit": "cents_per_contract"
+        },
+        "n_days": 135
+      }
+    },
+    "volume_retention_correlation": {
+      "point": 0.07495730208134432,
+      "ci_low": 0.03709947340607832,
+      "ci_high": 0.11487872805823154,
+      "n_days": 1352.0
+    },
+    "top_decile_minus_bottom_five": {
+      "trade_weighted": {
+        "point_cents_per_contract": 1.3301443559197441,
+        "ci_low": 0.6252312237922393,
+        "ci_high": 2.111577746257312
+      },
+      "day_weighted": {
+        "point_cents_per_contract": 1.5638288072331634,
+        "ci_low": 0.6671813020871263,
+        "ci_high": 2.386312250431587
+      }
+    },
+    "jja": {
+      "trade_weighted": {
+        "point_cents_per_contract": 0.6180402081223293,
+        "ci_low_cents_per_contract": 0.37211870057428825,
+        "ci_high_cents_per_contract": 0.8485216368548537,
+        "n_fills": 748406,
+        "n_days": 360,
+        "unit": "cents_per_contract"
+      },
+      "day_weighted": {
+        "point_cents_per_contract": 0.6951712513190665,
+        "ci_low_cents_per_contract": 0.07270988634197359,
+        "ci_high_cents_per_contract": 1.3184705999560842,
+        "n_fills": 748406,
+        "n_days": 360,
+        "unit": "cents_per_contract"
+      }
+    },
+    "by_mm_era": {
+      "pre_mm_program": {
+        "trade_weighted": {
+          "point_cents_per_contract": -0.667510027769207,
+          "ci_low_cents_per_contract": -1.3355497211390577,
+          "ci_high_cents_per_contract": 0.03331108144192256,
+          "n_fills": 64820,
+          "n_days": 448,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": -0.3814397853925199,
+          "ci_low_cents_per_contract": -1.2073167306950758,
+          "ci_high_cents_per_contract": 0.38505724883276005,
+          "n_fills": 64820,
+          "n_days": 448,
+          "unit": "cents_per_contract"
+        }
+      },
+      "mm_program": {
+        "trade_weighted": {
+          "point_cents_per_contract": 1.2276858002396607,
+          "ci_low_cents_per_contract": 0.9984847096560404,
+          "ci_high_cents_per_contract": 1.4623223820784956,
+          "n_fills": 2850696,
+          "n_days": 904,
+          "unit": "cents_per_contract"
+        },
+        "day_weighted": {
+          "point_cents_per_contract": 1.4745012498717052,
+          "ci_low_cents_per_contract": 1.1524166455580698,
+          "ci_high_cents_per_contract": 1.7923413926786305,
+          "n_fills": 2850696,
+          "n_days": 904,
+          "unit": "cents_per_contract"
+        }
+      }
+    },
+    "gate0": {
+      "note": "e is realised half-spread in dollars per contract. s = 0.0016 / e when e > 0. Both weightings. Not a percentage.",
+      "trade_weighted": {
+        "point": {
+          "status": "ok",
+          "e_dollars": 0.011855503451190115,
+          "s": 0.13495841881260506,
+          "required_e_times_s": 0.0016
+        },
+        "ci_low": {
+          "status": "ok",
+          "e_dollars": 0.009631711487837822,
+          "s": 0.16611793262499153,
+          "required_e_times_s": 0.0016
+        },
+        "ci_high": {
+          "status": "ok",
+          "e_dollars": 0.014054806886745182,
+          "s": 0.1138400557825472,
+          "required_e_times_s": 0.0016
+        }
+      },
+      "day_weighted": {
+        "point": {
+          "status": "ok",
+          "e_dollars": 0.008595148713226128,
+          "s": 0.18615152028003148,
+          "required_e_times_s": 0.0016
+        },
+        "ci_low": {
+          "status": "ok",
+          "e_dollars": 0.005242723413512696,
+          "s": 0.305184896055384,
+          "required_e_times_s": 0.0016
+        },
+        "ci_high": {
+          "status": "ok",
+          "e_dollars": 0.012233191879953809,
+          "s": 0.13079170307316731,
+          "required_e_times_s": 0.0016
+        }
+      }
+    }
+  },
+  "effective_half_spread_strict_mid": {
+    "trade_weighted": {
+      "point_cents_per_contract": 2.382400360411161,
+      "ci_low_cents_per_contract": 2.315764792881301,
+      "ci_high_cents_per_contract": 2.4556266872488544,
+      "n_fills": 2355088,
+      "n_days": 1342
+    },
+    "day_weighted": {
+      "point_cents_per_contract": 4.140111618349904,
+      "ci_low_cents_per_contract": 3.9532522473123866,
+      "ci_high_cents_per_contract": 4.325054212618155,
+      "n_fills": 2355088,
+      "n_days": 1342
+    }
+  },
+  "realised_30m_strict_mid": {
+    "trade_weighted": {
+      "point_cents_per_contract": 1.036759802433259,
+      "ci_low_cents_per_contract": 0.9706396801599201,
+      "ci_high_cents_per_contract": 1.1074779496356897,
+      "n_fills": 2213328,
+      "n_days": 1344
+    },
+    "day_weighted": {
+      "point_cents_per_contract": 2.912549368824693,
+      "ci_low_cents_per_contract": 2.7628696285011176,
+      "ci_high_cents_per_contract": 3.0550635039440794,
+      "n_fills": 2213328,
+      "n_days": 1344
+    }
+  }
+}

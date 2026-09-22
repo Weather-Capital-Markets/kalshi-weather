@@ -1,0 +1,117 @@
+C1-M2 realised half-spread
+Source: analysis/out/c1_m2/c1_m2.json
+Unit: cents per contract. Retention is not converted to a percentage return.
+Uncrossed mid: ask > bid; ties excluded from the strict touch mid.
+Both weightings are reported together on every headline. A single weighting from this book is not interpretable.
+X1 go_no_go: FILL_IN. The weighting choice flips the near-flat sign and is a gate input; the root chat ratifies trade-weighting explicitly.
+EDT midnight-to-1 AM count carried from Run A: 52. Not recomputed.
+Label noise: venue disagreement (data-sources.md §1.3.1). Not recomputed here.
+D5 (tape versus candle) is outside this lane.
+
+Universe
+n_primary_fills: 2,915,516
+n_unlabelled_excluded: 61,681
+n_block_excluded: 0
+fractional count_fp skipped: 420,226 (counted, not floored)
+premium share skipped: 0.1126
+  denominator: premium of skipped fractional prints plus premium of integer prints kept
+  premium_skipped: 4,093,523.36
+  premium_kept: 32,250,241.91
+
+Revision detection
+Folded from Run B before this run. A later full-day CLINYC is logged and does not change high_f.
+n_raising: 8
+n_high_changed: 1
+high_changed: 2025-12-03 (snapshot high 40, later high 41, ignored_for_resolution)
+raising days:
+  2023-03-22  high_f 62  later 62  high_changed false
+  2024-09-24  high_f 68  later 68  high_changed false
+  2024-09-25  high_f 68  later 68  high_changed false
+  2025-01-19  high_f 41  later 41  high_changed false
+  2025-12-03  high_f 40  later 41  high_changed true
+  2026-01-01  high_f 36  later 36  high_changed false
+  2026-03-04  high_f 49  later 49  high_changed false
+  2026-08-29  high_f 76  later 76  high_changed false
+
+Headline: settlement retention, day-clustered 95% CI
+trade-weighted: 1.186¢  [0.963, 1.405]  n_fills 2,915,516  n_days 1,352
+day-weighted:   0.860¢  [0.524, 1.223]  n_fills 2,915,516  n_days 1,352
+Trade-weighted sits above day-weighted. Both intervals exclude zero and lie above zero.
+That is the volume–return gap on this measurement: high-volume days carry higher settlement retention. Both signs are positive, so the gap here does not reproduce the near-flat X1 sign flip.
+
+Daily-volume deciles (1 = quietest daily premium, 10 = busiest)
+Decile 1 is negative on the trade-weighted point; its day-weighted interval includes zero.
+Decile 10 is the highest under both weightings.
+Decile 6 is a dip relative to deciles 5 and 7. It is reported as measured.
+
+decile  n_days  n_fills    trade-weighted cents [CI]              day-weighted cents [CI]
+1       136     8,600      -1.472  [-2.908, -0.061]               -1.003  [-2.771, +0.780]
+2       135     15,096     +0.114  [-1.210, +1.562]               +0.338  [-1.176, +1.923]
+3       135     19,581     +0.030  [-1.399, +1.437]               +0.491  [-0.852, +1.898]
+4       135     25,751     +0.436  [-0.617, +1.476]               +0.951  [-0.226, +2.104]
+5       135     39,018     +1.380  [+0.213, +2.628]               +1.705  [+0.347, +3.091]
+6       136     212,934    +0.191  [-0.484, +0.833]               +0.175  [-0.490, +0.879]
+7       135     357,910    +0.903  [+0.386, +1.502]               +1.251  [+0.571, +1.939]
+8       135     521,062    +0.867  [+0.500, +1.219]               +1.096  [+0.632, +1.575]
+9       135     742,409    +1.076  [+0.695, +1.459]               +1.551  [+1.030, +2.127]
+10      135     973,155    +1.837  [+1.323, +2.351]               +2.058  [+1.532, +2.603]
+
+Correlation of daily premium with daily mean retention (Pearson, day-resampled 95% CI)
+point 0.0750  [0.0371, 0.1149]  n_days 1,352
+The interval excludes zero.
+
+Top volume decile minus the bottom five combined (deciles 1–5)
+trade-weighted: +1.330¢  [0.625, 2.112]
+day-weighted:   +1.564¢  [0.667, 2.386]
+Both intervals exclude zero.
+
+JJA (headline season)
+trade-weighted: 0.618¢  [0.372, 0.849]  n_fills 748,406  n_days 360
+day-weighted:   0.695¢  [0.073, 1.318]  n_fills 748,406  n_days 360
+
+MM-program era
+Start 2024-03-11 (CFTC filing rules02262412176). Designated-contract scope is not verified for every KXHIGHNY bracket.
+pre_mm_program
+  trade-weighted: -0.668¢  [-1.336, +0.033]  n_fills 64,820  n_days 448
+  day-weighted:   -0.381¢  [-1.207, +0.385]  n_fills 64,820  n_days 448
+  Both intervals include zero. Points are negative.
+mm_program
+  trade-weighted: +1.228¢  [0.998, 1.462]  n_fills 2,850,696  n_days 904
+  day-weighted:   +1.475¢  [1.152, 1.792]  n_fills 2,850,696  n_days 904
+  Both intervals exclude zero.
+  Inside this window day-weighted exceeds trade-weighted, the opposite gap from the full sample. Both figures stand.
+
+Effective half-spread, strict pre-trade mid (cents per contract)
+trade-weighted: 2.382¢  [2.316, 2.456]  n_fills 2,355,088  n_days 1,342
+day-weighted:   4.140¢  [3.953, 4.325]  n_fills 2,355,088  n_days 1,342
+Day-weighted exceeds trade-weighted.
+
+Realised spread at 30 minutes, strict mid (cents per contract)
+trade-weighted: 1.037¢  [0.971, 1.107]  n_fills 2,213,328  n_days 1,344
+day-weighted:   2.913¢  [2.763, 3.055]  n_fills 2,213,328  n_days 1,344
+Day-weighted exceeds trade-weighted. At this horizon the quiet days carry higher retention than the trade-weighted pool.
+At settlement the full-sample gap runs the other way: trade-weighted above day-weighted.
+
+Gate 0 from this realised half-spread
+e is the settlement retention in dollars per contract (cents / 100).
+required e · s = 0.0016
+s = 0.0016 / e when e > 0
+s is a share of maker volume. The percentage below uses that denominator.
+
+trade-weighted
+  point:   e = 0.01186   s = 0.1350   (13.50% of maker volume)
+  ci low:  e = 0.00963   s = 0.1661   (16.61% of maker volume)
+  ci high: e = 0.01405   s = 0.1138   (11.38% of maker volume)
+day-weighted
+  point:   e = 0.00860   s = 0.1862   (18.62% of maker volume)
+  ci low:  e = 0.00524   s = 0.3052   (30.52% of maker volume)
+  ci high: e = 0.01223   s = 0.1308   (13.08% of maker volume)
+All six statuses are ok. Both intervals stay positive.
+
+The addendum's [INF] arithmetic on the near-flat X1 percentage (trade-weighted +3.45%, day-clustered CI [-3.26%, +11.26%], base assumed to be the position at A = 0.39194) is a separate series. Under that assumption the trade-weighted point was about 1.35¢ and about 12% of maker volume, and that interval ran from a negative return (no share clears) to about 3.6% of maker volume. C1-M2 does not use that base. The three-point calculation above is the one from this realised half-spread.
+
+Quoting-policy input
+Settlement retention is higher on busier days: correlation interval excludes zero, the top decile beats the bottom five under both weightings, and the quietest decile is negative on the trade-weighted measure. A quoting rule that used this pattern would need busy days identified ex ante, or withdrawal on quiet ones. That belongs in Part D's feature set. It is not a fitted policy.
+
+Mid estimators
+Corpus headlines use the strict touch mid. The prior YES-print estimator is computed on each fill and covered by unit tests. This report does not aggregate it.
