@@ -19,7 +19,7 @@ from wxmm.analysis.maker_taker import SettlementLabel
 from wxmm.analysis.trades_ingest import RawTrade
 from wxmm.core.errors import NwpInterpolationUnspecified
 from wxmm.fairvalue.anchor import apply_logit_adjustment
-from wxmm.fairvalue.ladder import parse_kalshi_bracket
+from wxmm.fairvalue.ladder import ladder_order
 
 NBM_STATUS: Literal["UNAVAILABLE_INTERPOLATION_UNSPECIFIED"] = (
     "UNAVAILABLE_INTERPOLATION_UNSPECIFIED"
@@ -27,17 +27,8 @@ NBM_STATUS: Literal["UNAVAILABLE_INTERPOLATION_UNSPECIFIED"] = (
 DOY_WINDOW_DEFAULT = 15
 
 
-def _position_key(ticker: str) -> tuple[int, str]:
-    parsed = parse_kalshi_bracket(ticker)
-    if parsed is None:
-        return (10**9, ticker)
-    floor = parsed.floor_f if parsed.floor_f is not None else -10**9
-    cap = parsed.cap_f if parsed.cap_f is not None else 10**9
-    return (floor, f"{cap}:{ticker}")
-
-
 def sort_ladder(tickers: Sequence[str]) -> list[str]:
-    return sorted(tickers, key=_position_key)
+    return ladder_order(tickers)
 
 
 def _doy_distance(left: int, right: int) -> int:

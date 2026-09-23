@@ -5,6 +5,7 @@ Allowed to assume
 
 Must never
     Compare ``RES`` across models with different binning.
+    Score the point outcome indicator. Infer bracket order from ticker strings.
 """
 
 from __future__ import annotations
@@ -32,15 +33,27 @@ class BrierComponents:
 def ranked_probability_score(
     forecast: Mapping[str, Decimal],
     realised_market_id: str,
+    *,
+    order: Sequence[str],
 ) -> Decimal:
-    """RPS for a single day over the bracket partition (primary score)."""
-    keys = sorted(forecast.keys())
+    """RPS over an ordered bracket partition.
+
+    ``order`` is required and must list exactly the forecast brackets.
+    The score is ``sum_k (F_k - O_k)^2`` with ``F`` the forecast CDF and
+    ``O_k = 1{y <= k}`` the cumulative outcome indicator.
+    """
+    if len(order) != len(set(order)) or set(order) != set(forecast):
+        raise ValueError("order must list exactly the forecast brackets")
+    if realised_market_id not in forecast:
+        raise ValueError("realised bracket missing from forecast")
     cumulative = Decimal(0)
+    outcome = Decimal(0)
     score = Decimal(0)
-    for key in keys:
+    for key in order:
         p = forecast[key]
-        hit = Decimal(1) if key == realised_market_id else Decimal(0)
-        score += (cumulative + p - hit) ** 2
+        if key == realised_market_id:
+            outcome = Decimal(1)
+        score += (cumulative + p - outcome) ** 2
         cumulative += p
     return score
 

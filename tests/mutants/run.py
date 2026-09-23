@@ -3,6 +3,7 @@
 
 B3 trio: MarketView.store field, forbidden strategies→store import, era date.
 v0 pair: TRADE_DERIVED null returning raw mids, continuity golden edge +0.5.
+RPS pair: point outcome indicator, ticker-string ladder order.
 """
 
 from __future__ import annotations
@@ -137,6 +138,44 @@ def main() -> None:
         )
     finally:
         _write(ladder, orig_ladder)
+
+    scores = ROOT / "wxmm" / "eval" / "scores.py"
+    orig_scores = scores.read_text(encoding="utf-8")
+    point = orig_scores.replace(
+        "        if key == realised_market_id:\n            outcome = Decimal(1)\n",
+        "        outcome = Decimal(1) if key == realised_market_id else Decimal(0)\n",
+        1,
+    )
+    if point == orig_scores:
+        print("cannot locate cumulative outcome indicator to mutate", file=sys.stderr)
+        sys.exit(2)
+    _write(scores, point)
+    try:
+        _expect_fail(
+            _pytest("tests/eval/test_rps_properness.py"),
+            "RPS scored against the point outcome indicator",
+        )
+    finally:
+        _write(scores, orig_scores)
+
+    ladder_src = ROOT / "wxmm" / "fairvalue" / "ladder.py"
+    orig_order = ladder_src.read_text(encoding="utf-8")
+    string_order = orig_order.replace(
+        "    return _orient_ladder(tickers)\n",
+        "    return sorted(tickers)\n",
+        1,
+    )
+    if string_order == orig_order:
+        print("cannot locate ladder_order return to mutate", file=sys.stderr)
+        sys.exit(2)
+    _write(ladder_src, string_order)
+    try:
+        _expect_fail(
+            _pytest("tests/fairvalue/test_ladder.py"),
+            "ladder ordered by ticker string",
+        )
+    finally:
+        _write(ladder_src, orig_order)
 
 
 if __name__ == "__main__":

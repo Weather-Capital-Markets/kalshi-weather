@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from wxmm.core.errors import TaggedAssumption
 
@@ -76,6 +76,82 @@ def parse_kalshi_bracket(market_id: str) -> KalshiBracket | None:
             cap_f=low,
         )
     return None
+
+
+def _threshold(bracket: KalshiBracket) -> int:
+    if bracket.floor_f is not None:
+        return bracket.floor_f
+    if bracket.cap_f is not None:
+        return bracket.cap_f
+    raise ValueError(f"ladder_order cannot orient {bracket.market_id!r}")
+
+
+def _orient_ladder(tickers: Sequence[str]) -> list[str]:
+    """Temperature order. A tail at or under the lowest between-floor is below;
+    a tail at or over the highest between-cap is above. Two tails and no
+    between-brackets: the lower threshold is below. Anything else raises.
+    """
+    if not tickers:
+        raise ValueError("ladder_order cannot orient an empty ladder")
+    if len(set(tickers)) != len(tickers):
+        raise ValueError(f"ladder_order cannot orient duplicates in {list(tickers)!r}")
+    parsed: list[tuple[str, KalshiBracket]] = []
+    for ticker in tickers:
+        row = parse_kalshi_bracket(ticker)
+        if row is None:
+            raise ValueError(f"ladder_order cannot orient {ticker!r}")
+        parsed.append((ticker, row))
+    betweens = [(ticker, row) for ticker, row in parsed if row.role == "between"]
+    tails = [(ticker, row) for ticker, row in parsed if row.role != "between"]
+    if betweens:
+        floors = [row.floor_f for _, row in betweens]
+        caps = [row.cap_f for _, row in betweens]
+        if any(floor is None for floor in floors) or any(cap is None for cap in caps):
+            raise ValueError(f"ladder_order cannot orient {list(tickers)!r}")
+        lowest_floor = min(floor for floor in floors if floor is not None)
+        highest_cap = max(cap for cap in caps if cap is not None)
+        below: list[tuple[int, str]] = []
+        above: list[tuple[int, str]] = []
+        for ticker, row in tails:
+            threshold = _threshold(row)
+            is_below = threshold <= lowest_floor
+            is_above = threshold >= highest_cap
+            if is_below and is_above:
+                raise ValueError(f"ladder_order cannot orient {ticker!r}")
+            if is_below:
+                below.append((threshold, ticker))
+            elif is_above:
+                above.append((threshold, ticker))
+            else:
+                raise ValueError(f"ladder_order cannot orient {ticker!r}")
+        if len(below) > 1 or len(above) > 1:
+            raise ValueError(f"ladder_order cannot orient {list(tickers)!r}")
+        between_sorted = sorted(
+            betweens,
+            key=lambda item: (
+                item[1].floor_f if item[1].floor_f is not None else 0,
+                item[1].cap_f if item[1].cap_f is not None else 0,
+                item[0],
+            ),
+        )
+        ordered = [ticker for _threshold_f, ticker in sorted(below)]
+        ordered.extend(ticker for ticker, _row in between_sorted)
+        ordered.extend(ticker for _threshold_f, ticker in sorted(above))
+        return ordered
+    if len(tails) != 2:
+        raise ValueError(f"ladder_order cannot orient {list(tickers)!r}")
+    first, second = tails
+    left, right = _threshold(first[1]), _threshold(second[1])
+    if left == right:
+        raise ValueError(f"ladder_order cannot orient {list(tickers)!r}")
+    if left < right:
+        return [first[0], second[0]]
+    return [second[0], first[0]]
+
+
+def ladder_order(tickers: Sequence[str]) -> list[str]:
+    """Temperature order of a KXHIGHNY ladder. Refuses a ladder it cannot orient."""
+    return _orient_ladder(tickers)
 
 
 def brackets_from_market_ids(market_ids: tuple[str, ...] | list[str]) -> tuple[KalshiBracket, ...]:

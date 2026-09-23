@@ -36,6 +36,7 @@ from wxmm.fairvalue.anchor_trades import (
     filter_trades_as_of,
 )
 from wxmm.fairvalue.crossed import CrossedDiagnostic, crossed_diagnostic
+from wxmm.fairvalue.ladder import ladder_order
 from wxmm.fairvalue.model_trades import (
     _row_features,
     null_trade_recovery,
@@ -168,7 +169,7 @@ class V0MinReport:
 
 
 def sort_ladder(tickers: Sequence[str]) -> list[str]:
-    return sorted(tickers)
+    return ladder_order(tickers)
 
 
 def _tickers_on(labels: Mapping[str, SettlementLabel], climate_day: date) -> list[str]:
@@ -952,10 +953,13 @@ def run_c1_m1_v0_min(
             tickers,
             window=clim_window,
         )
-        rps_model = ranked_probability_score(p_hat, realised)
-        rps_null = ranked_probability_score(q_map, realised)
+        order = ladder_order(tickers)
+        rps_model = ranked_probability_score(p_hat, realised, order=order)
+        rps_null = ranked_probability_score(q_map, realised, order=order)
         rps_clim = (
-            ranked_probability_score(clim, realised) if clim is not None else None
+            ranked_probability_score(clim, realised, order=order)
+            if clim is not None
+            else None
         )
         predictions.append(
             V0MinPrediction(

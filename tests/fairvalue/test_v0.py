@@ -342,7 +342,11 @@ def test_rps_orders_by_ladder_not_ticker_string() -> None:
         between: Decimal("0.10"),
         greater: Decimal("0.10"),
     }
-    assert ranked_probability_score(forecast, less) != _rps_on_ladder(forecast, less)
+    string_order = sorted(forecast)
+    assert string_order != [less, between, greater]
+    assert ranked_probability_score(
+        forecast, less, order=string_order
+    ) != _rps_on_ladder(forecast, less)
 
 
 def test_logit_adjustment_does_not_overflow_on_large_beta() -> None:

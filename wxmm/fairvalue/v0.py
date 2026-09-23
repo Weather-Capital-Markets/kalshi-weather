@@ -230,8 +230,7 @@ def _prefix_at(sorted_trades: Sequence[RawTrade], as_of: datetime) -> list[RawTr
 
 def _rps_on_ladder(forecast: Mapping[str, Decimal], realised: str) -> Decimal:
     ordered = sort_ladder(list(forecast))
-    keyed = {str(i): forecast[ticker] for i, ticker in enumerate(ordered)}
-    return ranked_probability_score(keyed, str(ordered.index(realised)))
+    return ranked_probability_score(forecast, realised, order=ordered)
 
 
 def _working_residual(mid: float, won: bool) -> float:
