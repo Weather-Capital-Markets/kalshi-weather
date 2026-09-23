@@ -1,0 +1,88 @@
+C1-M2 part 2: three-way era, common-subset decomposition, horizon grid
+prereg_id: c1-m2-era
+prereg_hash: c1eb1b458f7569d621142d8df122761911d1dd39a91c0f06c93dc7e7b7550216
+Unit: cents per contract. Both weightings on every headline.
+x1_go_no_go: FILL_IN
+EDT midnight-to-1 AM carried from Run A: 52
+
+Fractional count_fp
+  handling: included_as_decimal
+  n_included: 420226
+  first_climate_day: 2026-04-09
+  last_climate_day: 2026-09-13
+  premium_share_fractional: 0.11263344146934859
+  n_unattributed: 0
+  post_program_unattributed_premium_share: 0.0
+  source: https://docs.kalshi.com/getting_started/fixed_point_migration (last updated 2026-08-20)
+
+Full-sample settlement (including fractional prints; different universe from the common subset)
+  trade-weighted: 1.228¢  [1.009, 1.448]
+  day-weighted:   0.884¢  [0.544, 1.247]
+
+Three-way era. Sample size before the interval. JJA is the comparison.
+pre_mm_program  program_status=no_program
+  n_fills=64820  n_days=448  sum_count=2839578.0
+  all-seasons trade: -0.668¢  [-1.369, 0.028]
+  all-seasons day:   -0.381¢  [-1.229, 0.427]
+  JJA n_fills=9214 n_days=91
+  JJA trade: -1.304¢  [-2.760, 0.153]
+  JJA day:   -1.757¢  [-3.389, -0.086]
+  sign: {'trade_weighted': 'includes_zero', 'day_weighted': 'includes_zero', 'combined': 'includes_zero'}
+
+mm_program  program_status=active
+  n_fills=1649682  n_days=720  sum_count=92772614.0
+  all-seasons trade: 1.760¢  [1.410, 2.153]
+  all-seasons day:   1.760¢  [1.371, 2.164]
+  JJA n_fills=167718 n_days=178
+  JJA trade: 1.259¢  [0.548, 2.020]
+  JJA day:   2.130¢  [1.251, 3.050]
+  sign: {'trade_weighted': 'positive_excluding_zero', 'day_weighted': 'positive_excluding_zero', 'combined': 'positive_excluding_zero'}
+
+post_mm_program  program_status=PROGRAM_STATUS_UNVERIFIED
+  n_fills=1621240  n_days=184  sum_count=41472028.41
+  all-seasons trade: 0.763¢  [0.521, 1.003]
+  all-seasons day:   0.539¢  [0.308, 0.786]
+  JJA n_fills=851547 n_days=91
+  JJA trade: 0.988¢  [0.561, 1.389]
+  JJA day:   0.785¢  [0.379, 1.180]
+  sign: {'trade_weighted': 'positive_excluding_zero', 'day_weighted': 'positive_excluding_zero', 'combined': 'positive_excluding_zero'}
+  caution: PROGRAM_STATUS_UNVERIFIED: the 2024 CFTC filing says Kalshi may extend the program past 2026-03-11; later 2025 Market Maker Program filings exist; whether either covers KXHIGHNY is not verified.
+  caution: Close-time convention changes between climate days 2026-03-17 and 2026-03-18 (venue-facts §1.8). Post-program differs in at least two ways at once and any difference cannot be attributed to the program alone.
+
+Sign test (post_mm_program)
+  n_fills=1621240 n_days=184 sum_count=41472028.41
+  sign: {'trade_weighted': 'positive_excluding_zero', 'day_weighted': 'positive_excluding_zero', 'combined': 'positive_excluding_zero'}
+  Gate 0 trade-weighted: point 20.98% of maker volume; at CI-low e: 30.69% of maker volume; at CI-high e: 15.95% of maker volume (s = 0.0016 / e; e is dollars per contract; denominator of the percentage is maker volume)
+  Gate 0 day-weighted:   point 29.69% of maker volume; at CI-low e: 52.01% of maker volume; at CI-high e: 20.36% of maker volume (s = 0.0016 / e; e is dollars per contract; denominator of the percentage is maker volume)
+  root_chat: {'take_implied_share_to_root_chat': True, 'reading': 'positive_excluding_zero', 'note': 'Take the implied Gate 0 share to the root chat only when post-program retention is positive with the day-clustered CI excluding zero under both weightings.'}
+
+Common subset (effective, 30m, settlement all present)
+  n_fills=2233073 n_days=1340
+  effective trade: 2.312¢  [2.243, 2.387]
+  effective day:   4.769¢  [4.603, 4.934]
+  30m trade: 1.109¢  [1.038, 1.179]
+  30m day:   3.246¢  [3.100, 3.402]
+  settlement trade: 1.429¢  [1.187, 1.697]
+  settlement day:   1.191¢  [0.638, 1.756]
+  price_impact effective minus 30m
+    trade: 1.203¢  [1.153, 1.256]
+    day:   1.523¢  [1.457, 1.585]
+  price_impact 30m minus settlement
+    trade: -0.320¢  [-0.565, -0.086]
+    day:   2.056¢  [1.529, 2.587]
+
+Horizon x volume-decile (common subset; days ranked on full-universe daily premium). Quietest = 1, busiest = 10.
+  1m d1 trade 5.627¢  [5.079, 6.220]  d1 day 5.950¢  [5.339, 6.548]
+  1m d10 trade 1.530¢  [1.429, 1.640]  d10 day 1.854¢  [1.689, 2.043]
+  5m d1 trade 5.398¢  [4.906, 5.991]  d1 day 5.779¢  [5.213, 6.454]
+  5m d10 trade 1.065¢  [0.958, 1.179]  d10 day 1.325¢  [1.168, 1.490]
+  30m d1 trade 4.734¢  [4.204, 5.345]  d1 day 5.294¢  [4.752, 5.910]
+  30m d10 trade 0.984¢  [0.858, 1.111]  d10 day 1.191¢  [1.014, 1.374]
+  settlement d1 trade -2.894¢  [-4.927, -0.635]  d1 day -3.178¢  [-6.436, 0.039]
+  settlement d10 trade 1.951¢  [1.462, 2.434]  d10 day 2.249¢  [1.637, 2.826]
+  Short-horizon marks on quiet days are positive; settlement on decile 1 is negative trade-weighted. See venue-facts §1.15.
+
+Maker concentration
+  NOT_RUN: Public trade tape has taker_outcome_side and taker_book_side only. No user, firm, or maker id. Distinct maker-side counterparties, top-participant share, and Herfindahl are not inferable. Maker side is known; maker identity is not.
+
+D5 tape-versus-candle stays outside this lane.

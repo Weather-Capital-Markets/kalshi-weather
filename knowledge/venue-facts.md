@@ -375,6 +375,48 @@ NBM latency and the orphan 0.9%.
 
 Consequence: maker/taker attribution on `KXHIGHNY` runs on the full trade history with
 no book and no Lee-Ready classifier. C1-X1 (`prereg/c1-x1-v1.yaml`) is the study.
+The public object still has **no user, firm, or maker id**. Maker *side* is known;
+maker *identity* is not. Participant concentration on this tape is not inferable.
+
+### 1.14 Fractional `count_fp` is contract size, from 2026-04-09 on this tape
+
+`[V-PRIMARY]` — Kalshi docs, [Fixed-Point Representation](https://docs.kalshi.com/getting_started/fixed_point_migration),
+last updated 2026-08-20. `[V-LOCAL]` — C1-M2 part 2 on the labelled six-bracket
+KXHIGHNY parquet (`analysis/out/c1_m2_era/`).
+
+`count_fp` is a fixed-point string, two decimal places, minimum **0.01 contracts**.
+Fractional fills appear even when the client does not place fractional orders. That
+is economic size, not a recoding of the same integer contract. Internally multiplying
+by 100 to get integer centi-contracts is bookkeeping; retention stays cents per
+contract on the `Decimal` count.
+
+On this tape, non-integer `count_fp` first appears on climate day **2026-04-09** and
+runs through **2026-09-13** in this corpus: 420,226 prints, 11.26% of premium
+(denominator: fractional plus integer labelled non-block premium). All of it sits
+after the MM Program's scheduled end. C1-M2 part 2 includes those prints as `Decimal`
+size. None were unattributed. Do not floor, round, or drop them. Fee-schedule
+attribution (`attribute_trade`) still refuses non-integers; that path is a different
+lane.
+
+### 1.15 Short-horizon mark-outs understate adverse selection on low-volume days
+
+`[V-LOCAL]` — C1-M2 part 2 common subset (n = 2,233,073 fills / 1,340 days),
+horizon × daily-volume decile grid. Days ranked on full-universe daily premium.
+Retention in cents per contract; both weightings; day-clustered 95% CI.
+
+On the quietest tenth of days (decile 1), the 30-minute realised half-spread is
+**+4.734¢** trade-weighted [4.204, 5.345] and **+5.294¢** day-weighted. Settlement
+retention on the same fills is **−2.894¢** trade-weighted [−4.927, −0.635] and
+**−3.178¢** day-weighted [−6.436, +0.039]. One-minute and five-minute marks on that
+decile are also positive (~5.4–6.0¢). Quiet days look fine at half an hour and are
+negative by resolution on the trade-weighted measure.
+
+On the busiest tenth (decile 10), settlement stays positive: **+1.951¢**
+trade-weighted [1.462, 2.434], **+2.249¢** day-weighted [1.637, 2.826], above the
+30-minute mark on that decile.
+
+A quoting policy calibrated on 30-minute marks would be systematically wrong about
+the days where retention is actually negative.
 
 ---
 

@@ -360,6 +360,25 @@ def _root_chat_flag(post: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _fmt_gate(triple: dict[str, Any]) -> str:
+    point = triple["point"]
+    if point.get("status") != "ok" or point.get("s") is None:
+        return str(point.get("status"))
+
+    def _pct(node: dict[str, Any]) -> str:
+        s = node.get("s")
+        if s is None:
+            return str(node.get("status"))
+        return f"{100.0 * float(s):.2f}% of maker volume"
+
+    return (
+        f"point {_pct(point)}; at CI-low e: {_pct(triple['ci_low'])}; "
+        f"at CI-high e: {_pct(triple['ci_high'])} "
+        f"(s = 0.0016 / e; e is dollars per contract; denominator of the "
+        f"percentage is maker volume)"
+    )
+
+
 def _fmt_est(est: dict[str, Any]) -> str:
     point = est.get("point_cents_per_contract")
     lo = est.get("ci_low_cents_per_contract")
@@ -428,12 +447,15 @@ def render_text(payload: dict[str, Any]) -> str:
             for caution in block["cautions"]:
                 lines.append(f"  caution: {caution}")
         lines.append("")
+    grid = payload["horizon_volume_grid"]
     lines.extend(
         [
             "Sign test (post_mm_program)",
             f"  n_fills={post['n_fills']} n_days={post['n_days']} "
             f"sum_count={post['sum_count']}",
             f"  sign: {post['sign']}",
+            f"  Gate 0 trade-weighted: {_fmt_gate(post['gate0_all_seasons']['trade_weighted'])}",
+            f"  Gate 0 day-weighted:   {_fmt_gate(post['gate0_all_seasons']['day_weighted'])}",
             f"  root_chat: {post['root_chat']}",
             "",
             "Common subset (effective, 30m, settlement all present)",
@@ -451,8 +473,25 @@ def render_text(payload: dict[str, Any]) -> str:
             f"    trade: {_fmt_est(common['price_impact_30m_minus_settlement']['trade_weighted'])}",
             f"    day:   {_fmt_est(common['price_impact_30m_minus_settlement']['day_weighted'])}",
             "",
-            "Horizon x volume-decile grid is in the JSON (common subset; days ranked "
-            "on full-universe daily premium).",
+            "Horizon x volume-decile (common subset; days ranked on full-universe "
+            "daily premium). Quietest = 1, busiest = 10.",
+        ]
+    )
+    for horizon in ("1m", "5m", "30m", "settlement"):
+        d1 = grid[horizon]["1"]
+        d10 = grid[horizon]["10"]
+        lines.append(
+            f"  {horizon} d1 trade {_fmt_est(d1['trade_weighted'])}  "
+            f"d1 day {_fmt_est(d1['day_weighted'])}"
+        )
+        lines.append(
+            f"  {horizon} d10 trade {_fmt_est(d10['trade_weighted'])}  "
+            f"d10 day {_fmt_est(d10['day_weighted'])}"
+        )
+    lines.extend(
+        [
+            "  Short-horizon marks on quiet days are positive; settlement on "
+            "decile 1 is negative trade-weighted. See venue-facts §1.15.",
             "",
             "Maker concentration",
             f"  {payload['maker_concentration']['status']}: "
