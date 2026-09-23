@@ -1,0 +1,36 @@
+# C1-M2 part 2. Measurement contract, hashed before the run.
+# Not a trading gate. Do not convert retention to a percentage return.
+
+prereg_id: c1-m2-era
+unit: cents_per_contract
+uncrossed_mid: ask_gt_bid
+weightings: [trade_weighted, day_weighted]
+volume_deciles: primary
+headline_season: JJA
+horizon_headline: settlement
+horizons: ["1m", "5m", "30m", settlement]
+common_subset: [effective, realised_30m, settlement]
+fractional_count_fp: include_as_decimal
+# Do not floor, round, or scale by 100. Trade-weighted stays per-print.
+
+mm_program_start: "2024-03-11"
+mm_program_scheduled_end: "2026-03-11"
+eras:
+  pre_mm_program: {start: "2022-12-11", end: "2024-03-10", program_status: no_program}
+  mm_program: {start: "2024-03-11", end: "2026-03-11", program_status: active}
+  post_mm_program:
+    start: "2026-03-12"
+    end: present
+    program_status: PROGRAM_STATUS_UNVERIFIED
+# Later CFTC 2025 Market Maker Program filings exist. Whether the 2024
+# program was extended onto KXHIGHNY is not verified. Close-time
+# convention also changes 2026-03-17 to 2026-03-18 (venue-facts §1.8).
+# Post-program differs in at least two ways at once.
+
+sign_test: post_mm_program_settlement_retention
+go_no_go: FILL_IN
+gate0_required_e_times_s_dollars: "0.0016"
+label_noise: venue_disagreement
+edt_midnight_1am: 52
+maker_identity_on_tape: false
+share_forecast: false
