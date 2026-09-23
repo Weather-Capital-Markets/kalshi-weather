@@ -445,7 +445,10 @@ def d4_uncrossed_gap() -> dict[str, Any]:
     return {
         "definitions": {
             "run_A": "mean (ask−bid) in cents over two-sided states with ask > bid (ties excluded)",
-            "run_B": "mean (ask−bid) in cents over two-sided states with ask >= bid (ties included at gap 0)",
+            "run_B": (
+                "mean (ask−bid) in cents over two-sided states with ask >= bid "
+                "(ties included at gap 0)"
+            ),
             "weighting": "equal weight per print update; not volume-weighted on either run",
         },
         "counts": {
@@ -565,7 +568,12 @@ def main() -> int:
     print("D4 uncrossed gap...")
     d4 = d4_uncrossed_gap()
     (OUT / "d4_uncrossed_gap.json").write_text(json.dumps(d4, indent=2, default=str))
-    print("A", d4["mean_uncrossed_cents_A_strict"], "B", d4["mean_uncrossed_cents_B_inclusive_ties"])
+    print(
+        "A",
+        d4["mean_uncrossed_cents_A_strict"],
+        "B",
+        d4["mean_uncrossed_cents_B_inclusive_ties"],
+    )
 
     print("D5 tape vs candle...")
     d5 = d5_tape_vs_candle()
