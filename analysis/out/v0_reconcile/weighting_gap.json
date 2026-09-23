@@ -1,0 +1,12 @@
+{
+  "status": "NOT_RUN",
+  "reason": "snapshot hash mismatch trades=c266fe041e779ed5 labels=05940acd31ce7542; expected trades=ff7e56e6fc3c4973 labels=05940acd31ce7542",
+  "is_strategy_pnl": false,
+  "go_no_go": "FILL_IN",
+  "snapshot": {
+    "trades_hash": "c266fe041e779ed5",
+    "labels_hash": "05940acd31ce7542",
+    "expected_trades_hash": "ff7e56e6fc3c4973",
+    "expected_labels_hash": "05940acd31ce7542"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "status": "NOT_RUN",
+  "reason": "Trade snapshot hash c266fe041e779ed5 does not equal the locked hash ff7e56e6fc3c4973. The fit was not run. analysis/out/c1_m1_v0_min.json is unchanged.",
+  "command_not_run": "python -m analysis.c1_m1_run --out analysis/out/c1_m1_v0_min.rpsfix.json",
+  "is_strategy_pnl": false,
+  "go_no_go": "FILL_IN",
+  "snapshot": {
+    "trades_hash": "c266fe041e779ed5",
+    "expected_trades_hash": "ff7e56e6fc3c4973",
+    "labels_hash": "05940acd31ce7542",
+    "expected_labels_hash": "05940acd31ce7542",
+    "labels_hash_matches": true,
+    "trades_hash_matches": false,
+    "pull_window": "2022-12-11 .. 2026-09-15",
+    "pulled_at": "2026-09-23T02:09:59.848692+00:00",
+    "n_trades_pulled": 3411984,
+    "locked_crossed_rate_n_prints": 3405724,
+    "n_trades_minus_locked_n_prints": 6260,
+    "n_pull_failures": 0,
+    "n_complement_violations": 0,
+    "n_duplicate_ids": 0
+  },
+  "rerun": "NOT_RUN"
+}
