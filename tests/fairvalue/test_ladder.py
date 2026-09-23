@@ -11,6 +11,7 @@ import pytest
 from wxmm.fairvalue.ladder import (
     assert_normalised,
     ladder_order,
+    oriented_continuity_bounds,
     parse_kalshi_bracket,
     renormalise_clipped,
 )
@@ -88,6 +89,31 @@ def test_two_tails_lower_threshold_is_below() -> None:
     low, high = "KXHIGHNY-26JUL04-T90", "KXHIGHNY-26JUL04-T100"
     assert ladder_order([high, low]) == [low, high]
     assert ladder_order([high, low]) != sorted([high, low])
+
+
+def test_bottom_tail_on_2022_12_11_is_not_an_open_upper_bound() -> None:
+    """T83 is the market titled 82° or below. Unoriented parsing still says greater."""
+    payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    markets = payload["markets"]
+    assert isinstance(markets, list)
+    tickers = [str(row["ticker"]) for row in markets]
+    bottom = next(ticker for ticker in tickers if ticker.endswith("-T83"))
+    top = next(ticker for ticker in tickers if ticker.endswith("-T90"))
+    between = next(ticker for ticker in tickers if ticker.endswith("-B83.5"))
+    parsed = parse_kalshi_bracket(bottom)
+    assert parsed is not None
+    assert parsed.continuity_bounds_f() == (82.5, None)
+    assert oriented_continuity_bounds(bottom, tickers) == (None, 82.5)
+    assert oriented_continuity_bounds(bottom, tickers) != (82.5, None)
+    assert oriented_continuity_bounds(top, tickers) == (89.5, None)
+    assert oriented_continuity_bounds(between, tickers) == (82.5, 84.5)
+
+
+def test_two_tail_continuity_follows_threshold_not_ticker_string() -> None:
+    low, high = "KXHIGHNY-26JUL04-T90", "KXHIGHNY-26JUL04-T100"
+    ladder = [high, low]
+    assert oriented_continuity_bounds(low, ladder) == (None, 89.5)
+    assert oriented_continuity_bounds(high, ladder) == (99.5, None)
 
 
 def test_interior_tail_is_refused() -> None:

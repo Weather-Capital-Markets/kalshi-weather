@@ -154,6 +154,32 @@ def ladder_order(tickers: Sequence[str]) -> list[str]:
     return _orient_ladder(tickers)
 
 
+def oriented_continuity_bounds(
+    ticker: str, ladder: Sequence[str]
+) -> tuple[float | None, float | None]:
+    """Half-degree bounds after the tail is placed by ``ladder_order``.
+
+    Every ``T`` suffix parses as greater, so ``continuity_bounds_f`` on a
+    bottom tail is ``(threshold - 0.5, None)``. A tail that temperature order
+    places first, and not also last, is the bottom tail ``(None, threshold - 0.5)``.
+    A tail placed last is the top. Between-brackets keep ``continuity_bounds_f``.
+    """
+    bracket = parse_kalshi_bracket(ticker)
+    if bracket is None:
+        raise ValueError(f"cannot map continuity bounds for {ticker!r}")
+    if bracket.role == "between":
+        return bracket.continuity_bounds_f()
+    ordered = ladder_order(ladder)
+    if ticker not in ordered or ordered[0] == ordered[-1]:
+        raise ValueError(f"cannot map continuity bounds for {ticker!r}")
+    threshold = float(_threshold(bracket)) - 0.5
+    if ordered[0] == ticker:
+        return None, threshold
+    if ordered[-1] == ticker:
+        return threshold, None
+    raise ValueError(f"cannot map continuity bounds for {ticker!r}")
+
+
 def brackets_from_market_ids(market_ids: tuple[str, ...] | list[str]) -> tuple[KalshiBracket, ...]:
     parsed: list[KalshiBracket] = []
     for market_id in market_ids:
