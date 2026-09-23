@@ -124,6 +124,48 @@ def test_report_without_a_fit_block_falls_back_to_null_not_unscaled_beta() -> No
     assert provider.feat_std is None
 
 
+def test_provider_drops_a_row_whose_staleness_ratio_is_undefined() -> None:
+    """A print at the as-of makes ask age 0, so the ratio is missing.
+
+    Filling that cell with 0.0 would enter the fit. The provider returns None
+    instead of quoting from an imputed staleness key.
+    """
+    quotes = [("T80", "0.45", "0.35"), ("T90", "0.55", "0.40")]
+    trades: list[RawTrade] = []
+    for strike, ask, bid in quotes:
+        ticker = f"KXHIGHNY-26AUG12-{strike}"
+        for side, price in (("yes", ask), ("no", bid)):
+            trades.append(
+                parse_trade(
+                    {
+                        "trade_id": f"{ticker}-{side}-now",
+                        "ticker": ticker,
+                        "count_fp": "10.00",
+                        "yes_price_dollars": price,
+                        "no_price_dollars": f"{1 - float(price):.2f}",
+                        "taker_outcome_side": side,
+                        "taker_book_side": "ask" if side == "yes" else "bid",
+                        "created_time": "2026-08-12T16:00:00Z",
+                        "is_block_trade": False,
+                    },
+                    source_endpoint="historical",
+                )
+            )
+    provider = TradeDerivedFairValue(
+        feature_names=("book_implied_spread",),
+        beta=(0.1,),
+        trades=tuple(trades),
+        as_of=TS,
+    )
+    view = view_from_snapshots(
+        (
+            _snap("KXHIGHNY-26AUG12-T80", 35, 45),
+            _snap("KXHIGHNY-26AUG12-T90", 40, 55),
+        )
+    )
+    assert provider.fair(view) is None
+
+
 def test_provider_refuses_a_feature_name_it_cannot_build() -> None:
     """Silently substituting zero for a renamed feature runs a different model
     under the fitted model's name."""

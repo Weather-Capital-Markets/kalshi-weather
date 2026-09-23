@@ -40,6 +40,7 @@ from wxmm.fairvalue.anchor_trades import (
 from wxmm.fairvalue.crossed import CrossedDiagnostic, crossed_diagnostic
 from wxmm.fairvalue.ladder import ladder_order
 from wxmm.fairvalue.model_trades import (
+    ImputationTally,
     _row_features,
     null_trade_recovery,
     trade_ladder_or_none,
@@ -171,6 +172,7 @@ class V0MinReport:
     """
     nbm_status: Literal["NOT_IN_V0_MIN"] = "NOT_IN_V0_MIN"
     is_strategy_pnl: Literal[False] = False
+    imputation: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -202,6 +204,11 @@ class V0MinReport:
             "nbm_status": self.nbm_status,
             "is_strategy_pnl": False,
             "glm_at_limit": self.n_climate_day_clusters <= 400,
+            "imputation": (
+                self.imputation
+                if self.imputation is not None
+                else ImputationTally().as_dict()
+            ),
         }
 
     def canonical_bytes(self) -> bytes:
@@ -413,6 +420,7 @@ def _day_observation(
     as_of: datetime,
     *,
     mapping: ObservedMapping | None,
+    tally: ImputationTally | None = None,
 ) -> tuple[list[str], list[float], list[list[float]], int, dict[str, Decimal]] | None:
     tickers = _tickers_on(labels, climate)
     realised = _realised(labels, climate)
@@ -428,11 +436,22 @@ def _day_observation(
     q = [float(q_map[t]) for t in tickers]
     names: list[str] | None = None
     x_rows: list[list[float]] = []
+    scratch = ImputationTally()
     for ticker in tickers:
-        feats = _row_features(as_of_trades, ticker, as_of, mapping=mapping)
+        feats = _row_features(
+            as_of_trades, ticker, as_of, mapping=mapping, tally=scratch
+        )
+        if feats is None:
+            if tally is not None:
+                tally.rows_excluded_missing_staleness += (
+                    scratch.rows_excluded_missing_staleness
+                )
+            return None
         if names is None:
             names = sorted(feats)
         x_rows.append([feats[name] for name in names])
+    if tally is not None:
+        tally.absorb_imputed(scratch)
     y_idx = tickers.index(realised)
     return tickers, q, x_rows, y_idx, q_map
 
@@ -473,6 +492,7 @@ class ObservationCache:
         self._mapping = mapping
         self._cache: dict[tuple[date, int], Packed | None] = {}
         self.names: list[str] | None = None
+        self.imputation = ImputationTally()
 
     @property
     def hours_to_close(self) -> tuple[int, ...]:
@@ -494,6 +514,7 @@ class ObservationCache:
                 climate,
                 as_of,
                 mapping=self._mapping,
+                tally=self.imputation,
             )
             self._cache[key] = packed
             if packed is not None and self.names is None:
@@ -503,7 +524,8 @@ class ObservationCache:
                     as_of,
                     mapping=self._mapping,
                 )
-                self.names = sorted(feats)
+                if feats is not None:
+                    self.names = sorted(feats)
         return self._cache[key]
 
     @property
@@ -1212,6 +1234,7 @@ def run_c1_m1_v0_min(
         ),
         beta=beta_iv,
         fit=last_fit,
+        imputation=cache.imputation.as_dict(),
     )
     ledger.record(
         "C1_M1_V0_MIN",

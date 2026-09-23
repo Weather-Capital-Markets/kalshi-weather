@@ -51,6 +51,7 @@ from wxmm.fairvalue.coverage import (
     trade_anchor_coverage,
 )
 from wxmm.fairvalue.model_trades import (
+    ImputationTally,
     _ridge,
     _row_features,
     _solve,
@@ -140,6 +141,7 @@ class V0Report:
     unc_common_within_1pct: bool
     nbm_status: Literal["UNAVAILABLE_INTERPOLATION_UNSPECIFIED"]
     is_strategy_pnl: Literal[False] = False
+    imputation: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -160,6 +162,11 @@ class V0Report:
             "unc_common_within_1pct": self.unc_common_within_1pct,
             "nbm_status": self.nbm_status,
             "is_strategy_pnl": False,
+            "imputation": (
+                self.imputation
+                if self.imputation is not None
+                else ImputationTally().as_dict()
+            ),
         }
 
     def canonical_bytes(self) -> bytes:
@@ -244,8 +251,9 @@ def precompute_v0_rows(
     *,
     hours_to_close: Sequence[int],
     mapping: Any,
-) -> tuple[CachedOriginRow, ...]:
+) -> tuple[tuple[CachedOriginRow, ...], ImputationTally]:
     """Complete ladders + flow/calendar rows, once per (day, horizon)."""
+    imputation = ImputationTally()
     grouped = _trades_by_ticker(trades)
     hours = tuple(int(h) for h in hours_to_close)
     out: list[CachedOriginRow] = []
@@ -280,19 +288,30 @@ def precompute_v0_rows(
             q = null_trade_recovery(ladder)
             feats: dict[str, dict[str, float]] = {}
             working: dict[str, float] = {}
+            scratch = ImputationTally()
+            feature_refused = False
             for ticker in tickers:
                 if ticker not in yes_won:
                     complete = False
                     break
                 row_feats = _row_features(
-                    prefixes[ticker], ticker, as_of, mapping=mapping
+                    prefixes[ticker], ticker, as_of, mapping=mapping, tally=scratch
                 )
+                if row_feats is None:
+                    complete = False
+                    feature_refused = True
+                    break
                 if names is None:
                     names = tuple(sorted(row_feats))
                 feats[ticker] = row_feats
                 working[ticker] = _working_residual(float(q[ticker]), yes_won[ticker])
             if not complete or names is None:
+                if feature_refused:
+                    imputation.rows_excluded_missing_staleness += (
+                        scratch.rows_excluded_missing_staleness
+                    )
                 continue
+            imputation.absorb_imputed(scratch)
             persist = persistence_forecast(
                 [trade for ticker in tickers for trade in prefixes[ticker]],
                 tickers,
@@ -320,7 +339,7 @@ def precompute_v0_rows(
                     staleness_bucket=staleness_bucket(max(ages) if ages else None),
                 )
             )
-    return tuple(out)
+    return tuple(out), imputation
 
 
 def _fit_from_rows(
@@ -481,6 +500,7 @@ def score_cached_walkforward(
     hours_to_close: Sequence[int],
     seed: int,
     climatology_doy_window: int,
+    imputation: Mapping[str, object] | None = None,
 ) -> V0Report:
     """Expanding-window scores from cached complete-ladder rows. Not P&L."""
     climate_days = sorted({label.climate_day for label in labels.values()})
@@ -650,6 +670,7 @@ def score_cached_walkforward(
         brier_null_reconciles=brier_n.reconcile(),
         unc_common_within_1pct=unc_ok,
         nbm_status=NBM_STATUS,
+        imputation=dict(imputation) if imputation is not None else ImputationTally().as_dict(),
     )
     ledger.record(
         "C1_M1_V0",
@@ -692,7 +713,7 @@ def run_c1_m1_v0(
     ridge = float(registered.get("ridge_lambda", 1.0))
     seed = int(registered.get("seed", 0))
     boot_n = int(n_resample or registered.get("bootstrap", {}).get("n_resample") or 200)
-    cached = precompute_v0_rows(
+    cached, imputation = precompute_v0_rows(
         trades, labels, hours_to_close=hours, mapping=mapping
     )
     return score_cached_walkforward(
@@ -707,6 +728,7 @@ def run_c1_m1_v0(
         hours_to_close=hours,
         seed=seed,
         climatology_doy_window=int(registered.get("climatology_doy_window", 15)),
+        imputation=imputation.as_dict(),
     )
 
 

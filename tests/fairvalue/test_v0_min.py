@@ -18,9 +18,14 @@ from wxmm.analysis.maker_taker import (
 from wxmm.analysis.trades_ingest import parse_trade
 from wxmm.backtest.ledger import Ledger
 from wxmm.core.errors import LeakageError
-from wxmm.fairvalue.anchor_trades import refuse_if_leaked
+from wxmm.fairvalue.anchor_trades import (
+    assert_outcome_bookside_mapping,
+    refuse_if_leaked,
+)
 from wxmm.fairvalue.features import WINDOW_INVARIANT_KEYS
 from wxmm.fairvalue.model_trades import (
+    GAP_SINCE_LAST_DECISION,
+    ImputationTally,
     _row_features,
     null_trade_recovery,
     trade_ladder_or_none,
@@ -275,6 +280,14 @@ def test_run_walkforward_scores(tmp_path: Path) -> None:
     assert report.coverage.share >= 0.0
     assert report.n_predictions > 0
     assert report.decision.rule == "sign_test_oos_rps_improvement_vs_null"
+    block = report.as_dict()["imputation"]
+    assert isinstance(block, dict)
+    assert block["gap_since_last_decision"] == GAP_SINCE_LAST_DECISION
+    assert block["rows_excluded_missing_staleness"] == 0
+    imputed = block["imputed_cells"]
+    assert isinstance(imputed, dict)
+    assert any(key.endswith("gap_since_last_seconds") for key in imputed)
+    assert not any("staleness" in key for key in imputed)
     seasons = {row.key for row in report.by_season}
     assert "JJA" in seasons
     gbm = pytest.raises(ValueError, match="second experiment")
@@ -337,6 +350,7 @@ def test_window_invariant_book_features_emitted_once() -> None:
         as_of,
         mapping=None,
     )
+    assert feats is not None
     for key in WINDOW_INVARIANT_KEYS:
         assert f"book_{key}" in feats
         assert not [name for name in feats if name.endswith(f"_{key}") and name.startswith("w")]
@@ -356,6 +370,7 @@ def test_implied_spread_change_is_measured_over_the_window() -> None:
         as_of,
         mapping=None,
     )
+    assert feats is not None
     changes = {n: v for n, v in feats.items() if n.endswith("_implied_spread_change")}
     assert len(changes) == 3
     assert any(abs(v) > 1e-9 for v in changes.values())
@@ -509,3 +524,100 @@ def test_cache_ingest_release_matches_in_memory(tmp_path: Path) -> None:
     assert packed.n_climate_day_clusters == direct.n_climate_day_clusters
     assert packed.coverage.n_grid == direct.coverage.n_grid
     assert cache.n_cached > 0
+
+
+def test_missing_staleness_is_excluded_not_imputed() -> None:
+    """The scored ticker has no bid. A second ticker keeps the cross-tab clean."""
+    day = date(2026, 8, 12)
+    as_of = kalshi_last_trading_close_utc(day) - timedelta(hours=6)
+    created = (as_of - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    scored = _ticker(day, "T80")
+    other = _ticker(day, "T90")
+    tape = [
+        _raw(
+            trade_id=f"{scored}-y",
+            ticker=scored,
+            outcome="yes",
+            book="ask",
+            yes="0.55",
+            no="0.45",
+            created=created,
+        ),
+        _raw(
+            trade_id=f"{other}-y",
+            ticker=other,
+            outcome="yes",
+            book="ask",
+            yes="0.40",
+            no="0.60",
+            created=created,
+        ),
+        _raw(
+            trade_id=f"{other}-n",
+            ticker=other,
+            outcome="no",
+            book="bid",
+            yes="0.30",
+            no="0.70",
+            created=created,
+        ),
+    ]
+    mapping = assert_outcome_bookside_mapping(tape)  # type: ignore[arg-type]
+    one_sided = [trade for trade in tape if trade.ticker == scored]  # type: ignore[attr-defined]
+    tally = ImputationTally()
+    feats = _row_features(
+        one_sided,  # type: ignore[arg-type]
+        scored,
+        as_of,
+        mapping=mapping,
+        tally=tally,
+    )
+    assert feats is None
+    assert tally.rows_excluded_missing_staleness == 1
+    assert tally.imputed == {}
+    with pytest.raises(AssertionError, match="staleness"):
+        tally.note_imputed("bid_staleness_seconds")
+    with pytest.raises(AssertionError, match="staleness"):
+        tally.note_imputed("book_staleness_ratio")
+
+
+def test_gap_since_last_stays_imputed_and_is_counted() -> None:
+    """Prints sit inside the 4h window and outside the 15m and 1h windows.
+
+    Both sides are present, so staleness is observed. The empty windows still
+    fill gap_since_last_seconds with 0.0; that fill is counted, not removed.
+    """
+    day = date(2026, 8, 12)
+    as_of = kalshi_last_trading_close_utc(day) - timedelta(hours=6)
+    created = (as_of - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ticker = _ticker(day, "T80")
+    tape = [
+        _raw(
+            trade_id=f"{ticker}-y",
+            ticker=ticker,
+            outcome="yes",
+            book="ask",
+            yes="0.55",
+            no="0.45",
+            created=created,
+        ),
+        _raw(
+            trade_id=f"{ticker}-n",
+            ticker=ticker,
+            outcome="no",
+            book="bid",
+            yes="0.45",
+            no="0.55",
+            created=created,
+        ),
+    ]
+    tally = ImputationTally()
+    feats = _row_features(tape, ticker, as_of, mapping=None, tally=tally)  # type: ignore[arg-type]
+    assert feats is not None
+    assert tally.rows_excluded_missing_staleness == 0
+    assert tally.as_dict()["gap_since_last_decision"] == GAP_SINCE_LAST_DECISION
+    assert tally.imputed.get("w900s_gap_since_last_seconds") == 1
+    assert tally.imputed.get("w3600s_gap_since_last_seconds") == 1
+    assert "w14400s_gap_since_last_seconds" not in tally.imputed
+    assert feats["w900s_gap_since_last_seconds"] == 0.0
+    assert not any("staleness" in key for key in tally.imputed)

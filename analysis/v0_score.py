@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         [trade for trade in trades if not trade.is_block_trade]
     )
     print(f"precompute n_trades={len(trades)} n_labels={len(labels)}", file=sys.stderr)
-    rows = precompute_v0_rows(
+    rows, imputation = precompute_v0_rows(
         trades, labels, hours_to_close=hours, mapping=mapping
     )
     print(f"complete_ladder_rows={len(rows)}", file=sys.stderr)
@@ -118,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
         hours_to_close=hours,
         seed=seed,
         climatology_doy_window=int(registered.get("climatology_doy_window", 15)),
+        imputation=imputation.as_dict(),
     )
     payload = report.as_dict()
     payload["label_diagnostics"] = label_diag

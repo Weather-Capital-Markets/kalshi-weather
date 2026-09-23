@@ -54,6 +54,8 @@ class TradeDerivedFairValue:
             feats = _row_features(
                 as_of_trades, ticker, self.as_of, mapping=self.mapping
             )
+            if feats is None:
+                return None
             missing = [name for name in self.feature_names if name not in feats]
             if missing:
                 raise KeyError(
