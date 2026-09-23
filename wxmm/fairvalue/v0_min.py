@@ -139,6 +139,16 @@ class CoverageReport:
 
 
 @dataclass(frozen=True, slots=True)
+class PositionReliability:
+    """Mean predicted probability and empirical frequency at one ladder position."""
+
+    position: int
+    n: int
+    mean_predicted: float
+    empirical_frequency: float
+
+
+@dataclass(frozen=True, slots=True)
 class V0MinReport:
     """Out-of-sample scores. Not P&L."""
 
@@ -173,6 +183,7 @@ class V0MinReport:
     nbm_status: Literal["NOT_IN_V0_MIN"] = "NOT_IN_V0_MIN"
     is_strategy_pnl: Literal[False] = False
     imputation: dict[str, object] | None = None
+    reliability: tuple[PositionReliability, ...] = ()
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -209,6 +220,7 @@ class V0MinReport:
                 if self.imputation is not None
                 else ImputationTally().as_dict()
             ),
+            "reliability_by_position": [asdict(row) for row in self.reliability],
         }
 
     def canonical_bytes(self) -> bytes:
@@ -217,6 +229,42 @@ class V0MinReport:
 
 def sort_ladder(tickers: Sequence[str]) -> list[str]:
     return ladder_order(tickers)
+
+
+def reliability_by_ladder_position(
+    forecasts: Sequence[Mapping[str, Decimal]],
+    realised: Sequence[str],
+) -> tuple[PositionReliability, ...]:
+    """Predicted probability against empirical frequency at each ladder position.
+
+    Position 0 is the bottom of ``ladder_order``. The corpus table is not
+    written here; a fit that does not run leaves this empty.
+    """
+    if len(forecasts) != len(realised):
+        raise ValueError("reliability table needs one realised outcome per forecast")
+    predicted: dict[int, list[float]] = {}
+    hits: dict[int, list[float]] = {}
+    for forecast, outcome in zip(forecasts, realised, strict=True):
+        order = ladder_order(list(forecast))
+        if outcome not in order:
+            raise ValueError(f"realised {outcome!r} is not on the forecast ladder")
+        for position, ticker in enumerate(order):
+            predicted.setdefault(position, []).append(float(forecast[ticker]))
+            hits.setdefault(position, []).append(1.0 if ticker == outcome else 0.0)
+    rows: list[PositionReliability] = []
+    for position in sorted(predicted):
+        preds = predicted[position]
+        empirical = hits[position]
+        n = len(preds)
+        rows.append(
+            PositionReliability(
+                position=position,
+                n=n,
+                mean_predicted=sum(preds) / n,
+                empirical_frequency=sum(empirical) / n,
+            )
+        )
+    return tuple(rows)
 
 
 def _tickers_on(labels: Mapping[str, SettlementLabel], climate_day: date) -> list[str]:
@@ -1178,6 +1226,10 @@ def run_c1_m1_v0_min(
             )
         )
 
+    reliability = reliability_by_ladder_position(
+        [row.p_hat for row in predictions],
+        [row.realised for row in predictions],
+    )
     improvements = _improvements(predictions)
     mean_imp = float(sum(improvements) / len(improvements)) if improvements else 0.0
     by_day: dict[date, list[Decimal]] = {}
@@ -1235,6 +1287,7 @@ def run_c1_m1_v0_min(
         beta=beta_iv,
         fit=last_fit,
         imputation=cache.imputation.as_dict(),
+        reliability=reliability,
     )
     ledger.record(
         "C1_M1_V0_MIN",

@@ -36,6 +36,7 @@ from wxmm.fairvalue.v0_min import (
     fit_offset_logit_mle,
     percentile_ci,
     predict_adjusted,
+    reliability_by_ladder_position,
     residual_gbm_experiment,
     run_c1_m1_v0_min,
     trade_anchor_coverage,
@@ -288,6 +289,9 @@ def test_run_walkforward_scores(tmp_path: Path) -> None:
     assert isinstance(imputed, dict)
     assert any(key.endswith("gap_since_last_seconds") for key in imputed)
     assert not any("staleness" in key for key in imputed)
+    reliability_rows = report.as_dict()["reliability_by_position"]
+    assert isinstance(reliability_rows, list) and reliability_rows
+    assert all(isinstance(row, dict) and row["n"] > 0 for row in reliability_rows)
     seasons = {row.key for row in report.by_season}
     assert "JJA" in seasons
     gbm = pytest.raises(ValueError, match="second experiment")
@@ -524,6 +528,27 @@ def test_cache_ingest_release_matches_in_memory(tmp_path: Path) -> None:
     assert packed.n_climate_day_clusters == direct.n_climate_day_clusters
     assert packed.coverage.n_grid == direct.coverage.n_grid
     assert cache.n_cached > 0
+
+
+def test_reliability_table_is_predicted_versus_frequency_by_position() -> None:
+    bottom = "KXHIGHNY-26JUL04-T83"
+    middle = "KXHIGHNY-26JUL04-B85.5"
+    forecasts = [
+        {bottom: Decimal("0.25"), middle: Decimal("0.75")},
+        {bottom: Decimal("0.75"), middle: Decimal("0.25")},
+    ]
+    table = reliability_by_ladder_position(forecasts, [bottom, middle])
+    assert [row.position for row in table] == [0, 1]
+    assert table[0].n == 2
+    assert table[0].mean_predicted == pytest.approx(0.5)
+    assert table[0].empirical_frequency == pytest.approx(0.5)
+    assert table[1].mean_predicted == pytest.approx(0.5)
+    assert table[1].empirical_frequency == pytest.approx(0.5)
+    both_bottom = reliability_by_ladder_position(forecasts, [bottom, bottom])
+    assert both_bottom[0].empirical_frequency == pytest.approx(1.0)
+    assert both_bottom[0].mean_predicted == pytest.approx(0.5)
+    assert both_bottom[1].empirical_frequency == pytest.approx(0.0)
+    assert reliability_by_ladder_position([], []) == ()
 
 
 def test_missing_staleness_is_excluded_not_imputed() -> None:
