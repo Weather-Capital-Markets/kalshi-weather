@@ -40,8 +40,8 @@ DESIGN_DROPPED_KEYS: frozenset[str] = frozenset({"trade_count"})
 """``intensity_per_hour`` is ``trade_count`` over a constant, so within a window
 the two are the same column once standardised. Keep the intensity, which is
 comparable across windows, and keep the count out of the design."""
-# Design-matrix prefix for as-of state. Renamed off ``book_`` in a later commit.
-INVARIANT_FEATURE_PREFIX = "book_"
+# Trade-implied as-of state. Not a reconstructed order book.
+INVARIANT_FEATURE_PREFIX = "asof_"
 GAP_SINCE_LAST_DECISION = (
     "deferred: gap_since_last_seconds stays imputed to 0.0 because no "
     "locked-snapshot fit produced per-feature counts"

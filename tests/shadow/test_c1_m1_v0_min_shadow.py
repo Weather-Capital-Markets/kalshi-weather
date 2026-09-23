@@ -103,7 +103,7 @@ def test_report_artifact_round_trips_into_a_deployable_provider() -> None:
     the scaling too or the shadow deploys a different model."""
     report = {
         "fit": {
-            "feature_names": ["book_implied_spread", "w900s_signed_ofi"],
+            "feature_names": ["asof_implied_spread", "w900s_signed_ofi"],
             "beta": [0.25, -0.5],
             "feat_mean": [0.02, 0.0],
             "feat_std": [0.01, 0.5],
@@ -112,7 +112,7 @@ def test_report_artifact_round_trips_into_a_deployable_provider() -> None:
         }
     }
     provider = fair_value_from_report(report, (), TS)
-    assert provider.feature_names == ("book_implied_spread", "w900s_signed_ofi")
+    assert provider.feature_names == ("asof_implied_spread", "w900s_signed_ofi")
     assert provider.beta == (0.25, -0.5)
     assert provider.feat_mean == (0.02, 0.0)
     assert provider.feat_std == (0.01, 0.5)
@@ -152,7 +152,7 @@ def test_provider_drops_a_row_whose_staleness_ratio_is_undefined() -> None:
                 )
             )
     provider = TradeDerivedFairValue(
-        feature_names=("book_implied_spread",),
+        feature_names=("asof_implied_spread",),
         beta=(0.1,),
         trades=tuple(trades),
         as_of=TS,

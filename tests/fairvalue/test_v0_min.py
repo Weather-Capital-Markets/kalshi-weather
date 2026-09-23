@@ -336,8 +336,8 @@ def _moving_tape(day: date) -> list[object]:
     return out
 
 
-def test_window_invariant_book_features_emitted_once() -> None:
-    """Staleness and spread read the as-of book, which no window touches.
+def test_window_invariant_asof_features_emitted_once() -> None:
+    """Staleness and spread read the as-of trade state, which no window touches.
 
     Emitting them per window put three identical columns in the design. Ridge
     does not complain, it just hands each copy a third of the effect.
@@ -352,7 +352,7 @@ def test_window_invariant_book_features_emitted_once() -> None:
     )
     assert feats is not None
     for key in WINDOW_INVARIANT_KEYS:
-        assert f"book_{key}" in feats
+        assert f"asof_{key}" in feats
         assert not [name for name in feats if name.endswith(f"_{key}") and name.startswith("w")]
     assert len([n for n in feats if n.endswith("_signed_ofi")]) == 3
     assert "w900s_trade_count" not in feats
@@ -578,7 +578,7 @@ def test_missing_staleness_is_excluded_not_imputed() -> None:
     with pytest.raises(AssertionError, match="staleness"):
         tally.note_imputed("bid_staleness_seconds")
     with pytest.raises(AssertionError, match="staleness"):
-        tally.note_imputed("book_staleness_ratio")
+        tally.note_imputed("asof_staleness_ratio")
 
 
 def test_gap_since_last_stays_imputed_and_is_counted() -> None:
