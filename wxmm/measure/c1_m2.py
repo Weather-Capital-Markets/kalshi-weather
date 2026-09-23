@@ -28,9 +28,25 @@ from typing import Literal, Sequence
 from wxmm.core.utc import require_utc
 
 MakerSide = Literal["buy", "sell"]
+MmEra = Literal["pre_mm_program", "mm_program", "post_mm_program"]
 MM_PROGRAM_START = date(2024, 3, 11)
-# Carried from the C1-M2 addendum. Not re-derived here.
+MM_PROGRAM_SCHEDULED_END = date(2026, 3, 11)
+# Inclusive last climate day of the CFTC 2024 program window
+# (rules02262412176). Whether Kalshi extended it is unverified.
+CLOSE_TIME_CONVENTION_CHANGE = date(2026, 3, 18)
 GATE0_REQUIRED_E_TIMES_S = 0.0016
+HORIZON_1M = timedelta(minutes=1)
+HORIZON_5M = timedelta(minutes=5)
+HORIZON_30M = timedelta(minutes=30)
+POST_PROGRAM_CAUTIONS = (
+    "PROGRAM_STATUS_UNVERIFIED: the 2024 CFTC filing says Kalshi may "
+    "extend the program past 2026-03-11; later 2025 Market Maker Program "
+    "filings exist; whether either covers KXHIGHNY is not verified.",
+    "Close-time convention changes between climate days 2026-03-17 and "
+    "2026-03-18 (venue-facts §1.8). Post-program differs in at least two "
+    "ways at once and any difference cannot be attributed to the program "
+    "alone.",
+)
 
 
 def maker_retention_cents(*, side: MakerSide, price: Decimal, mark: Decimal) -> Decimal:
@@ -73,6 +89,9 @@ class MarkedFill:
     pre_prior_print: Decimal | None
     mark_strict_mid: Decimal | None
     mark_prior_print: Decimal | None
+    mark_1m_strict: Decimal | None = None
+    mark_5m_strict: Decimal | None = None
+    mark_30m_strict: Decimal | None = None
 
     def effective_cents(self) -> Decimal | None:
         if self.pre_strict_mid is None:
@@ -87,14 +106,42 @@ class MarkedFill:
         return maker_retention_cents(side=self.maker_side, price=self.yes_price, mark=mark)
 
 
-def replay_marks(prints: Sequence[TapePrint], *, horizon: timedelta) -> tuple[MarkedFill, ...]:
-    """Replay one ticker. Pre-trade anchors exclude the current print."""
+def _last_at_or_before(
+    ordered_ts: Sequence[datetime],
+    timeline: Sequence[tuple[Decimal | None, Decimal | None]],
+    targets: Sequence[datetime],
+) -> list[tuple[Decimal | None, Decimal | None]]:
+    """For each target, the last timeline state with ts <= target. O(n)."""
+    n = len(ordered_ts)
+    out: list[tuple[Decimal | None, Decimal | None]] = []
+    j = 0
+    for target in targets:
+        while j + 1 < n and ordered_ts[j + 1] <= target:
+            j += 1
+        if n == 0 or ordered_ts[j] > target:
+            out.append((None, None))
+        else:
+            out.append(timeline[j])
+    return out
+
+
+def replay_marks(
+    prints: Sequence[TapePrint],
+    *,
+    horizon: timedelta = HORIZON_30M,
+) -> tuple[MarkedFill, ...]:
+    """Replay one ticker. Pre-trade anchors exclude the current print.
+
+    Named horizons 1m / 5m / 30m are always filled. ``horizon`` is stored on
+    ``mark_strict_mid`` so existing 30-minute callers keep working.
+    """
     ordered = sorted(prints, key=lambda p: (require_utc(p.ts), p.trade_id))
     bid: Decimal | None = None
     ask: Decimal | None = None
     last_print: Decimal | None = None
     pending: list[tuple[TapePrint, Decimal | None, Decimal | None, MakerSide]] = []
-    timeline: list[tuple[datetime, Decimal | None, Decimal | None]] = []
+    timeline: list[tuple[Decimal | None, Decimal | None]] = []
+    ordered_ts: list[datetime] = []
 
     for print_ in ordered:
         ts = require_utc(print_.ts)
@@ -107,39 +154,58 @@ def replay_marks(prints: Sequence[TapePrint], *, horizon: timedelta) -> tuple[Ma
             bid = print_.yes_price
         last_print = print_.yes_price
         pending.append((print_, pre_strict, pre_prior, side))
-        timeline.append((ts, strict_uncrossed_mid(bid, ask), last_print))
+        timeline.append((strict_uncrossed_mid(bid, ask), last_print))
+        ordered_ts.append(ts)
+
+    print_ts = [require_utc(print_.ts) for print_, _, _, _ in pending]
+    marks_horizon = _last_at_or_before(
+        ordered_ts, timeline, [ts + horizon for ts in print_ts]
+    )
+    marks_1m = _last_at_or_before(
+        ordered_ts, timeline, [ts + HORIZON_1M for ts in print_ts]
+    )
+    marks_5m = _last_at_or_before(
+        ordered_ts, timeline, [ts + HORIZON_5M for ts in print_ts]
+    )
+    marks_30m = _last_at_or_before(
+        ordered_ts, timeline, [ts + HORIZON_30M for ts in print_ts]
+    )
 
     out: list[MarkedFill] = []
-    for print_, pre_strict, pre_prior, side in pending:
-        target = require_utc(print_.ts) + horizon
-        mark_strict: Decimal | None = None
-        mark_prior: Decimal | None = None
-        for ts, strict, prior in timeline:
-            if ts <= target:
-                mark_strict = strict
-                mark_prior = prior
-            else:
-                break
+    for i, (print_, pre_strict, pre_prior, side) in enumerate(pending):
         out.append(
             MarkedFill(
                 trade_id=print_.trade_id,
-                ts=require_utc(print_.ts),
+                ts=print_ts[i],
                 yes_price=print_.yes_price,
                 count=print_.count,
                 maker_side=side,
                 pre_strict_mid=pre_strict,
                 pre_prior_print=pre_prior,
-                mark_strict_mid=mark_strict,
-                mark_prior_print=mark_prior,
+                mark_strict_mid=marks_horizon[i][0],
+                mark_prior_print=marks_horizon[i][1],
+                mark_1m_strict=marks_1m[i][0],
+                mark_5m_strict=marks_5m[i][0],
+                mark_30m_strict=marks_30m[i][0],
             )
         )
     return tuple(out)
 
 
-def mm_era_of(climate_day: date) -> Literal["pre_mm_program", "mm_program"]:
-    if climate_day >= MM_PROGRAM_START:
+def mm_era_of(climate_day: date) -> MmEra:
+    if climate_day < MM_PROGRAM_START:
+        return "pre_mm_program"
+    if climate_day <= MM_PROGRAM_SCHEDULED_END:
         return "mm_program"
-    return "pre_mm_program"
+    return "post_mm_program"
+
+
+def program_status_of(era: MmEra) -> str:
+    if era == "pre_mm_program":
+        return "no_program"
+    if era == "mm_program":
+        return "active"
+    return "PROGRAM_STATUS_UNVERIFIED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,6 +452,13 @@ class SettlementFill:
     retention_cents: float
     effective_cents: float | None
     premium: float
+    count: float = 1.0
+    realised_1m: float | None = None
+    realised_5m: float | None = None
+    realised_30m: float | None = None
+
+    def in_common_subset(self) -> bool:
+        return self.effective_cents is not None and self.realised_30m is not None
 
 
 def summarise_retention(
@@ -432,6 +505,7 @@ def summarise_retention(
     era_groups: dict[str, dict[date, list[float]]] = {
         "pre_mm_program": defaultdict(list),
         "mm_program": defaultdict(list),
+        "post_mm_program": defaultdict(list),
     }
     for fill in fills:
         era_groups[fill.mm_era][fill.climate_day].append(fill.retention_cents)
@@ -493,3 +567,228 @@ def _gate_triple(est: WeightedEstimate) -> dict[str, object]:
         "ci_low": gate0_share(est.ci_low),
         "ci_high": gate0_share(est.ci_high),
     }
+
+
+def _pair(
+    groups: dict[date, list[float]],
+    *,
+    seed: int,
+    n_resample: int,
+) -> dict[str, dict[str, float | int | str | None]]:
+    weighted = both_weightings(groups, seed=seed, n_resample=n_resample)
+    return {
+        "trade_weighted": _estimate_dict(weighted["trade_weighted"]),
+        "day_weighted": _estimate_dict(weighted["day_weighted"]),
+    }
+
+
+def _by_day(
+    fills: Sequence[SettlementFill],
+    value: Callable[[SettlementFill], float | None],
+) -> dict[date, list[float]]:
+    grouped: dict[date, list[float]] = defaultdict(list)
+    for fill in fills:
+        cents = value(fill)
+        if cents is not None:
+            grouped[fill.climate_day].append(cents)
+    return grouped
+
+
+def _fill_counts(fills: Sequence[SettlementFill]) -> dict[str, int | float]:
+    days = {fill.climate_day for fill in fills}
+    return {
+        "n_fills": len(fills),
+        "n_days": len(days),
+        "sum_count": float(sum(fill.count for fill in fills)),
+        "premium": float(sum(fill.premium for fill in fills)),
+    }
+
+
+def ci_verdict(est: WeightedEstimate) -> str:
+    """Sign of a day-clustered interval. Thin samples are not squeezed."""
+    if est.n_days < 2 or est.ci_low is None or est.ci_high is None:
+        return "too_thin"
+    if est.ci_low > 0.0:
+        return "positive_excluding_zero"
+    if est.ci_high < 0.0:
+        return "negative_excluding_zero"
+    return "includes_zero"
+
+
+def combined_sign_verdict(trade: str, day: str) -> str:
+    if trade == "too_thin" or day == "too_thin":
+        return "too_thin"
+    if trade == day:
+        return trade
+    return "weightings_disagree"
+
+
+def maker_concentration_not_run() -> dict[str, object]:
+    """Part D. Public tape has sides, not identities."""
+    return {
+        "status": "NOT_RUN",
+        "reason": (
+            "Public trade tape has taker_outcome_side and taker_book_side only. "
+            "No user, firm, or maker id. Distinct maker-side counterparties, "
+            "top-participant share, and Herfindahl are not inferable. Maker "
+            "side is known; maker identity is not."
+        ),
+        "distinct_maker_counterparties_per_bracket_day": None,
+        "top_participant_share": None,
+        "herfindahl": None,
+        "by_era": None,
+        "share_forecast": False,
+    }
+
+
+def era_block(
+    fills: Sequence[SettlementFill],
+    era: MmEra,
+    *,
+    seed: int,
+    n_resample: int,
+) -> dict[str, object]:
+    era_fills = [fill for fill in fills if fill.mm_era == era]
+    jja_fills = [fill for fill in era_fills if fill.season == "JJA"]
+    all_groups = _by_day(era_fills, lambda fill: fill.retention_cents)
+    jja_groups = _by_day(jja_fills, lambda fill: fill.retention_cents)
+    all_w = both_weightings(all_groups, seed=seed, n_resample=n_resample)
+    block: dict[str, object] = {
+        "era": era,
+        "program_status": program_status_of(era),
+        **_fill_counts(era_fills),
+        "all_seasons": {
+            "trade_weighted": _estimate_dict(all_w["trade_weighted"]),
+            "day_weighted": _estimate_dict(all_w["day_weighted"]),
+        },
+        "jja": {
+            **_fill_counts(jja_fills),
+            **_pair(jja_groups, seed=seed + 1, n_resample=n_resample),
+        },
+        "gate0_all_seasons": {
+            "trade_weighted": _gate_triple(all_w["trade_weighted"]),
+            "day_weighted": _gate_triple(all_w["day_weighted"]),
+        },
+        "sign": {
+            "trade_weighted": ci_verdict(all_w["trade_weighted"]),
+            "day_weighted": ci_verdict(all_w["day_weighted"]),
+            "combined": combined_sign_verdict(
+                ci_verdict(all_w["trade_weighted"]),
+                ci_verdict(all_w["day_weighted"]),
+            ),
+        },
+    }
+    if era == "post_mm_program":
+        block["cautions"] = list(POST_PROGRAM_CAUTIONS)
+        block["close_time_convention_change"] = (
+            CLOSE_TIME_CONVENTION_CHANGE.isoformat()
+        )
+    return block
+
+
+def common_subset_decomposition(
+    fills: Sequence[SettlementFill],
+    *,
+    seed: int,
+    n_resample: int,
+) -> dict[str, object]:
+    """Effective, 30m, and settlement on the same fills. Do not mix universes."""
+    common = [fill for fill in fills if fill.in_common_subset()]
+    n_1m = sum(1 for fill in common if fill.realised_1m is not None)
+    n_5m = sum(1 for fill in common if fill.realised_5m is not None)
+    impact_30m = _by_day(
+        common,
+        lambda fill: (
+            None
+            if fill.effective_cents is None or fill.realised_30m is None
+            else fill.effective_cents - fill.realised_30m
+        ),
+    )
+    impact_to_settlement = _by_day(
+        common,
+        lambda fill: (
+            None
+            if fill.realised_30m is None
+            else fill.realised_30m - fill.retention_cents
+        ),
+    )
+    return {
+        "universe": "common_subset",
+        "definition": (
+            "Fills with a strict pre-trade mid, a strict 30-minute mid, and a "
+            "settlement payoff. ask > bid; ties excluded."
+        ),
+        **_fill_counts(common),
+        "n_with_1m_mark": n_1m,
+        "n_with_5m_mark": n_5m,
+        "effective_half_spread": _pair(
+            _by_day(common, lambda fill: fill.effective_cents),
+            seed=seed,
+            n_resample=n_resample,
+        ),
+        "realised_30m": _pair(
+            _by_day(common, lambda fill: fill.realised_30m),
+            seed=seed + 1,
+            n_resample=n_resample,
+        ),
+        "settlement_retention": _pair(
+            _by_day(common, lambda fill: fill.retention_cents),
+            seed=seed + 2,
+            n_resample=n_resample,
+        ),
+        "price_impact_effective_minus_30m": _pair(
+            impact_30m, seed=seed + 3, n_resample=n_resample
+        ),
+        "price_impact_30m_minus_settlement": _pair(
+            impact_to_settlement, seed=seed + 4, n_resample=n_resample
+        ),
+    }
+
+
+def horizon_volume_grid(
+    subset: Sequence[SettlementFill],
+    *,
+    premium_by_day: dict[date, float],
+    seed: int,
+    n_resample: int,
+) -> dict[str, object]:
+    """4 x 10 grid on the common subset. Days ranked on full-universe premium."""
+    decile_of = assign_volume_deciles(premium_by_day)
+    horizons: tuple[tuple[str, Callable[[SettlementFill], float | None]], ...] = (
+        ("1m", lambda fill: fill.realised_1m),
+        ("5m", lambda fill: fill.realised_5m),
+        ("30m", lambda fill: fill.realised_30m),
+        ("settlement", lambda fill: fill.retention_cents),
+    )
+    grid: dict[str, object] = {
+        "universe": "common_subset",
+        "decile_ranking": "full_universe_daily_premium",
+        "unit": "cents_per_contract",
+    }
+    for h_index, (name, getter) in enumerate(horizons):
+        row: dict[str, object] = {}
+        for decile in range(1, 11):
+            grouped: dict[date, list[float]] = defaultdict(list)
+            n_missing = 0
+            n_have = 0
+            for fill in subset:
+                if decile_of.get(fill.climate_day) != decile:
+                    continue
+                cents = getter(fill)
+                if cents is None:
+                    n_missing += 1
+                    continue
+                grouped[fill.climate_day].append(cents)
+                n_have += 1
+            row[str(decile)] = {
+                **_pair(
+                    grouped,
+                    seed=seed + h_index * 20 + decile,
+                    n_resample=n_resample,
+                ),
+                "n_fills": n_have,
+                "n_days": len(grouped),
+                "n_missing_mark": n_missing,
+            }
+        grid[name] = row
+    return grid
