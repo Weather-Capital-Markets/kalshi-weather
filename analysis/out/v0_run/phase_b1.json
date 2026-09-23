@@ -1,0 +1,15 @@
+{
+  "phase": "B1",
+  "status": "OK",
+  "crossed_rate": 0.05815224457832112,
+  "mean_gap_cents_all_two_sided": 3.8635800684318675,
+  "mean_gap_uncrossed_cents": 4.335908941051731,
+  "median_gap_cents": 2.0,
+  "inverted_rate": 0.8276560096372209,
+  "verdict": "sign_confirmed",
+  "note": "as-specified crossed 0.0582 <= 0.35; ask sits above bid (median implied spread +2.0c), crossing is staleness",
+  "hard_stop": false,
+  "n_prints": 3405461,
+  "n_two_sided": 3368606,
+  "stop_and_report": "B1"
+}

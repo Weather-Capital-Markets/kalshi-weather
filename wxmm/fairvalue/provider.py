@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 from wxmm.analysis.trades_ingest import RawTrade
 from wxmm.fairvalue.anchor_trades import ObservedMapping, filter_trades_as_of
@@ -54,7 +54,13 @@ class TradeDerivedFairValue:
             feats = _row_features(
                 as_of_trades, ticker, self.as_of, mapping=self.mapping
             )
-            x_rows.append([float(feats.get(name, 0.0)) for name in self.feature_names])
+            missing = [name for name in self.feature_names if name not in feats]
+            if missing:
+                raise KeyError(
+                    "fitted feature names absent from the live vector, the shadow "
+                    f"would quietly run a different model: {missing[:8]}"
+                )
+            x_rows.append([float(feats[name]) for name in self.feature_names])
         if self.feat_mean is not None and self.feat_std is not None:
             scaled: list[list[float]] = []
             for row in x_rows:
@@ -85,4 +91,33 @@ def null_trade_fair_value(
         trades=tuple(trades),
         as_of=as_of,
         mapping=mapping,
+    )
+
+
+def fair_value_from_report(
+    report: Mapping[str, Any],
+    trades: Sequence[RawTrade],
+    as_of: datetime,
+    *,
+    mapping: ObservedMapping | None = None,
+) -> TradeDerivedFairValue:
+    """Rebuild the fitted provider from a ``V0MinReport`` artifact.
+
+    Coefficients are in standardised units, so the ``fit`` block's mean and
+    standard deviation come along with them. A report written before ``fit`` was
+    persisted has no deployable model in it and falls back to the null rather
+    than to an unscaled beta, which would be a different model wearing the same
+    coefficients.
+    """
+    fit = report.get("fit")
+    if not isinstance(fit, Mapping) or not fit.get("feature_names"):
+        return null_trade_fair_value(trades, as_of, mapping=mapping)
+    return TradeDerivedFairValue(
+        feature_names=tuple(str(name) for name in fit["feature_names"]),
+        beta=tuple(float(v) for v in fit["beta"]),
+        trades=tuple(trades),
+        as_of=as_of,
+        mapping=mapping,
+        feat_mean=tuple(float(v) for v in fit["feat_mean"]),
+        feat_std=tuple(float(v) for v in fit["feat_std"]),
     )

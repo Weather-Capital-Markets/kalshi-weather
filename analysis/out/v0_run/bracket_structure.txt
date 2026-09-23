@@ -1,0 +1,7 @@
+expected_six_bracket_era_start: 2022-12-11
+observed_first_six_bracket_day: 2022-12-11
+six_bracket_start_confirmed: True
+n_climate_days_on_or_after_start: 1374
+n_days_bracket_count_ne_6: 3
+days_bracket_count_ne_6: [3 rows]
+note: Write-ready payload for analysis/out/v0_run/bracket_structure.json

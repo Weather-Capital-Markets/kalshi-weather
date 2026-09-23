@@ -24,6 +24,7 @@ from wxmm.fairvalue.crossed import (
     crossed_by_climate_day,
     crossed_diagnostic,
     crossed_state_rate,
+    hard_stop_inverted,
 )
 
 UTC = timezone.utc
@@ -184,3 +185,37 @@ def test_mean_uncrossed_gap_is_reported() -> None:
     result = crossed_state_rate(_oriented_tape(20, crossed_every=10), sign=1)
     assert result.mean_uncrossed_gap_cents is not None
     assert result.mean_uncrossed_gap_cents > 0
+
+
+def test_mean_uncrossed_gap_excludes_ties_and_crossed_points() -> None:
+    tape = [
+        _raw(trade_id="b0", outcome="no", yes="0.45", offset_s=0),
+        _raw(trade_id="a0", outcome="yes", yes="0.55", offset_s=1),
+        _raw(trade_id="tie", outcome="yes", yes="0.45", offset_s=2),
+        _raw(trade_id="a1", outcome="yes", yes="0.40", offset_s=3),
+    ]
+    result = crossed_state_rate(tape, sign=1)
+    assert result.n_two_sided == 3
+    assert result.n_touching == 1
+    assert result.n_crossed == 1
+    assert result.mean_gap_cents == pytest.approx((10 + 0 + -5) / 3)
+    assert result.mean_uncrossed_gap_cents == pytest.approx(10.0)
+
+
+def test_hard_stop_inverted() -> None:
+    tape = _oriented_tape(MIN_OBSERVATIONS, crossed_every=10)
+    confirmed = crossed_diagnostic(tape)
+    assert hard_stop_inverted(confirmed) is False
+
+    flipped = [
+        _raw(
+            trade_id=t.trade_id,
+            outcome="no" if t.taker_outcome_side == "yes" else "yes",
+            yes=str(t.yes_price),
+            offset_s=int((t.created_time - T0).total_seconds()),
+        )
+        for t in tape
+    ]
+    inverted = crossed_diagnostic(flipped)
+    assert inverted.verdict == "sign_inverted"
+    assert hard_stop_inverted(inverted) is True

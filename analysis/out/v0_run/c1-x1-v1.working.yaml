@@ -1,0 +1,105 @@
+prereg_id: c1-x1-v1
+seed: 0
+universe:
+- KXHIGHNY
+- HIGHNY
+snapshot_id: trades-v0run/labels-1789436619777941050
+locked: true
+sample:
+  series:
+  - KXHIGHNY
+  - HIGHNY
+  era_filter: six_bracket
+  six_bracket_era_start: '2022-12-11'
+  date_range:
+    start: '2022-12-11'
+    end: '2026-09-13'
+  block_trades:
+    primary: exclude
+    report_separately: true
+  labels: CLINYC_as_issued
+  label_forbidden:
+  - METAR_derived_maxima
+  - GHCN_D
+  - final_climate_data
+price_bands:
+- id: below_10c
+  lo: '0.00'
+  hi: '0.10'
+  right_closed: false
+- id: c10_25
+  lo: '0.10'
+  hi: '0.25'
+  right_closed: false
+- id: c25_50
+  lo: '0.25'
+  hi: '0.50'
+  right_closed: false
+- id: c50_75
+  lo: '0.50'
+  hi: '0.75'
+  right_closed: false
+- id: c75_90
+  lo: '0.75'
+  hi: '0.90'
+  right_closed: false
+- id: from_90c
+  lo: '0.90'
+  hi: '1.01'
+  right_closed: false
+seasons:
+  definition: meteorological_on_climate_day
+  values:
+  - DJF
+  - MAM
+  - JJA
+  - SON
+brackets:
+  convention: enumerate_from_ticker_never_hardcode
+  vintage: as_of_trade_climate_day
+clustering:
+  unit: climate_day
+  note: 'The six brackets on one climate day are one draw of the weather. Bootstrap
+    CIs are clustered by climate day, not by trade.
+
+    '
+x1b_flat_thresholds:
+  abs_net_over_gross:
+  - 0.1
+  - 0.25
+  - 0.5
+  note: 'Share of bracket-days with |net|/gross below each threshold. Conditional
+    maker P&L on the near-flat bucket is the closest public-data two-sided-quoting
+    return.
+
+    '
+fees:
+  maker_weather_usd: '0.00'
+  maker_fee_verified_on: '2026-08-15'
+  taker: round_up_0.07_C_P_1mP
+  rounding_primary: per_order_cent
+  report_gross_and_net: true
+  note: "Weather makers pay zero. The published \u221211.99%/\u221231.46% pool categories\
+    \ with non-zero maker fees, so a weather gap will beat the pooled gap from fees\
+    \ alone before any information story.\n"
+bootstrap:
+  n_resample: 1000
+  ci: 0.95
+  method: percentile
+flb:
+  specification: y - p = alpha + psi * p  (p,y in percent 0-100; Bur26 eq. 4)
+  published_climate_weather:
+    psi: 0.031
+    psi_se: 0.005
+    alpha: -0.997
+    alpha_se: 0.243
+    n: 29924
+go_no_go:
+  maker_mean_net_return: FILL_IN
+  near_flat_bracket_day_share: FILL_IN
+  resting_offer_below_10c_net_return: FILL_IN
+gate0_inputs:
+  M_mean_daily_premium: 16101.901298905905
+  A_volume_weighted_avg_price: 0.3918871214355522
+  note: M and A are threshold inputs for Gate 0 / C1-X1 magnitude, not outcomes of
+    a test. Recorded into prereg gate0_inputs.

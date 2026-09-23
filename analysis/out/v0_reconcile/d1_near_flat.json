@@ -1,0 +1,47 @@
+{
+  "definitions": {
+    "flatness": "|bought\u2212sold|/(bought+sold) on contracts, threshold 0.10",
+    "bought_sold": "sum of maker contracts by book role within (ticker, climate_day)",
+    "numerator": "contracts (not premium); both runs agree",
+    "run_B_point": "equal weight per near-flat bracket-day of that day's equal-weight-per-trade maker net return mean",
+    "run_A_ci": "climate-day clustered bootstrap of trade-level maker net returns restricted to fills on near-flat (ticker, climate_day) pairs; pooled trade mean, so high-volume days dominate",
+    "same_universe": "six_bracket era, labelled, non-block, integer count_fp; fractional skipped"
+  },
+  "universe": {
+    "n_primary_integer": 2915516,
+    "n_fractional_skipped": 420226,
+    "n_bracket_days": 7571,
+    "n_near_flat_bracket_days": 1141,
+    "share": 0.15070664377228898
+  },
+  "matrix_2x2": {
+    "rows": "weighting",
+    "cols": "point | day-clustered 95% CI",
+    "day_weighted_point_B_style": "-0.06632376706995207369103787252",
+    "day_weighted_clustered_ci": [
+      "-0.1261958684453787",
+      "0.0008859504127092767"
+    ],
+    "trade_weighted_point_A_ci_style": "0.03454164279997775390783615123",
+    "trade_weighted_clustered_ci_A_style": [
+      "-0.032567548071209804",
+      "0.11261170957727544"
+    ]
+  },
+  "verdict": "Definitions of flatness match (contracts, threshold 0.10, same universe 1141/7571). The reported numbers differ because Run B publishes the day-weighted point (\u22126.6%) and Run A publishes the trade-weighted clustered CI. Cross-reading B's point against A's CI is invalid; the 2\u00d72 places each statistic with its own interval.",
+  "for_root_chat": {
+    "decision_number_candidates": {
+      "day_weighted_point": "-0.06632376706995207369103787252",
+      "day_weighted_ci": [
+        "-0.1261958684453787",
+        "0.0008859504127092767"
+      ],
+      "trade_weighted_point": "0.03454164279997775390783615123",
+      "trade_weighted_ci": [
+        "-0.032567548071209804",
+        "0.11261170957727544"
+      ]
+    },
+    "note": "Entry 09 cares about two-sided quoting viability. Day-weighted answers 'typical near-flat bracket-day'; trade-weighted answers 'typical fill on a near-flat day'. Pick the definition before reading the sign. Neither run is tuned toward the other."
+  }
+}

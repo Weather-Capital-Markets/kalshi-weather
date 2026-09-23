@@ -1,0 +1,9 @@
+n_climate_days_in_labels: 1352
+days_resolved_cleanly: 1344
+days_ambiguous: 0
+days_raising: 8
+ambiguous_examples: []
+raising_examples: [8 rows]
+days_era_boundary_changes_answer: 0
+era_boundary_near_days: [8 rows]
+scope_note: Labels are the CLINYC-as-issued settlement.json set; resolved_cleanly requires exactly one YES winner and no audit flags.

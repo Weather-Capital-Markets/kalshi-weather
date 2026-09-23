@@ -270,6 +270,12 @@ def _verdict(as_specified: CrossedRate, inverted: CrossedRate) -> tuple[Verdict,
     )
 
 
+def hard_stop_inverted(diag: CrossedDiagnostic) -> bool:
+    """Preregistered halt when the direction sign is clearly backwards."""
+    rate = diag.as_specified.rate
+    return diag.verdict == "sign_inverted" or (rate is not None and rate > 0.50)
+
+
 def crossed_diagnostic(trades: Sequence[RawTrade]) -> CrossedDiagnostic:
     """Paired replay under d and −d. Report before anything is fitted."""
     return crossed_diagnostic_from_shards((trades,))

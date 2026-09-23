@@ -1,0 +1,155 @@
+{
+  "definitions": {
+    "run_A": "CLINYC-as-issued yes_won vs Kalshi market result on labelled tickers with a yes/no result; rate = n_disagree / n_compared",
+    "run_B": "climate days in the CLINYC full-day archive on/after 2022-12-11 with n_later > 0 (any full-day issuance after the era snapshot); rate = n_noisy_days / n_era_climate_days",
+    "k2_recorded": "1 revision-like event per 2416 climate days (per-day)",
+    "intended_for_project": "Label noise for settlement integrity is venue disagreement (Run A). Revision detection (Run B) is a separate CLINYC hygiene metric and must not be called label noise."
+  },
+  "run_A_venue_disagreement": {
+    "n_disagree": 2,
+    "n_compared": 8109,
+    "rate": 0.00024663953631767175,
+    "flagged_tickers": [
+      "KXHIGHNY-25DEC03-B41.5",
+      "KXHIGHNY-25DEC03-B39.5"
+    ]
+  },
+  "run_B_revision_days": {
+    "n_noisy_days": 11,
+    "n_era_climate_days": 1372,
+    "rate_per_era_day": 0.008017492711370262,
+    "n_noisy_in_label_set": 8,
+    "n_labelled_days": 1352,
+    "rate_per_labelled_day": 0.005917159763313609,
+    "days": [
+      {
+        "climate_day": "2023-03-22",
+        "high_at_snapshot": 62,
+        "n_later": 1,
+        "later_highs": [
+          62
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2023-08-21",
+        "high_at_snapshot": null,
+        "n_later": 1,
+        "later_highs": [
+          88
+        ],
+        "high_changes": false,
+        "in_label_set": false
+      },
+      {
+        "climate_day": "2024-09-24",
+        "high_at_snapshot": 68,
+        "n_later": 1,
+        "later_highs": [
+          68
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2024-09-25",
+        "high_at_snapshot": 68,
+        "n_later": 1,
+        "later_highs": [
+          68
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2025-01-19",
+        "high_at_snapshot": 41,
+        "n_later": 1,
+        "later_highs": [
+          41
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2025-06-30",
+        "high_at_snapshot": null,
+        "n_later": 1,
+        "later_highs": [
+          90
+        ],
+        "high_changes": false,
+        "in_label_set": false
+      },
+      {
+        "climate_day": "2025-12-03",
+        "high_at_snapshot": 40,
+        "n_later": 1,
+        "later_highs": [
+          41
+        ],
+        "high_changes": true,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2025-12-19",
+        "high_at_snapshot": null,
+        "n_later": 1,
+        "later_highs": [],
+        "high_changes": false,
+        "in_label_set": false
+      },
+      {
+        "climate_day": "2026-01-01",
+        "high_at_snapshot": 36,
+        "n_later": 1,
+        "later_highs": [
+          36
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2026-03-04",
+        "high_at_snapshot": 49,
+        "n_later": 1,
+        "later_highs": [
+          49
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      },
+      {
+        "climate_day": "2026-08-29",
+        "high_at_snapshot": 76,
+        "n_later": 1,
+        "later_highs": [
+          76
+        ],
+        "high_changes": false,
+        "in_label_set": true
+      }
+    ]
+  },
+  "common_per_day_denominator": {
+    "k2_recorded_rate_per_day": 0.0004139072847682119,
+    "run_A_as_per_day_NOT_APPLICABLE": "Run A is per-ticker, not per-day; converting would invent a day-level event definition. Reported beside K2 only as context.",
+    "run_B_rate_per_era_day": 0.008017492711370262,
+    "run_B_rate_per_labelled_day": 0.005917159763313609,
+    "revisions_that_change_high_per_labelled_day": 0.0007396449704142012,
+    "n_revisions_that_change_high": 1,
+    "days_where_later_high_differs": [
+      {
+        "climate_day": "2025-12-03",
+        "high_at_snapshot": 40,
+        "n_later": 1,
+        "later_highs": [
+          41
+        ],
+        "high_changes": true,
+        "in_label_set": true
+      }
+    ]
+  }
+}

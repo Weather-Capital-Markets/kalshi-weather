@@ -1,0 +1,56 @@
+{
+  "settled_not_rerun": [
+    "corpus",
+    "crossed_rate",
+    "coverage",
+    "fit",
+    "M",
+    "A",
+    "flow_adds_nothing"
+  ],
+  "D1": {
+    "matrix_2x2": {
+      "rows": "weighting",
+      "cols": "point | day-clustered 95% CI",
+      "day_weighted_point_B_style": "-0.06632376706995207369103787252",
+      "day_weighted_clustered_ci": [
+        "-0.1261958684453787",
+        "0.0008859504127092767"
+      ],
+      "trade_weighted_point_A_ci_style": "0.03454164279997775390783615123",
+      "trade_weighted_clustered_ci_A_style": [
+        "-0.032567548071209804",
+        "0.11261170957727544"
+      ]
+    },
+    "universe": {
+      "n_primary_integer": 2915516,
+      "n_fractional_skipped": 420226,
+      "n_bracket_days": 7571,
+      "n_near_flat_bracket_days": 1141,
+      "share": 0.15070664377228898
+    },
+    "verdict": "Definitions of flatness match (contracts, threshold 0.10, same universe 1141/7571). The reported numbers differ because Run B publishes the day-weighted point (\u22126.6%) and Run A publishes the trade-weighted clustered CI. Cross-reading B's point against A's CI is invalid; the 2\u00d72 places each statistic with its own interval.",
+    "for_root_chat": {
+      "decision_number_candidates": {
+        "day_weighted_point": "-0.06632376706995207369103787252",
+        "day_weighted_ci": [
+          "-0.1261958684453787",
+          "0.0008859504127092767"
+        ],
+        "trade_weighted_point": "0.03454164279997775390783615123",
+        "trade_weighted_ci": [
+          "-0.032567548071209804",
+          "0.11261170957727544"
+        ]
+      },
+      "note": "Entry 09 cares about two-sided quoting viability. Day-weighted answers 'typical near-flat bracket-day'; trade-weighted answers 'typical fill on a near-flat day'. Pick the definition before reading the sign. Neither run is tuned toward the other."
+    }
+  },
+  "D2_intended_definition": "Label noise = venue disagreement (2/8109), not CLINYC n_later>0",
+  "D3_verdict": "Hypothesis confirmed: B raising == revised-CLI (8 days); A raising == high-changes (1 day: 2025-12-03)",
+  "D4_verdict": "Same partition of crossed vs not for the rate; the mean differs because Run B folds zero-gap ties into the uncrossed average. Run A's 4.93\u00a2 is the mean over strictly positive spreads; Run B's 4.34\u00a2 dilutes that mean with ties. Prefer A's definition for 'mean uncrossed gap' (gap on books that are open, not touching).",
+  "D5_flag": true,
+  "edt_midnight_1am_carried_from_run_A": 52,
+  "x1_go_no_go": "FILL_IN"
+}

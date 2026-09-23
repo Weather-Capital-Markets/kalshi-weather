@@ -234,5 +234,7 @@ analysis/out/*
 !analysis/out/crossed_by_day.json
 !analysis/out/c1_m1_v0_min.json
 !analysis/out/c1_m1_v0_min.rpsfix.json
+!analysis/out/v0_run/
+!analysis/out/v0_run/**
 !analysis/out/v0_reconcile/
 !analysis/out/v0_reconcile/**

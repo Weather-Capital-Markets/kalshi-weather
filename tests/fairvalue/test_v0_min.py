@@ -34,6 +34,7 @@ from wxmm.fairvalue.v0_min import (
     residual_gbm_experiment,
     run_c1_m1_v0_min,
     trade_anchor_coverage,
+    trade_anchor_coverage_report,
 )
 from wxmm.fairvalue.walkforward import assert_schedule_integrity, expanding_origins
 from wxmm.settlement.eras import kalshi_last_trading_close_utc
@@ -218,6 +219,36 @@ def test_coverage_reported_not_gated(tmp_path: Path) -> None:
     assert coverage.n_grid == len(days) * 2
     assert 0.0 <= coverage.share <= 1.0
     assert coverage.n_both_sides_uncrossed == coverage.n_grid
+
+
+def test_coverage_report_slices_and_staleness() -> None:
+    days = [date(2026, 8, d) for d in range(10, 16)]
+    trades = [t for day in days for t in _pair_for_day(day)]
+    labels = _labels_for_days(days)
+    report = trade_anchor_coverage_report(
+        trades,  # type: ignore[arg-type]
+        labels,
+        hours_to_close=(24, 12),
+        mapping=None,
+    )
+    assert report.pooled.n_grid == len(days) * 2
+    assert report.pooled.share == 1.0
+    season_keys = {row.key for row in report.by_season}
+    assert "JJA" in season_keys
+    hours_keys = {row.key for row in report.by_hours_to_close}
+    assert hours_keys == {"12", "24"}
+    bracket_keys = {row.key for row in report.by_bracket_position}
+    assert bracket_keys == {"T80", "T90"}
+    for row in report.by_season:
+        assert 0.0 <= row.share <= 1.0
+        assert row.n_both_sides_uncrossed <= row.n_grid
+    assert set(report.staleness) == {
+        "p50_bid_staleness_seconds",
+        "p90_bid_staleness_seconds",
+        "p50_ask_staleness_seconds",
+        "p90_ask_staleness_seconds",
+    }
+    assert all(v is None or v >= 0.0 for v in report.staleness.values())
 
 
 def test_run_walkforward_scores(tmp_path: Path) -> None:

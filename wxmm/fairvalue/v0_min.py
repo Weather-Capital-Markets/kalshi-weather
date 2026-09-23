@@ -32,8 +32,10 @@ from wxmm.eval.scores import ranked_probability_score
 from wxmm.fairvalue.anchor import apply_logit_adjustment
 from wxmm.fairvalue.anchor_trades import (
     ObservedMapping,
+    TradeImpliedBook,
     assert_outcome_bookside_mapping,
     filter_trades_as_of,
+    implied_book_from_trades,
 )
 from wxmm.fairvalue.crossed import CrossedDiagnostic, crossed_diagnostic
 from wxmm.fairvalue.ladder import ladder_order
@@ -119,6 +121,23 @@ class AnchorCoverage:
 
 
 @dataclass(frozen=True, slots=True)
+class CoverageSlice:
+    key: str
+    n_grid: int
+    n_both_sides_uncrossed: int
+    share: float
+
+
+@dataclass(frozen=True, slots=True)
+class CoverageReport:
+    pooled: AnchorCoverage
+    by_season: tuple[CoverageSlice, ...]
+    by_hours_to_close: tuple[CoverageSlice, ...]
+    by_bracket_position: tuple[CoverageSlice, ...]
+    staleness: dict[str, float | None]
+
+
+@dataclass(frozen=True, slots=True)
 class V0MinReport:
     """Out-of-sample scores. Not P&L."""
 
@@ -127,6 +146,13 @@ class V0MinReport:
     coverage: AnchorCoverage
     n_predictions: int
     n_climate_day_clusters: int
+    n_clusters: int
+    """``n_clusters`` equals ``n_climate_day_clusters``.
+
+    Independent climate-day clusters among scored predictions. Not
+    ``n_predictions`` (a day can contribute two horizons) and not
+    ``fit.n_days`` (the last training fold).
+    """
     mean_rps_improvement: float
     clustered_ci: tuple[float, float] | None
     contract_ci: tuple[float, float] | None
@@ -136,6 +162,13 @@ class V0MinReport:
     vs_climatology: SliceScore | None
     by_horizon_vs_climatology: tuple[SliceScore, ...]
     beta: tuple[BetaInterval, ...]
+    fit: OffsetLogitFit | None = None
+    """The last walk-forward fit, kept so the shadow can deploy this exact model.
+
+    The ``beta`` intervals alone do not identify it: the coefficients are in
+    standardised units, so a consumer also needs ``feat_mean`` and ``feat_std``
+    to build the same feature vector the fit saw.
+    """
     nbm_status: Literal["NOT_IN_V0_MIN"] = "NOT_IN_V0_MIN"
     is_strategy_pnl: Literal[False] = False
 
@@ -148,6 +181,12 @@ class V0MinReport:
             "coverage": asdict(self.coverage),
             "n_predictions": self.n_predictions,
             "n_climate_day_clusters": self.n_climate_day_clusters,
+            "n_clusters": self.n_clusters,
+            "ess_note": (
+                "below_400_ridge_at_limit"
+                if self.n_clusters < 400
+                else "adequate_for_ridge"
+            ),
             "mean_rps_improvement": self.mean_rps_improvement,
             "clustered_ci": self.clustered_ci,
             "contract_ci": self.contract_ci,
@@ -159,6 +198,7 @@ class V0MinReport:
                 asdict(row) for row in self.by_horizon_vs_climatology
             ],
             "beta": [asdict(row) for row in self.beta],
+            "fit": None if self.fit is None else asdict(self.fit),
             "nbm_status": self.nbm_status,
             "is_strategy_pnl": False,
             "glm_at_limit": self.n_climate_day_clusters <= 400,
@@ -569,6 +609,163 @@ def climatology_forecast(
     return {tickers[i]: Decimal(wins[i]) / Decimal(n) for i in range(len(tickers))}
 
 
+def _coverage_slice(key: str, n_grid: int, n_ok: int) -> CoverageSlice:
+    share = float(n_ok) / float(n_grid) if n_grid else 0.0
+    return CoverageSlice(
+        key=key,
+        n_grid=n_grid,
+        n_both_sides_uncrossed=n_ok,
+        share=share,
+    )
+
+
+def _bracket_position_key(ticker: str, tickers: Sequence[str]) -> str:
+    suffix = ticker.rsplit("-", 1)[-1]
+    if suffix.startswith("T") and suffix[1:].isdigit():
+        return suffix
+    ordered = sort_ladder(tickers)
+    idx = ordered.index(ticker)
+    return f"bracket_{idx}_of_{len(ordered)}"
+
+
+def _book_is_covered(book: TradeImpliedBook) -> bool:
+    return book.mid is not None
+
+
+def _staleness_seconds(book: TradeImpliedBook) -> tuple[float | None, float | None]:
+    if not _book_is_covered(book):
+        return None, None
+    bid_s = (
+        book.bid_staleness.total_seconds()
+        if book.bid_staleness is not None
+        else None
+    )
+    ask_s = (
+        book.ask_staleness.total_seconds()
+        if book.ask_staleness is not None
+        else None
+    )
+    return bid_s, ask_s
+
+
+def _percentile(values: Sequence[float], pct: float) -> float | None:
+    if not values:
+        return None
+    return float(np.percentile(np.asarray(values, dtype=float), pct))
+
+
+def trade_anchor_coverage_report(
+    trades: Sequence[RawTrade],
+    labels: Mapping[str, SettlementLabel],
+    *,
+    hours_to_close: Sequence[int],
+    mapping: ObservedMapping | None,
+) -> CoverageReport:
+    by_day = index_by_climate_day(trades)
+    days = sorted({label.climate_day for label in labels.values()})
+    hours_tuple = tuple(int(h) for h in hours_to_close)
+    # Mapping is a corpus property. Resolve once so a one-sided ticker as-of
+    # slice cannot fail the bijection gate that the full tape already cleared.
+    verified = mapping
+    if verified is None:
+        non_block = [trade for trade in trades if not trade.is_block_trade]
+        if non_block:
+            verified = assert_outcome_bookside_mapping(non_block)
+
+    pooled_n_grid = 0
+    pooled_n_ok = 0
+    season_counts: dict[str, list[int]] = {}
+    hours_counts: dict[str, list[int]] = {}
+    bracket_counts: dict[str, list[int]] = {}
+    bid_staleness: list[float] = []
+    ask_staleness: list[float] = []
+
+    for climate in days:
+        tickers = _tickers_on(labels, climate)
+        if len(tickers) < 2:
+            continue
+        close = kalshi_last_trading_close_utc(climate)
+        day_trades = by_day.get(climate, [])
+        season_key = season_of(climate)
+        bracket_keys = [_bracket_position_key(ticker, tickers) for ticker in tickers]
+        for hours in hours_tuple:
+            as_of = close - timedelta(hours=hours)
+            pooled_n_grid += 1
+            season_counts.setdefault(season_key, [0, 0])
+            season_counts[season_key][0] += 1
+            hours_key = str(hours)
+            hours_counts.setdefault(hours_key, [0, 0])
+            hours_counts[hours_key][0] += 1
+            for bracket_key in bracket_keys:
+                bracket_counts.setdefault(bracket_key, [0, 0])
+                bracket_counts[bracket_key][0] += 1
+
+            as_of_trades = filter_trades_as_of(day_trades, as_of)
+            ladder = trade_ladder_or_none(
+                as_of_trades, tickers, as_of=as_of, mapping=verified
+            )
+            if ladder is not None:
+                pooled_n_ok += 1
+                season_counts[season_key][1] += 1
+                hours_counts[hours_key][1] += 1
+                for ticker, bracket_key in zip(tickers, bracket_keys, strict=True):
+                    book = ladder.books[ticker]
+                    if _book_is_covered(book):
+                        bracket_counts[bracket_key][1] += 1
+                        bid_s, ask_s = _staleness_seconds(book)
+                        if bid_s is not None:
+                            bid_staleness.append(bid_s)
+                        if ask_s is not None:
+                            ask_staleness.append(ask_s)
+            else:
+                for ticker, bracket_key in zip(tickers, bracket_keys, strict=True):
+                    book = implied_book_from_trades(
+                        as_of_trades,
+                        as_of=as_of,
+                        ticker=ticker,
+                        mapping=verified,
+                    )
+                    if _book_is_covered(book):
+                        bracket_counts[bracket_key][1] += 1
+                        bid_s, ask_s = _staleness_seconds(book)
+                        if bid_s is not None:
+                            bid_staleness.append(bid_s)
+                        if ask_s is not None:
+                            ask_staleness.append(ask_s)
+
+    pooled_share = float(pooled_n_ok) / float(pooled_n_grid) if pooled_n_grid else 0.0
+    pooled = AnchorCoverage(
+        n_grid=pooled_n_grid,
+        n_both_sides_uncrossed=pooled_n_ok,
+        share=pooled_share,
+    )
+    by_season = tuple(
+        _coverage_slice(key, counts[0], counts[1])
+        for key, counts in sorted(season_counts.items())
+    )
+    by_hours = tuple(
+        _coverage_slice(key, counts[0], counts[1])
+        for key, counts in sorted(hours_counts.items(), key=lambda item: int(item[0]))
+    )
+    by_bracket = tuple(
+        _coverage_slice(key, counts[0], counts[1])
+        for key, counts in sorted(bracket_counts.items())
+    )
+    staleness = {
+        "p50_bid_staleness_seconds": _percentile(bid_staleness, 50.0),
+        "p90_bid_staleness_seconds": _percentile(bid_staleness, 90.0),
+        "p50_ask_staleness_seconds": _percentile(ask_staleness, 50.0),
+        "p90_ask_staleness_seconds": _percentile(ask_staleness, 90.0),
+    }
+    return CoverageReport(
+        pooled=pooled,
+        by_season=by_season,
+        by_hours_to_close=by_hours,
+        by_bracket_position=by_bracket,
+        staleness=staleness,
+    )
+
+
 def trade_anchor_coverage(
     trades: Sequence[RawTrade],
     labels: Mapping[str, SettlementLabel],
@@ -576,27 +773,9 @@ def trade_anchor_coverage(
     hours_to_close: Sequence[int],
     mapping: ObservedMapping | None,
 ) -> AnchorCoverage:
-    by_day = index_by_climate_day(trades)
-    days = sorted({label.climate_day for label in labels.values()})
-    n_grid = 0
-    n_ok = 0
-    for climate in days:
-        tickers = _tickers_on(labels, climate)
-        if len(tickers) < 2:
-            continue
-        close = kalshi_last_trading_close_utc(climate)
-        day_trades = by_day.get(climate, [])
-        for hours in hours_to_close:
-            as_of = close - timedelta(hours=int(hours))
-            n_grid += 1
-            as_of_trades = filter_trades_as_of(day_trades, as_of)
-            ladder = trade_ladder_or_none(
-                as_of_trades, tickers, as_of=as_of, mapping=mapping
-            )
-            if ladder is not None:
-                n_ok += 1
-    share = float(n_ok) / float(n_grid) if n_grid else 0.0
-    return AnchorCoverage(n_grid=n_grid, n_both_sides_uncrossed=n_ok, share=share)
+    return trade_anchor_coverage_report(
+        trades, labels, hours_to_close=hours_to_close, mapping=mapping
+    ).pooled
 
 
 def _improvements(rows: Sequence[V0MinPrediction]) -> list[Decimal]:
@@ -1003,6 +1182,7 @@ def run_c1_m1_v0_min(
         coverage=coverage,
         n_predictions=len(predictions),
         n_climate_day_clusters=len(by_day),
+        n_clusters=len(by_day),
         mean_rps_improvement=mean_imp,
         clustered_ci=clustered_t,
         contract_ci=contract_t,
@@ -1031,6 +1211,7 @@ def run_c1_m1_v0_min(
             vs_clim=True,
         ),
         beta=beta_iv,
+        fit=last_fit,
     )
     ledger.record(
         "C1_M1_V0_MIN",
@@ -1040,6 +1221,7 @@ def run_c1_m1_v0_min(
             "crossed_rate_inverted": report.crossed.inverted.rate,
             "crossed_verdict": report.crossed.verdict,
             "n_predictions": report.n_predictions,
+            "n_clusters": report.n_clusters,
             "coverage_share": report.coverage.share,
             "mean_rps_improvement": report.mean_rps_improvement,
             "verdict": report.decision.verdict,
@@ -1071,6 +1253,7 @@ def public_callables() -> tuple[str, ...]:
         "predict_adjusted",
         "climatology_forecast",
         "trade_anchor_coverage",
+        "trade_anchor_coverage_report",
         "residual_gbm_experiment",
         "null_trade_recovery",
     )

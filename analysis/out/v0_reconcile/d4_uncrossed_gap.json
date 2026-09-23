@@ -1,0 +1,18 @@
+{
+  "definitions": {
+    "run_A": "mean (ask\u2212bid) in cents over two-sided states with ask > bid (ties excluded)",
+    "run_B": "mean (ask\u2212bid) in cents over two-sided states with ask >= bid (ties included at gap 0)",
+    "weighting": "equal weight per print update; not volume-weighted on either run"
+  },
+  "counts": {
+    "n_two_sided": 3360605,
+    "n_crossed": 195697,
+    "n_ties": 383748,
+    "n_strict_uncrossed_ask_gt_bid": 2781160,
+    "n_inclusive_ask_ge_bid": 3164908
+  },
+  "mean_uncrossed_cents_A_strict": 4.937862618475744,
+  "mean_uncrossed_cents_B_inclusive_ties": 4.339142243629198,
+  "arithmetic_check": "mean_B / mean_A \u2248 n_strict / (n_strict + n_ties) = 0.8787490821218183",
+  "verdict": "Same partition of crossed vs not for the rate; the mean differs because Run B folds zero-gap ties into the uncrossed average. Run A's 4.93\u00a2 is the mean over strictly positive spreads; Run B's 4.34\u00a2 dilutes that mean with ties. Prefer A's definition for 'mean uncrossed gap' (gap on books that are open, not touching)."
+}

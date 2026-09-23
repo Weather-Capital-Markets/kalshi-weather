@@ -1,0 +1,102 @@
+{
+  "phase": "B",
+  "status": "OK",
+  "B2_coverage": {
+    "n_grid": 2704,
+    "n_both_sides_uncrossed": 616,
+    "share": 0.22781065088757396
+  },
+  "B3_settlement": {
+    "status": "OK",
+    "days_resolved_cleanly": 1344,
+    "days_raising": 8,
+    "days_ambiguous": 0,
+    "days_era_boundary_changes_answer": 0,
+    "edt_midnight_max": {
+      "status": "NOT_RUN",
+      "reason": "no ASOS/METAR KNYC data under data/ (checked asos/KNYC and raw/**/asos_obs)"
+    }
+  },
+  "B4_label_noise": {
+    "measured_rate": 0.008035062089116142,
+    "recorded_k2_baseline_rate": 0.0004139072847682119,
+    "recorded_k2_baseline_fraction": "1/2416",
+    "n_days_n_later_gt_0": 11,
+    "disagreement": "measured exceeds recorded K2 baseline; reporting both, no silent reconcile"
+  },
+  "B5_brackets": {
+    "six_bracket_start_confirmed": true,
+    "days_ne_6": [
+      {
+        "climate_date": "2023-12-26",
+        "n_brackets": 5,
+        "structure_id": "n=5|width=2|align=integer_2f_bins_mixed_parity|contig=True|tails=True|suffix=T_tail_B_midpoint"
+      },
+      {
+        "climate_date": "2023-12-27",
+        "n_brackets": 5,
+        "structure_id": "n=5|width=2|align=integer_2f_bins_mixed_parity|contig=True|tails=True|suffix=T_tail_B_midpoint"
+      },
+      {
+        "climate_date": "2023-12-28",
+        "n_brackets": 5,
+        "structure_id": "n=5|width=2|align=integer_2f_bins_mixed_parity|contig=True|tails=True|suffix=T_tail_B_midpoint"
+      }
+    ],
+    "n_days_ne_6": 3
+  },
+  "B6_turnover_gate0_inputs": {
+    "M_mean_daily_premium": 16101.901298905905,
+    "median_daily_premium": 5141.499999999997,
+    "p75_daily_premium": 25670.190000000024,
+    "p90_daily_premium": 44337.12000000001,
+    "p99_daily_premium": 91840.78499999992,
+    "top_decile_share": 0.40498729265939,
+    "A_volume_weighted_avg_price": 0.3918871214355522,
+    "recorded": {
+      "median_daily_premium_climate_day": 2400.0,
+      "p75_daily_premium_climate_day_range": [
+        15000.0,
+        26000.0
+      ],
+      "median_brackets_with_volume_per_climate_day": 4.0,
+      "median_premium_per_market_day": 214.0,
+      "zero_volume_market_day_share_pct": 22.3
+    },
+    "note": "M and A are threshold inputs for Gate 0 / C1-X1, not outcomes of a test.",
+    "belief": "believe the trade-tape figures; recorded candle medians are a different instrument (candlesticks vs prints) and disagree on median daily premium (5141.499999999997 vs 2400.0)"
+  },
+  "B7_ledger": {
+    "status": "OK",
+    "prereg_registered": true,
+    "unregistered_refused": true,
+    "leakage_raised": true,
+    "artifact_byte_identical_reread": true,
+    "artifact_sha256": "38b903e47653790e1aa8210b2eec29a47c3bfa18d7c8cafbafb8152d793f88e1"
+  },
+  "B8_fee_deciles": {
+    "n_trades": 3405461,
+    "decile_prices": {
+      "0.1": 0.03,
+      "0.2": 0.07,
+      "0.3": 0.13,
+      "0.4": 0.21,
+      "0.5": 0.29,
+      "0.6": 0.37,
+      "0.7": 0.46,
+      "0.8": 0.56,
+      "0.9": 0.74
+    },
+    "contracts": [
+      "1",
+      "100",
+      "500"
+    ],
+    "roundings": [
+      "per_order_cent",
+      "continuous"
+    ],
+    "artifact": "analysis/out/v0_run/fee_deciles.json"
+  },
+  "stop_and_report": "B"
+}

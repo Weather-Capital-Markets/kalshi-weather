@@ -1,0 +1,29 @@
+phase: E
+status: PARTIAL
+E1:
+  status: NOT_RUN
+  reason: Stage 0 sweep needs VPS logger JSONL on window 2026-08-19→latest; artifact remains 0/12 INCOMPLETE. No rows invented.
+E2:
+  status: OK
+  packaged_run_c1_x1:
+    status: NOT_RUN
+    reason: prereg go_no_go still FILL_IN for maker_mean_net_return / near_flat_bracket_day_share / resting_offer_below_10c_net_return; those thresholds come from the root chat and were not invented. Sign-gate statistics below are computed via a streaming x1a/x1b path.
+  gate0_inputs:
+    M_mean_daily_premium: 16101.901298905905
+    A_volume_weighted_avg_price: 0.3918871214355522
+    note: M and A are threshold inputs for Gate 0 / C1-X1 magnitude, not outcomes of a test. Recorded into prereg gate0_inputs.
+  sign_gate:
+    n_trades_seen: 3405461
+    n_primary_trades: 2915516
+    n_block_trades: 0
+    n_unlabelled: 69719
+    n_fractional_count_fp_skipped: 420226
+    maker_mean_net: 0.05051012071976741104073191531
+    maker_ci_net: ['0.01058452491242199', '0.09543490921478807']
+    maker_ci_excludes_zero_positive: True
+    jja_maker_net_slices: [6 rows]
+    x1b_near_flat:
+      n_bracket_days: 7571
+      shares: [3 rows]
+    headline: JJA season-stratified; weather maker fee $0 so gross=net
+    fractional_note: Kalshi count_fp can be fractional; fee schedule is per integer contract so fractional rows are skipped rather than floored

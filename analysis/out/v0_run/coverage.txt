@@ -1,0 +1,12 @@
+pooled:
+  n_grid: 2704
+  n_both_sides_uncrossed: 616
+  share: 0.22781065088757396
+by_season: [4 rows]
+by_hours_to_close: [2 rows]
+by_bracket_position: [94 rows]
+staleness:
+  p50_bid_staleness_seconds: 2550.932038
+  p90_bid_staleness_seconds: 35956.422381799995
+  p50_ask_staleness_seconds: 1936.7321235
+  p90_ask_staleness_seconds: 24536.821637200002
